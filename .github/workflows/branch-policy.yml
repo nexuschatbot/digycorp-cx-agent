@@ -1,0 +1,29 @@
+name: Branch policy
+
+# Enforces the promotion path: production branches may only ever receive code
+# from `test`. This is a status check, so it blocks the merge button once the
+# branch is protected — unlike CODEOWNERS it cannot be satisfied by a review.
+on:
+  pull_request:
+    branches: [elite-prod, general-prod]
+
+jobs:
+  source-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Production PRs must originate from test
+        run: |
+          echo "Base branch : $GITHUB_BASE_REF"
+          echo "Head branch : $GITHUB_HEAD_REF"
+
+          if [ "$GITHUB_HEAD_REF" != "test" ]; then
+            echo ""
+            echo "::error::Pull requests into '$GITHUB_BASE_REF' may only come from 'test'."
+            echo "This PR is from '$GITHUB_HEAD_REF'."
+            echo ""
+            echo "Merge your work into 'test' first, let QA verify it on the test VM,"
+            echo "then open a promotion PR from 'test' into '$GITHUB_BASE_REF'."
+            exit 1
+          fi
+
+          echo "Source branch is 'test'. Promotion path is valid."

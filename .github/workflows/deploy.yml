@@ -1,0 +1,134 @@
+name: Deploy
+
+# Merging into a long-lived branch deploys it. There is no manual approval gate
+# between merge and production, by design — the gate is the pull request review
+# on the production branch itself.
+on:
+  push:
+    branches: [test, elite-prod, general-prod]
+
+# Never let two deploys to the same VM overlap.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Maps the branch to its VM. Each target reads a distinct set of
+      # repository secrets, so a misconfigured secret cannot cross environments.
+      - name: Resolve deployment target
+        id: target
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            test)         echo "prefix=TEST"         >> "$GITHUB_OUTPUT"
+                          echo "name=test"           >> "$GITHUB_OUTPUT" ;;
+            elite-prod)   echo "prefix=ELITE_PROD"   >> "$GITHUB_OUTPUT"
+                          echo "name=elite-prod"     >> "$GITHUB_OUTPUT" ;;
+            general-prod) echo "prefix=GENERAL_PROD" >> "$GITHUB_OUTPUT"
+                          echo "name=general-prod"   >> "$GITHUB_OUTPUT" ;;
+            *)            echo "::error::Branch ${GITHUB_REF_NAME} has no deployment target."
+                          exit 1 ;;
+          esac
+
+      - name: Load target configuration
+        id: cfg
+        env:
+          SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          prefix="${{ steps.target.outputs.prefix }}"
+          host=$(echo "$SECRETS"    | jq -r --arg k "${prefix}_HOST"        '.[$k] // ""')
+          user=$(echo "$SECRETS"    | jq -r --arg k "${prefix}_SSH_USER"    '.[$k] // ""')
+          key=$(echo "$SECRETS"     | jq -r --arg k "${prefix}_SSH_KEY"     '.[$k] // ""')
+          path=$(echo "$SECRETS"    | jq -r --arg k "${prefix}_DEPLOY_PATH" '.[$k] // ""')
+          healthurl=$(echo "$SECRETS" | jq -r --arg k "${prefix}_HEALTH_URL" '.[$k] // ""')
+
+          missing=""
+          [ -z "$host" ] && missing="$missing ${prefix}_HOST"
+          [ -z "$user" ] && missing="$missing ${prefix}_SSH_USER"
+          [ -z "$key" ]  && missing="$missing ${prefix}_SSH_KEY"
+          [ -z "$path" ] && missing="$missing ${prefix}_DEPLOY_PATH"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            exit 1
+          fi
+
+          echo "host=$host"           >> "$GITHUB_OUTPUT"
+          echo "user=$user"           >> "$GITHUB_OUTPUT"
+          echo "path=$path"           >> "$GITHUB_OUTPUT"
+          echo "health_url=$healthurl" >> "$GITHUB_OUTPUT"
+          echo "$key" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE: /api
+        run: |
+          npm ci
+          npm run build
+
+      - name: Add VM to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.cfg.outputs.host }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync application to VM
+        env:
+          HOST: ${{ steps.cfg.outputs.host }}
+          USER_NAME: ${{ steps.cfg.outputs.user }}
+          DEPLOY_PATH: ${{ steps.cfg.outputs.path }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes" \
+            --exclude '.git' --exclude 'node_modules' --exclude '.venv' \
+            --exclude 'frontend/node_modules' \
+            backend/ "$USER_NAME@$HOST:$DEPLOY_PATH/backend/"
+
+          rsync -az --delete \
+            -e "ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes" \
+            frontend/dist/ "$USER_NAME@$HOST:$DEPLOY_PATH/frontend/dist/"
+
+          rsync -az \
+            -e "ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes" \
+            scripts/remote-deploy.sh "$USER_NAME@$HOST:$DEPLOY_PATH/remote-deploy.sh"
+
+      - name: Run remote deploy
+        env:
+          HOST: ${{ steps.cfg.outputs.host }}
+          USER_NAME: ${{ steps.cfg.outputs.user }}
+          DEPLOY_PATH: ${{ steps.cfg.outputs.path }}
+          ENV_NAME: ${{ steps.target.outputs.name }}
+        run: |
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes "$USER_NAME@$HOST" \
+            "chmod +x '$DEPLOY_PATH/remote-deploy.sh' && ENVIRONMENT='$ENV_NAME' '$DEPLOY_PATH/remote-deploy.sh' '$DEPLOY_PATH'"
+
+      - name: Health check
+        if: steps.cfg.outputs.health_url != ''
+        env:
+          HEALTH_URL: ${{ steps.cfg.outputs.health_url }}
+        run: |
+          for attempt in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$HEALTH_URL" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "Health check passed on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt: got HTTP $code, retrying in 6s..."
+            sleep 6
+          done
+          echo "::error::Health check never returned 200 at $HEALTH_URL after deploying to ${{ steps.target.outputs.name }}."
+          exit 1
+
+      - name: Remove deploy key
+        if: always()
+        run: rm -f /tmp/deploy_key
