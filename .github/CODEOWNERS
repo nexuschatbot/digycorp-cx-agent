@@ -1,0 +1,10 @@
+# Ownership for production branches.
+#
+# GitHub reads CODEOWNERS from the BASE branch of a pull request. This file is
+# intended to live on `elite-prod` and `general-prod` ONLY, so that promotion
+# PRs into production require a review from one of the two release approvers,
+# while day-to-day PRs into `test` do not.
+#
+# Do not add this file to `test`.
+
+* @syed-hanif @saadkarim12
