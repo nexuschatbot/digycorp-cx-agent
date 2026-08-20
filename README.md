@@ -52,6 +52,24 @@ npm run dev                        # http://localhost:5173, proxies /api to :800
 npm run build
 ```
 
+## Environments
+
+| Environment | URL | Status |
+| ----------- | --- | ------ |
+| test | http://digycorp-cx-test.uaenorth.cloudapp.azure.com | live |
+| elite-prod | not provisioned | — |
+| general-prod | not provisioned | — |
+
+The test VM is **shut down at 20:00 and started at 10:00 Pakistan time** to save
+cost. If the site is unreachable, start it with:
+
+```bash
+az vm start -g digycorp-cx-test-rg -n digycorp-cx-test-vm
+```
+
+Full details — VM specs, SSH access, services, schedules, known gaps — are in
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md).
+
 ## Deployment
 
 Merging into `test`, `elite-prod`, or `general-prod` triggers
