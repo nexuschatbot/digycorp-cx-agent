@@ -1,0 +1,353 @@
+[
+  {
+    "id": 1,
+    "model_code": "JET-G700",
+    "brand": "Jetour",
+    "name": "Jetour G700",
+    "body_type": "Full-size luxury off-road SUV (body-on-frame)",
+    "seats_min": 5,
+    "seats_max": 6,
+    "price_aed_min": 179000,
+    "price_aed_max": 229000,
+    "fuel_type": "phev",
+    "headline_features": [
+      "2.0TD turbo petrol + dual electric motors, 4WD",
+      "Tank Turn, crawl mode & transparent chassis view",
+      "800V ultra-fast charging",
+      "35.4\" instrument panel + 15.6–15.8\" centre touchscreen",
+      "18-speaker Lexicon audio with Dolby Atmos (Flagship)",
+      "Tri-zone climate, massage & memory front seats"
+    ],
+    "headline_features_ar": [
+      "محرك بنزين تيربو 2.0TD مع محركين كهربائيين، دفع رباعي",
+      "دوران Tank Turn، وضع الزحف، ورؤية شفافة لأسفل السيارة",
+      "شحن فائق السرعة بجهد 800 فولت",
+      "لوحة عدادات 35.4 بوصة وشاشة لمس مركزية 15.6–15.8 بوصة",
+      "نظام صوت Lexicon بـ18 مكبراً مع Dolby Atmos (فئة Flagship)",
+      "تكييف ثلاثي المناطق ومقاعد أمامية بالتدليك والذاكرة"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-g700.jpeg"
+    ]
+  },
+  {
+    "id": 2,
+    "model_code": "JET-T2",
+    "brand": "Jetour",
+    "name": "Jetour T2",
+    "body_type": "Mid-size off-road SUV, 5-door",
+    "seats_min": 5,
+    "seats_max": 5,
+    "price_aed_min": 146000,
+    "price_aed_max": 179000,
+    "fuel_type": "petrol",
+    "headline_features": [
+      "2.0L turbo 4-cylinder, 390 Nm, 7-speed DCT",
+      "BorgWarner 6th-gen 4WD with 7 driving modes",
+      "15.6\" touchscreen, Qualcomm Snapdragon 8155",
+      "12-channel Sony audio",
+      "Magic Electric Door & expandable feature tailgate",
+      "540° panoramic parking system"
+    ],
+    "headline_features_ar": [
+      "محرك تيربو سعة 2.0 لتر بأربع أسطوانات، 390 نيوتن·متر، ناقل DCT بسبع سرعات",
+      "دفع رباعي BorgWarner من الجيل السادس مع سبعة أوضاع قيادة",
+      "شاشة لمس 15.6 بوصة بمعالج Qualcomm Snapdragon 8155",
+      "نظام صوت Sony بـ12 قناة",
+      "باب كهربائي Magic وباب خلفي متعدد الاستخدامات",
+      "نظام ركن بانورامي 540°"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-t2.png"
+    ]
+  },
+  {
+    "id": 3,
+    "model_code": "JET-T2-IDM",
+    "brand": "Jetour",
+    "name": "Jetour T2 i-DM",
+    "body_type": "Mid-size off-road SUV, 5-door",
+    "seats_min": 5,
+    "seats_max": 5,
+    "price_aed_min": 144000,
+    "price_aed_max": 159000,
+    "fuel_type": "phev",
+    "headline_features": [
+      "1.5 TGDI hybrid engine + dual motors",
+      "600 HP / 910 Nm combined output",
+      "3-speed dedicated hybrid transmission, 4x4",
+      "Up to 140 km EV-only, 800 km combined range",
+      "70 cm wading depth",
+      "LFP Cell-to-Pack battery, ~3 h full charge"
+    ],
+    "headline_features_ar": [
+      "محرك هجين 1.5 TGDI مع محركين كهربائيين",
+      "قوة إجمالية 600 حصان و910 نيوتن·متر",
+      "ناقل حركة هجين مخصص بثلاث سرعات، دفع رباعي 4x4",
+      "حتى 140 كم كهربائي بالكامل و800 كم مدى إجمالي",
+      "عمق خوض مياه 70 سم",
+      "بطارية LFP بتقنية Cell-to-Pack، شحن كامل خلال نحو 3 ساعات"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-t2-idm.png"
+    ]
+  },
+  {
+    "id": 4,
+    "model_code": "JET-T1",
+    "brand": "Jetour",
+    "name": "Jetour T1",
+    "body_type": "Compact off-road SUV, ladder-frame",
+    "seats_min": 5,
+    "seats_max": 5,
+    "price_aed_min": 109000,
+    "price_aed_max": 130200,
+    "fuel_type": "petrol",
+    "headline_features": [
+      "2.0L T-GDI, 254 HP / 390 Nm, 8-speed automatic",
+      "2WD Comfort or 4WD (XWD intelligent AWD) Luxury",
+      "Park Cool — cools the cabin with the engine off",
+      "LED Matrix headlights & panoramic sunroof",
+      "50W wireless charging, dual-zone A/C",
+      "360° camera, multiple airbags, ESC"
+    ],
+    "headline_features_ar": [
+      "محرك T-GDI سعة 2.0 لتر، 254 حصاناً و390 نيوتن·متر، ناقل أوتوماتيكي بثماني سرعات",
+      "فئة Comfort بدفع ثنائي أو Luxury بدفع رباعي ذكي XWD",
+      "خاصية Park Cool لتبريد المقصورة والمحرك متوقف",
+      "مصابيح أمامية LED مصفوفية وفتحة سقف بانورامية",
+      "شحن لاسلكي بقوة 50 واط وتكييف ثنائي المناطق",
+      "كاميرا محيطية 360°، وسائد هوائية متعددة، ونظام ثبات إلكتروني ESC"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-t1.jpeg"
+    ]
+  },
+  {
+    "id": 5,
+    "model_code": "JET-T1-IDM",
+    "brand": "Jetour",
+    "name": "Jetour T1 i-DM",
+    "body_type": "Compact urban light off-road SUV",
+    "seats_min": 5,
+    "seats_max": 5,
+    "price_aed_min": 129000,
+    "price_aed_max": 144000,
+    "fuel_type": "phev",
+    "headline_features": [
+      "1.5L turbo (1,499 cc) + electric motor, 335 HP / 530 Nm",
+      "Up to 117 km EV-only (WLTC), 1,000 km combined",
+      "26.7 kWh LFP Cell-to-Pack battery",
+      "Fast charge 30% → 80% in 0.5 h",
+      "Four-leaf-clover headlight signature",
+      "2024 German Red Dot Award winner"
+    ],
+    "headline_features_ar": [
+      "محرك تيربو سعة 1.5 لتر (1,499 سي سي) مع محرك كهربائي، 335 حصاناً و530 نيوتن·متر",
+      "حتى 117 كم كهربائي بالكامل (WLTC) و1,000 كم مدى إجمالي",
+      "بطارية LFP بتقنية Cell-to-Pack سعة 26.7 كيلوواط·ساعة",
+      "شحن سريع من 30% إلى 80% خلال نصف ساعة",
+      "توقيع إضاءة أمامية على شكل ورقة البرسيم الرباعية",
+      "الفائز بجائزة Red Dot الألمانية للتصميم 2024"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. AED range added 2026-07-27 — CONFIRM THE SOURCE before demo day. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-t1-idm.jpeg"
+    ]
+  },
+  {
+    "id": 6,
+    "model_code": "JET-DASH",
+    "brand": "Jetour",
+    "name": "Jetour Dashing",
+    "body_type": "Compact urban SUV",
+    "seats_min": 5,
+    "seats_max": 5,
+    "price_aed_min": 93450,
+    "price_aed_max": 115900,
+    "fuel_type": "petrol",
+    "headline_features": [
+      "1.5T (~154 HP) or 1.6T TGDI (197 HP / 290 Nm)",
+      "0–100 km/h in ~8.5 s (1.6T)",
+      "15.6\" vertical touchscreen with AI voice control",
+      "Panoramic sunroof, hidden sensing door handles",
+      "Six airbags, L2 driver assistance, ACC",
+      "CN95 air filter & intelligent air purification"
+    ],
+    "headline_features_ar": [
+      "محرك 1.5T بقوة نحو 154 حصاناً أو 1.6T TGDI بقوة 197 حصاناً و290 نيوتن·متر",
+      "من 0 إلى 100 كم/س خلال نحو 8.5 ثانية (فئة 1.6T)",
+      "شاشة لمس عمودية 15.6 بوصة مع تحكم صوتي بالذكاء الاصطناعي",
+      "فتحة سقف بانورامية ومقابض أبواب مخفية بحساسات",
+      "ست وسائد هوائية، أنظمة مساعدة السائق من المستوى الثاني، ومثبت سرعة تكيفي ACC",
+      "فلتر هواء CN95 ونظام تنقية هواء ذكي"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-dash.png"
+    ]
+  },
+  {
+    "id": 7,
+    "model_code": "JET-X70P",
+    "brand": "Jetour",
+    "name": "Jetour X70 Plus",
+    "body_type": "Mid-size family SUV",
+    "seats_min": 5,
+    "seats_max": 7,
+    "price_aed_min": 75000,
+    "price_aed_max": 103950,
+    "fuel_type": "petrol",
+    "headline_features": [
+      "1.6L TGDI turbo, Comfort & Luxury trims",
+      "Seven-seat configuration available",
+      "10.25\" touchscreen + all-digital cluster",
+      "Full ADAS: ACC, AEB, BSD, FCW, LDW",
+      "20\" lightweight alloys, panoramic sunroof",
+      "Foldable rear seats, automatic luggage door"
+    ],
+    "headline_features_ar": [
+      "محرك تيربو TGDI سعة 1.6 لتر، بفئتي Comfort وLuxury",
+      "تهيئة بسبعة مقاعد متوفرة",
+      "شاشة لمس 10.25 بوصة ولوحة عدادات رقمية بالكامل",
+      "حزمة ADAS متكاملة: ACC، AEB، BSD، FCW، LDW",
+      "جنوط ألمنيوم خفيفة 20 بوصة وفتحة سقف بانورامية",
+      "مقاعد خلفية قابلة للطي وباب صندوق كهربائي"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-x70p.png"
+    ]
+  },
+  {
+    "id": 8,
+    "model_code": "JET-X70FL",
+    "brand": "Jetour",
+    "name": "Jetour X70 FL",
+    "body_type": "Mid-size 7-seater SUV",
+    "seats_min": 7,
+    "seats_max": 7,
+    "price_aed_min": 73000,
+    "price_aed_max": 106000,
+    "fuel_type": "petrol",
+    "headline_features": [
+      "1.5L turbo, 6-speed DCT, front-wheel drive",
+      "True 7-seater family layout",
+      "12.3\" central control screen",
+      "Matrix LED smart day lights",
+      "13.5 km/L fuel economy",
+      "ABS, hill-start assist, parking sensors"
+    ],
+    "headline_features_ar": [
+      "محرك تيربو سعة 1.5 لتر، ناقل DCT بست سرعات، دفع أمامي",
+      "تهيئة عائلية بسبعة مقاعد حقيقية",
+      "شاشة تحكم مركزية 12.3 بوصة",
+      "إضاءة نهارية ذكية LED مصفوفية",
+      "استهلاك وقود 13.5 كم/لتر",
+      "نظام ABS، مساعد الانطلاق على المنحدرات، وحساسات ركن"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-x70fl.jpeg"
+    ]
+  },
+  {
+    "id": 9,
+    "model_code": "JET-X50",
+    "brand": "Jetour",
+    "name": "Jetour X50",
+    "body_type": "Compact crossover",
+    "seats_min": 5,
+    "seats_max": 5,
+    "price_aed_min": 69000,
+    "price_aed_max": 72450,
+    "fuel_type": "petrol",
+    "headline_features": [
+      "1.5L turbo, FWD — entry point to the range",
+      "Rear multi-link independent suspension (rare in class)",
+      "3D 360° AVM from four HD cameras",
+      "10.25\" HD infotainment + Jetour voice assistant",
+      "17.9 km/L — most efficient in the UAE range",
+      "Quilted leather seats, class-leading boot space"
+    ],
+    "headline_features_ar": [
+      "محرك تيربو سعة 1.5 لتر بدفع أمامي — بداية التشكيلة",
+      "تعليق خلفي مستقل متعدد الوصلات (نادر في فئتها)",
+      "نظام رؤية محيطية ثلاثي الأبعاد 360° بأربع كاميرات HD",
+      "نظام ترفيه ومعلومات HD مقاس 10.25 بوصة مع المساعد الصوتي من Jetour",
+      "17.9 كم/لتر — الأقل استهلاكاً في تشكيلة الإمارات",
+      "مقاعد جلدية مبطنة ومساحة صندوق رائدة في فئتها"
+    ],
+    "showroom_ids": [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "images": [
+      "seed/media/vehicles/jet-x50.jpeg"
+    ]
+  }
+]
