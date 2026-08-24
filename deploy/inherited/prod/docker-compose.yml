@@ -1,0 +1,66 @@
+# PRODUCTION VM overlay (AD-G). ADDITIVE — layered ON TOP of the root
+# docker-compose.yml, never instead of it. Executed ON the VM by deploy-core.sh:
+#
+#   docker compose -f docker-compose.yml -f deploy/prod/docker-compose.yml up -d
+#
+# Local dev (uvicorn --reload + npm run dev, SQLite) and plain `docker compose
+# up` are both untouched by this file. It exists to add exactly two things a
+# public host needs and a laptop does not: TLS termination, and restart policies.
+#
+# WHY AN OVERLAY AND NOT A SECOND STANDALONE COMPOSE FILE: a full copy would be
+# a second source of truth for the backend/frontend/postgres definitions, and
+# the two would drift the first time someone edited one and forgot the other.
+#
+# A SIBLING OVERLAY EXISTS at deploy/dev/docker-compose.yml. They are separate
+# files ON PURPOSE (editing the dev stack can never change prod), which means a
+# change that should apply to BOTH environments must be made in both. Today they
+# are intentionally identical.
+
+services:
+  # TLS terminator. The only service published to the internet.
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"     # ACME HTTP-01 challenge + redirect to 443
+      - "443:443"
+    environment:
+      # Fails fast rather than silently serving on the wrong name — a cert
+      # issued for the wrong hostname is a broken mic on demo day.
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS (deploy-core.sh writes it into the remote .env)}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Named volume, NOT a bind mount: this holds the issued certificates and
+      # ACME account key. Losing it on every deploy would re-request a cert each
+      # time and burn Let's Encrypt rate limits (5 per name per week — enough to
+      # lock you out the afternoon before a demo).
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+  # A VM reboot (Azure host maintenance, an accidental restart) must bring the
+  # whole demo back by itself. `unless-stopped` still honours a deliberate
+  # `docker compose stop`.
+  backend:
+    restart: unless-stopped
+
+  frontend:
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+# NOTE ON PORTS 8000 AND 8080. The base compose file publishes backend:8000 and
+# frontend:8080 on the host, and compose MERGES port lists rather than replacing
+# them, so an overlay cannot unpublish them. They are therefore closed at the
+# Azure NSG instead, which only admits 22, 80 and 443 — a network-level block
+# that sits in front of Docker's iptables rules (and so, unlike ufw, is not
+# bypassed by them). The practical effect is that both remain reachable over an
+# SSH tunnel for debugging and unreachable from the internet, which is the
+# behaviour we want anyway.

@@ -1,0 +1,33 @@
+# TLS terminator in front of the compose stack (AD-G).
+#
+# Caddy's whole job here is the certificate. It obtains and renews a Let's
+# Encrypt cert for SITE_ADDRESS automatically, which is what unblocks
+# getUserMedia — and therefore the mic — on attendees' phones.
+#
+# Routing is deliberately dumb: EVERYTHING goes to the frontend nginx, which
+# already owns the SPA fallback and the /api proxy with its tested SSE settings.
+# Splitting /api off to the backend here would duplicate that routing in a
+# second place and let the two drift.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_ADDRESS} {
+	reverse_proxy frontend:80 {
+		# CRITICAL FOR SSE (AD-B/AD-D). -1 flushes every write straight through
+		# instead of buffering. Without it the chat appears to hang: tokens pile
+		# up in the proxy and the reply lands all at once, which is exactly the
+		# failure AD-A exists to prevent.
+		flush_interval -1
+	}
+
+	# NO `encode gzip` HERE, ON PURPOSE. Compression middleware buffers to build
+	# its blocks, which fights the flush above and stalls token streaming. The
+	# bundle is small enough that this trade is not close.
+
+	log {
+		output stdout
+		format console
+	}
+}

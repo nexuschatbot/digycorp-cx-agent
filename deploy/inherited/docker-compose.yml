@@ -1,0 +1,233 @@
+# Elite Test Drive Booking — local orchestration (AD-G).
+# Additive to local dev: `uvicorn ... --reload` + `npm run dev` with SQLite still
+# work unchanged. This stack runs backend + frontend + postgres in containers.
+#
+# ANTHROPIC_API_KEY is interpolated from the root .env at `docker compose up`
+# time — it is NEVER baked into an image layer. Copy .env.example to .env first.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: elite
+      POSTGRES_PASSWORD: elite
+      POSTGRES_DB: elite
+      # THE DATABASE CLOCK — see the TZ note on `backend` below. It must move
+      # with the app's, never independently.
+      TZ: Asia/Dubai
+    # `-c timezone=` rather than relying on TZ alone, DELIBERATELY: the env var
+    # is only read by initdb when the cluster is FIRST created, so an existing
+    # pgdata volume (every environment that is already running) would keep its
+    # old setting and silently disagree with the app. This flag applies on every
+    # boot, new volume or old.
+    command: ["postgres", "-c", "timezone=Asia/Dubai"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U elite -d elite"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Not published to the host by default — reached over the compose network.
+
+  backend:
+    build: ./elite-group-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Postgres over the compose network (psycopg driver; see requirements.txt).
+      DATABASE_URL: postgresql+psycopg://elite:elite@postgres:5432/elite
+      # ⚠️ THE APPLICATION CLOCK. Containers default to UTC, so before this line
+      # the backend believed it was 11:00 while Dubai was 15:00 — and slot times
+      # are stored as NAIVE wall-clock values meaning Dubai. Availability is
+      # `start >= now`, so at 15:00 every slot from 11:00 onward still looked
+      # future and a "1:00 PM today" chip was offered two hours after it passed.
+      # The past-slot guards were never broken; they were measuring against the
+      # wrong clock.
+      #
+      # SET IT ON postgres AND sf-sync TOO, ALWAYS TOGETHER. Some columns default
+      # to the DATABASE's clock (server_default=func.now()) and some to the app's
+      # — they agreed only because both were UTC. Move one alone and a 4-hour
+      # skew opens between them: the dashboard's rolling windows drift, and the
+      # sf-sync watermark (datetime.now() vs bookings.updated_at) silently stops
+      # matching, which stops Salesforce syncing with nothing in any log.
+      #
+      # Venue time, deliberately, for every viewer (decision 2026-08-03): a slot
+      # is a physical appointment at a UAE showroom, so "7:00 PM" must mean 7pm
+      # at the door whether the customer is in Dubai, Karachi or London. Nothing
+      # converts to the viewer's timezone anywhere in this system.
+      TZ: Asia/Dubai
+      # Sourced from the root .env — never committed, never in an image layer.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      # Voice notes (2026-07-21). NO `:?` — unlike the key above, this one is
+      # OPTIONAL by design: unset, the app boots and the text demo runs exactly
+      # as before, and transcribe returns {ok:false, stt_not_configured} so the
+      # UI offers typing. Making it required would turn "no voice today" into
+      # "the stack will not start", which is the wrong failure for an additive
+      # feature. `:-` supplies the empty default rather than erroring.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Prompt-cache prewarm. Named here for the same reason as everything else
+      # in this block: the environment list is an explicit ALLOWLIST, not
+      # env_file, so a value present in the root .env that is not named here
+      # never reaches the container. Off by default (`:-false`) so a bare
+      # `docker compose up` still spends nothing at boot.
+      PREWARM_PROMPT_CACHE: ${PREWARM_PROMPT_CACHE:-false}
+      # Notification dispatcher (AD-F). Off by default; the root .env turns it on.
+      # SIMULATOR unless the WHATSAPP_* vars are also plumbed AND set — with those
+      # unset, due rows flip to `sent` with rendered bodies and the console feed
+      # works, but nothing leaves the box. The env block is an explicit allowlist
+      # (not env_file), so WITHOUT this line the flag never reaches the container
+      # and the dispatcher cannot be enabled at all.
+      NOTIFY_DISPATCH_ENABLED: ${NOTIFY_DISPATCH_ENABLED:-false}
+      NOTIFY_POLL_SECONDS: ${NOTIFY_POLL_SECONDS:-15}
+      # ⚠️ NOTIFY_SEND_KINDS is deliberately NOT named here, so the container gets
+      # config.py's default — which includes `noshow` and `feedback`. Naming it
+      # would let a stale root .env override the WHOLE list and silently retire
+      # those kinds as `kind_not_enabled`, a failure visible only in the audit
+      # trail. If you ever do plumb it, list every kind you want sent.
+      #
+      # Post-drive feedback survey (2026-07-26). Defaults are the shipped
+      # behaviour, so the feature works with none of these set; they are here so
+      # the timings can be tuned for a rehearsal without a code change.
+      FEEDBACK_ENABLED: ${FEEDBACK_ENABLED:-true}
+      FEEDBACK_EXPIRY_HOURS: ${FEEDBACK_EXPIRY_HOURS:-24}
+      FEEDBACK_LATER_HOURS: ${FEEDBACK_LATER_HOURS:-3}
+      # WhatsApp Cloud API — real OUTBOUND sends (confirmation + T-2h reminder).
+      # OPTIONAL like OPENAI_API_KEY: unset, the dispatcher stays in SIMULATOR mode
+      # and nothing leaves the box. Each var must be NAMED here — the block is an
+      # allowlist, not env_file — or the root .env value never reaches the container.
+      WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-false}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v21.0}
+      # WhatsApp INBOUND handoff (2026-07-22). INBOUND_ENABLED gates the webhook;
+      # VERIFY_TOKEN must match the Meta dashboard; APP_SECRET verifies Meta's
+      # X-Hub-Signature-256 HMAC (blank = skipped, dev only); PUBLIC_WEB_BASE_URL
+      # is the public origin the handoff link points at (the deployed FQDN) and is
+      # REQUIRED whenever INBOUND_ENABLED is true — an empty value makes links break.
+      WHATSAPP_INBOUND_ENABLED: ${WHATSAPP_INBOUND_ENABLED:-false}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      PUBLIC_WEB_BASE_URL: ${PUBLIC_WEB_BASE_URL:-}
+      # Relax +971-only mobile validation so an international test number (+92)
+      # can be identified in the sandbox. Default true = UAE-only, as in code.
+      STRICT_UAE_MOBILE: ${STRICT_UAE_MOBILE:-true}
+      # LangSmith tracing. Named here for the same reason as everything above:
+      # this block is an explicit ALLOWLIST, not env_file, so a LANGSMITH_* value
+      # sitting in the root .env would never reach the container without these
+      # four lines — and tracing would silently do nothing.
+      #
+      # `:-false` (not `:?`) matches OPENAI_API_KEY: an observability vendor is
+      # OPTIONAL by design. Unset, the app boots and behaves exactly as before —
+      # a tracing backend must never be able to stop the demo starting. The root
+      # .env sets it true; this default only covers a bare `docker compose up`.
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-elite_group_test_drive_demo}
+      # Blank = the default US endpoint (api.smith.langchain.com). Set only to
+      # move to eu.api.smith.langchain.com, which requires an EU-region key.
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
+      # Voice call — the WS call channel (see CLAUDE.md AD-C amendment). Named
+      # here because this block is an ALLOWLIST: without these lines a CALL_*
+      # value in the root .env never reaches the container and the call button
+      # stays dead with nothing on screen explaining why. `:-false` like every
+      # other optional feature — a bare `docker compose up` runs the text demo
+      # exactly as before; the root .env opts in.
+      CALL_ENABLED: ${CALL_ENABLED:-false}
+      CALL_MAX_MINUTES: ${CALL_MAX_MINUTES:-10}
+      CALL_SILENCE_HANGUP_SECONDS: ${CALL_SILENCE_HANGUP_SECONDS:-60}
+      # The idle ladder's first rung. NAMED HERE because the allowlist is the
+      # only way it reaches the container — it was missing, so setting it in a
+      # .env silently did nothing and the default was the only value that ever
+      # applied.
+      CALL_NUDGE_SECONDS: ${CALL_NUDGE_SECONDS:-10}
+      CALL_VAD_SILENCE_MS: ${CALL_VAD_SILENCE_MS:-900}
+      CALL_UTTERANCE_MAX_SECONDS: ${CALL_UTTERANCE_MAX_SECONDS:-60}
+      # The 2026-07-29..31 call rebuild (engine, persona, transport — see the
+      # CLAUDE.md rebuild block). Same allowlist rule: every one of these must
+      # be NAMED or a root-.env value never reaches the container — the
+      # symptom is a call that silently runs the wrong engine/persona, not an
+      # error. Defaults mirror app/config.py, so leaving the .env silent
+      # gives the code's own behaviour.
+      CALL_MODE: ${CALL_MODE:-pipeline}
+      CALL_PERSONA: ${CALL_PERSONA:-classic}
+      CALL_NATURAL_VOICE: ${CALL_NATURAL_VOICE:-cedar}
+      REALTIME_AGENT_MODEL: ${REALTIME_AGENT_MODEL:-gpt-realtime}
+      REALTIME_VOICE: ${REALTIME_VOICE:-marin}
+      CALL_TRANSPORT: ${CALL_TRANSPORT:-webrtc}
+      RTC_STUN_URL: ${RTC_STUN_URL:-}
+      # THE TURN RELAY (2026-08-04). Named here for the usual reason — this
+      # block is an ALLOWLIST, not env_file — and the failure mode is the
+      # nastiest kind: with these lines missing the relay is configured in the
+      # .env, believed to be working, and never reaches the container, so every
+      # call keeps failing ICE and falling back to WS-PCM with nothing in any
+      # log to say why. Empty = no relay, which is the pre-2026-08-04 behaviour
+      # and is correct for local dev (both ends are the same machine there).
+      RTC_TURN_URL: ${RTC_TURN_URL:-}
+      RTC_TURN_USERNAME: ${RTC_TURN_USERNAME:-}
+      RTC_TURN_CREDENTIAL: ${RTC_TURN_CREDENTIAL:-}
+      # The BROWSER's STUN server, handed to it in call_started. Separate from
+      # RTC_STUN_URL because that one may name a private address the container
+      # uses, while this one is sent to a browser on the internet and must be
+      # publicly resolvable. Unauthenticated (STUN binding needs no secret).
+      RTC_CLIENT_STUN_URL: ${RTC_CLIENT_STUN_URL:-}
+      # ICE diagnostics — aioice's per-check DEBUG log. Off by default: chatty,
+      # and the check lines carry the customer's public IP unredacted.
+      # Time-limited relay credentials (TURN REST API). The secret never
+      # leaves the server; the browser only ever sees a minted, expiring pair.
+      RTC_TURN_SECRET: ${RTC_TURN_SECRET:-}
+      RTC_TURN_TTL_SECONDS: ${RTC_TURN_TTL_SECONDS:-3600}
+      # The browser's own relay — required for clients behind symmetric NAT,
+      # where a reflexive address cannot work. PUBLIC hostname.
+      RTC_CLIENT_TURN_URL: ${RTC_CLIENT_TURN_URL:-}
+      RTC_DEBUG: ${RTC_DEBUG:-false}
+      CALL_SPEECH_GATE: ${CALL_SPEECH_GATE:-true}
+      CALL_TURN_DETECTION: ${CALL_TURN_DETECTION:-server_vad}
+      CALL_VAD_EAGERNESS: ${CALL_VAD_EAGERNESS:-auto}
+      CALL_STT_MODEL: ${CALL_STT_MODEL:-gpt-4o-mini-transcribe}
+      CALL_AGENT_MODEL: ${CALL_AGENT_MODEL:-}
+      CALL_AGENT_EFFORT: ${CALL_AGENT_EFFORT:-low}
+      SF_ENABLED: ${SF_ENABLED:-false}
+      # Google Maps (nearest-showroom feature). Optional/allowlisted: unset =>
+      # feature falls back to straight-line distance + directions links (no geocoding).
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      SF_DOMAIN: ${SF_DOMAIN:-}
+      SF_CLIENT_ID: ${SF_CLIENT_ID:-}
+      SF_CLIENT_SECRET: ${SF_CLIENT_SECRET:-}
+      SF_API_VERSION: ${SF_API_VERSION:-v62.0}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./elite-group-frontend
+    depends_on:
+      - backend
+    ports:
+      # host 8080 → nginx:80 (avoids clashing with the Vite dev server on 5173).
+      - "8080:80"
+
+  sf-sync:
+    build: ./elite-group-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://elite:elite@postgres:5432/elite
+      # Same clock as the backend, and NOT optional: the sidecar polls
+      # `bookings.updated_at > its own datetime.now() - 2min`. Left on UTC while
+      # the backend runs Dubai, every row would look 4 hours old and no booking
+      # would ever reach Salesforce — a silent stop, no error anywhere.
+      TZ: Asia/Dubai
+      SF_ENABLED: ${SF_ENABLED:-false}
+      SF_DOMAIN: ${SF_DOMAIN:-}
+      SF_CLIENT_ID: ${SF_CLIENT_ID:-}
+      SF_CLIENT_SECRET: ${SF_CLIENT_SECRET:-}
+      SF_SYNC_POLL_SECONDS: ${SF_SYNC_POLL_SECONDS:-5}
+    volumes:
+      - ./sf_sync.py:/sf_sync.py:ro
+    command: ["python", "/sf_sync.py"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
