@@ -1,3 +1,57 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic-settings==2.7.0
+fastapi==0.139.1
+uvicorn[standard]==0.51.0
+# The voice-call channel: the gateway's own WS is served by uvicorn, but the
+# streaming STT relay (app/services/realtime_stt) DIALS OUT over websockets.
+# Pinned explicitly rather than ridden as uvicorn[standard]'s transitive dep —
+# a dep that code imports by name belongs in this file.
+websockets==15.0.1
+sqlalchemy==2.0.51
+anthropic==0.116.0
+python-dotenv==1.2.2
+pydantic==2.13.4
+# Agent loop (AD-H): a LangGraph StateGraph + SqliteSaver checkpointer. The agent
+# node stays on the raw Anthropic SDK (AD-A streaming); we do NOT pull in
+# langchain-anthropic (would be a second source of truth for tool schemas and
+# fights AD-A). langgraph-checkpoint-sqlite supplies SqliteSaver (thread_id=session_id).
+langgraph==1.2.9
+langgraph-checkpoint-sqlite==3.1.0
+# LangSmith tracing. Already present TRANSITIVELY (langgraph -> langchain-core
+# requires it), so this installs nothing new — it is declared for the same
+# reason httpx is below: graph.py imports `langsmith.wrappers.wrap_anthropic` by
+# name, and an undeclared direct import breaks the day langchain-core drops the
+# dependency. Inert unless LANGSMITH_TRACING is set (see the root .env.example).
+langsmith==0.10.6
+# Postgres driver — matches the postgresql+psycopg:// URL used by docker-compose
+# (SETUP.md "Switch to Postgres"). Unused by the SQLite dev default. (AD-G)
+psycopg[binary]>=3.1
+# Voice notes, INPUT ONLY (2026-07-21 scope override). Anthropic has no audio
+# API, so transcription cannot reuse the provider switch in config.py — this is
+# the only non-Anthropic model vendor in the stack, and the only path that sends
+# customer data out of region (flagged on the D1 PDPL checklist).
+#
+# Used ONLY by services/voice.py, and constructed lazily there, so the app boots
+# and the text demo runs unchanged with OPENAI_API_KEY unset.
+openai==2.46.0
+# Multipart form parsing — required by FastAPI to accept UploadFile at all
+# (POST /api/voice/transcribe). Not previously needed: every other route is JSON.
+python-multipart==0.0.32
+# Accelerated reminder clock (AD-F): in-process scheduler that reads
+# Notification.send_at and sends due WhatsApp rows (services/dispatcher). No
+# Celery/Redis — a single-process demo. Only imported when NOTIFY_DISPATCH_ENABLED.
+apscheduler==3.11.3
+# Direct HTTP client for the WhatsApp Cloud API call (services/whatsapp). Already
+# present transitively via anthropic/openai; declared here now that it is used
+# directly.
+httpx==0.28.1
+# Silero VAD inference for the call's speech gate (services/speech_gate) — the
+# model itself is vendored at app/assets/silero_vad.onnx; this runs it on CPU,
+# locally, no network. Brings numpy.
+onnxruntime==1.28.0
+# WebRTC transport for the call's audio (services/rtc_transport): native AEC3
+# echo cancellation at the browser, Opus bandwidth, jitter handling. The WS
+# keeps signaling and every JSON event; ws-PCM remains the fallback.
+aiortc==1.15.0
+# C3 brochures: one page per model, generated from the catalogue. Pure
+# Python with no system libraries — chosen over hand-rolling a PDF writer,
+# which is fiddly (xref offsets) and ours to maintain forever.
+reportlab==4.2.5

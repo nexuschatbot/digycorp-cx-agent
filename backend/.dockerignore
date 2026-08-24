@@ -1,0 +1,18 @@
+# Keep the build context small and free of secrets / local artifacts (AD-G).
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local databases — never ship a dev SQLite file into the image.
+*.db
+
+# Secrets — never bake .env into an image layer.
+.env
+
+# Test artifacts.
+.pytest_cache/
+
+# VCS / OS noise.
+.git/
+.gitignore
+.DS_Store
