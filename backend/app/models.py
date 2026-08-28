@@ -1466,6 +1466,17 @@ class TurnTrace(Base):
     # --- routing ----------------------------------------------------------- #
     routed_to: Mapped[str | None] = mapped_column(String(32), index=True)
     previous_agent: Mapped[str | None] = mapped_column(String(32))
+    # WHICH PROMPT ANSWERED THIS TURN (T2.4), e.g. {"base": "v1", "aisha": "v2"}.
+    #
+    # THIS IS WHAT MAKES A QUALITY CHANGE ATTRIBUTABLE. Prompts are editable
+    # without a deploy from Phase 2, so "she got colder last Tuesday" has no
+    # commit to point at — the git history of app/agents/ says WHAT changed and
+    # this column says WHICH TURNS RAN IT. Without both, a prompt regression is
+    # unfalsifiable.
+    #
+    # Nullable: turns recorded before this column existed carry no value, and a
+    # null must read as "not recorded", never as "v1".
+    prompt_versions: Mapped[dict | None] = mapped_column(JSON)
     # Which layer of the cascade decided: "prefilter" | "sticky" | "classifier".
     # The share of turns settled without a model call is a cost AND latency
     # metric, and it is the first thing to look at when the voice p95 moves.

@@ -35,14 +35,30 @@ from dataclasses import dataclass, field
 
 from app.agent import tool_binding
 from app.agent.prompts import anchors as _anchors
-from app.agent.prompts import base, bookingmanagement, compose, testdrive
+from app.agents import loader
 from app.tools import REGISTRY
 
-_MODULES = {
-    "base": base,
-    "testdrive": testdrive,
-    "bookingmanagement": bookingmanagement,
-}
+
+def _blocks() -> dict[tuple[str, str], str]:
+    """Every prompt block as {(journey, SECTION): text}.
+
+    READ FROM THE MARKDOWN, NOT FROM PYTHON CONSTANTS (T2.1). The prose moved to
+    app/agents/*/v1.md, and reading it from anywhere else would give this check a
+    second copy that drifts from the one that actually ships.
+
+    THE JOURNEY KEY IS RECOVERED FROM PROVENANCE. testdrive and bookingmanagement
+    merged into one `aisha` file, but tool bindings are still per journey — so
+    the origin marker written by the migration is what keeps this check as sharp
+    as it was. Without it, a bookingmanagement block naming a testdrive-only tool
+    would become invisible, which is precisely the defect this file exists for.
+    """
+    out: dict[tuple[str, str], str] = {}
+    for agent in ("base", "aisha"):
+        texts = loader.sections(agent)
+        origin = loader.origins(agent)
+        for name, text in texts.items():
+            out[(origin.get(name, agent), name)] = text
+    return out
 
 # S7a scoped the anchors, so they are checked per agent exactly like the body
 # blocks: an anchor only counts against an agent that actually receives it.
@@ -54,12 +70,8 @@ def _mentions(text: str, tool: str) -> bool:
 
 
 def blocks_naming(tool: str) -> list[tuple[str, str]]:
-    """Every (module, CONSTANT) block whose prose names `tool`."""
-    out = []
-    for module_name, const in compose.SINGLE_AGENT_ORDER:
-        if _mentions(getattr(_MODULES[module_name], const), tool):
-            out.append((module_name, const))
-    return out
+    """Every (journey, SECTION) block whose prose names `tool`."""
+    return [key for key, text in _blocks().items() if _mentions(text, tool)]
 
 
 def anchors_naming(tool: str, agent: str | None = None) -> list[str]:
@@ -85,7 +97,8 @@ class AgentReport:
 
 def check(agent: str) -> AgentReport:
     allowed = tool_binding.tools_for(agent)
-    body_blocks = compose.JOURNEY_ORDER(agent)
+    # What this journey actually receives: every base block, plus its own.
+    body_blocks = [k for k in _blocks() if k[0] in ("base", agent)]
     report = AgentReport(agent=agent)
 
     for tool in REGISTRY:

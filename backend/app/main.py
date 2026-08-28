@@ -93,6 +93,26 @@ async def lifespan(app: FastAPI):
 
         prewarm_cache()
 
+    # Prompt versions (T2.3/T2.4): verify every live version BEFORE serving, and
+    # record an audit row if the activation changed since last boot.
+    #
+    # LOUD, NOT FATAL. In Phase 2 v1 is the first version, so there is no
+    # previous one to fall back to and refusing the boot would help nobody. The
+    # gate's job here is that a broken prompt is IMPOSSIBLE TO MISS in the logs;
+    # from Phase 5, when versions accumulate, the fallback becomes real.
+    try:
+        from app.agents import gate as _prompt_gate
+
+        _reports = _prompt_gate.enforce()
+        if all(r.ok for r in _reports.values()):
+            from app.db import SessionLocal as _S
+
+            with _S() as _s:
+                if _prompt_gate.record_activation(_s):
+                    _s.commit()
+    except Exception:  # noqa: BLE001
+        _app_log.exception("prompt version check failed — serving whatever loaded")
+
     # Retrieval index (T1.4): build or fetch the brochure and knowledge vectors
     # so the first customer does not pay the ~14s embedding pass. Gated on the
     # same flag as the rest of retrieval — with it off nothing here runs, and

@@ -24,6 +24,20 @@ from app.models import TurnTrace
 _log = logging.getLogger(__name__)
 
 
+def _live_versions() -> dict | None:
+    """Which prompt version each agent is running, or None if unknowable.
+
+    Never raises: telemetry must not be able to break a turn, and this is the
+    one field that reaches into the prompt layer.
+    """
+    try:
+        from app.agents import loader
+
+        return loader.active_versions()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def record(
     db: Session,
     *,
@@ -35,6 +49,7 @@ def record(
     user_message: str | None = None,
     detected_lang: str | None = None,
     previous_agent: str | None = None,
+    prompt_versions: dict | None = None,
     tool_calls: list | None = None,
     agent_response: str | None = None,
     tokens_in: int | None = None,
@@ -58,6 +73,10 @@ def record(
             detected_lang=detected_lang,
             routed_to=routed_to,
             previous_agent=previous_agent,
+            # DEFAULTS TO THE LIVE VERSIONS rather than requiring every caller
+            # to pass them: a turn that forgot would record null and look like
+            # a pre-Phase-2 turn, which is a different and misleading claim.
+            prompt_versions=prompt_versions if prompt_versions is not None else _live_versions(),
             routed_by=getattr(routing, "layer", None) if routing else None,
             router_reason=(getattr(routing, "reason", None) or None) if routing else None,
             # Only a classifier turn has these. See the module docstring.

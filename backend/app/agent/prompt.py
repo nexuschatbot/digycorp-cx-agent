@@ -129,7 +129,7 @@ from datetime import date, timedelta
 
 from app import config
 from app.agent.prompts import anchors as _anchors
-from app.agent.prompts import compose as _compose
+from app.agents import loader as _loader
 
 # The escalation section (rule 13) and the guardrails give out Elite's helpline.
 # The number lives in ONE place — config.ELITE_HELPLINE, the same value the
@@ -162,16 +162,21 @@ _HELPLINE_TOKEN = "«HELPLINE»"
 # don't — measure first, with tests/test_chat_register.py.
 # ---------------------------------------------------------------------------
 
-_PROMPT_BODY = _compose.single_agent_body()
-# S5 SPLIT. The prose that used to sit here as one literal now lives in
-# prompts/{base,testdrive,bookingmanagement}.py, moved verbatim — every constant
-# there is an exact slice of what was here. _compose.single_agent_body()
-# reassembles them in the ORIGINAL ORDER, so this name still holds exactly the
-# string it always did; tests/test_prompt_split.py asserts that byte-for-byte
-# against tests/fixtures/prompt_body_original.txt.
+_PROMPT_BODY = _loader.single_agent_body()
+# S5 SPLIT, THEN T2.1 MIGRATION. The prose that used to sit here as one literal
+# was first split into prompts/{base,testdrive,bookingmanagement}.py (verbatim
+# slices), and at T2.1 moved again into app/agents/{base,aisha}/v1.md — where it
+# can be edited, versioned and rolled back WITHOUT A DEPLOY.
 #
-# The per-agent bodies (_compose.body_for) are not used yet — the router lands in
-# S7. Until then production runs the single-agent body, unchanged.
+# THIS NAME STILL HOLDS EXACTLY THE STRING IT ALWAYS DID. loader.single_agent_
+# body() reassembles the same blocks in the same order, and
+# tests/test_prompt_split.py asserts it byte-for-byte against
+# tests/fixtures/prompt_body_original.txt — the same fixture that has guarded
+# this text since S5, now pointed at the Markdown.
+#
+# READ ONCE AT IMPORT, deliberately. The assembled string is the cached prompt
+# prefix; re-reading files per turn could vary it by a byte and turn every cache
+# read into a write. See app/agents/loader.py.
 
 # The current date AND the resolved relative dates, injected server-side per turn.
 #
@@ -460,7 +465,7 @@ def _resolved_body(agent: str | None = None) -> str:
     (the default, and everything that has not been migrated to the router yet)
     returns the single-agent body exactly as it always was.
     """
-    body = _compose.body_for(agent) if agent else _PROMPT_BODY
+    body = _loader.body_for(agent) if agent else _PROMPT_BODY
     return body.replace(_HELPLINE_TOKEN, config.ELITE_HELPLINE)
 
 

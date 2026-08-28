@@ -519,6 +519,30 @@ def _cached_messages(messages: list) -> list:
     return [*head, last]
 
 
+def _prefixes_to_warm() -> list[tuple[str, list]]:
+    """Every distinct (label, tool schema list) worth a cache entry.
+
+    DEDUPED BY THE SCHEMA LIST ITSELF: two journeys binding identical tools
+    share one cache entry, and warming it twice would pay the write twice for
+    nothing. Falls back to the full set if the binding module cannot enumerate.
+    """
+    out: list[tuple[str, list]] = [("full", TOOL_SCHEMAS)]
+    seen = {tuple(s["name"] for s in TOOL_SCHEMAS)}
+    try:
+        from app.agent import tool_binding
+
+        for agent in getattr(tool_binding, "AGENTS", ()) or ():
+            schemas = tool_binding.schemas_for(agent)
+            key = tuple(s["name"] for s in schemas)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((agent, schemas))
+    except Exception:  # noqa: BLE001 — a warm-up must never break a boot
+        log.warning("could not enumerate per-agent tool bindings — warming the full set only")
+    return out
+
+
 def prewarm_cache() -> None:
     """Write the cached prefix once at startup. Never raises.
 
@@ -532,22 +556,36 @@ def prewarm_cache() -> None:
     immediately with empty content — no output tokens billed, no reply to throw
     away. Note the 5-minute TTL still applies: this covers the start of the
     demo, not a booth that then sits idle for ten minutes.
+
+    ONE PREFIX PER TOOL BINDING, NOT ONE OVERALL (T2.5). The cached prefix is
+    `tools -> system`, so a DIFFERENT tool set is a different cache entry. The
+    router already binds narrower tool sets per journey, and Phase 5 gives every
+    sub-agent its own — warming a single prefix leaves the rest cold, and the
+    first customer after each deploy pays the 1.25x write for whichever binding
+    they happen to hit. That is exactly the moment this function exists to avoid.
     """
     try:
         client = _build_client()
-        client.messages.create(
-            model=AGENT_MODEL,
-            max_tokens=0,
-            system=_system_blocks(system_prompt()),
-            tools=TOOL_SCHEMAS,
-            messages=[{"role": "user", "content": "warmup"}],
+        warmed = 0
+        for label, schemas in _prefixes_to_warm():
+            client.messages.create(
+                model=AGENT_MODEL,
+                max_tokens=0,
+                system=_system_blocks(system_prompt()),
+                tools=schemas,
+                messages=[{"role": "user", "content": "warmup"}],
             # Mirror the live calls' effort (AGENT_EFFORT) so this warmup is
             # request-shaped exactly like the traffic it warms the cache for —
             # a shape difference here would risk writing an entry the real
             # calls cannot read, which is this function's entire purpose.
-            **({"output_config": {"effort": AGENT_EFFORT}} if AGENT_EFFORT else {}),
+                **({"output_config": {"effort": AGENT_EFFORT}} if AGENT_EFFORT else {}),
+            )
+            warmed += 1
+            log.info("prompt cache pre-warmed — binding=%s tools=%d", label, len(schemas))
+        log.info(
+            "prompt cache pre-warmed — %d prefix(es), model=%s effort=%s",
+            warmed, AGENT_MODEL, AGENT_EFFORT or "default",
         )
-        log.info("prompt cache pre-warmed — model=%s effort=%s", AGENT_MODEL, AGENT_EFFORT or "default")
     except Exception:  # noqa: BLE001 — the demo must start even if this fails
         log.warning(
             "prompt cache pre-warm failed; first turn will pay the cache write",

@@ -32,10 +32,13 @@ def routing_on(monkeypatch):
 def test_fallback_degrades_to_the_full_single_agent_capability():
     """There is no fallback prompt and no fallback tool set — asking raises."""
     from app.agent.prompt import system_prompt
-    from app.agent.prompts import compose
+    from app.agents import loader
 
-    with pytest.raises(ValueError):
-        compose.body_for("fallback")
+    # RE-POINTED AT T2.1: the prose moved from prompts/compose.py to
+    # app/agents/*/v1.md, so the refusal now comes from the loader. The claim is
+    # unchanged — "fallback" is not an agent and must not resolve to one.
+    with pytest.raises(loader.PromptError):
+        loader.body_for("fallback")
 
     # So run_turn must never hand it on.
     assert _journey_agent(Routing("fallback", "unclear"), None) is None
