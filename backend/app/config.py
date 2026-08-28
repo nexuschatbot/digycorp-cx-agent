@@ -118,6 +118,24 @@ ROUTER_ENABLED: bool = _get_bool("ROUTER_ENABLED", True)
 # own. A business constant, not customer data, so it lives in config, not the DB.
 ELITE_HELPLINE: str = os.getenv("ELITE_HELPLINE", "800-535483")
 
+# --------------------------------------------------------------------------- #
+# Retrieval (T1.1-T1.6)
+# --------------------------------------------------------------------------- #
+# Cache for the retrieval index and its chunks, and NOTHING ELSE — see
+# services/cache.py. Empty or unreachable is a supported state: the index is
+# rebuilt in process (~14s once) and every turn behaves identically.
+REDIS_URL: str = os.getenv("REDIS_URL", "").strip()
+
+# THE KILL SWITCH, same pattern as ROUTER_ENABLED. Off by default, deliberately:
+# both halves of retrieval — the search_knowledge tool and the additive
+# catalogue pass — change what a customer is shown, and the T0.1 baseline has
+# not been re-measured against them. Flip it to see M2; flip it back with no
+# deploy.
+#
+# OFF MUST MEAN OFF. With this false, catalogue.search runs byte-identically to
+# how it ran before Phase 1 — not "runs the vector pass and discards it".
+RETRIEVAL_ENABLED: bool = _get_bool("RETRIEVAL_ENABLED", False)
+
 # Slot lock TTL (minutes) — abandoned conversations release inventory (FR-SL).
 SLOT_LOCK_TTL_MINUTES: int = _get_int("SLOT_LOCK_TTL_MINUTES", 10)
 

@@ -18,10 +18,15 @@ Two rules run through this whole module:
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import RETRIEVAL_ENABLED
 from app.models import FuelType, Showroom, VehicleModel, VehicleVariant
+
+log = logging.getLogger("app.services.catalogue")
 
 # --------------------------------------------------------------------------- #
 # Input normalisation
@@ -697,6 +702,49 @@ def search(
     )
     matched = _apply_filters(rows, **criteria)
 
+    # ADDITIVE VECTOR PASS (T1.6), OFF BY DEFAULT, AND ONLY WHEN THE SUBSTRING
+    # FILTER FOUND NOTHING. `body_type` is free text matched as a substring, so
+    # "family car", "off roader" and "something for camping" match zero rows and
+    # the customer's phrasing is simply discarded. This rescues those.
+    #
+    # It deliberately does NOT fire when the substring already matched — measured
+    # on this corpus, the embedding cannot beat lexical overlap there, and the
+    # X50/"suv" miss is NOT fixed by it. See retrieval/catalogue_pass.py.
+    #
+    # IT MAY ONLY ADD, AND ONLY BY LOOSENING THE FREE-TEXT FIELD. Every numeric
+    # constraint the customer stated is re-applied to each candidate, so a
+    # budget is never widened by a similarity score. _pick_spread and
+    # _ranked_for then run unchanged — the cap is still three.
+    #
+    # Gated on RETRIEVAL_ENABLED so "off" means byte-identical to pre-Phase-1
+    # behaviour, not "computed and discarded".
+    interpreted_loosely: str | None = None
+    if RETRIEVAL_ENABLED and not matched and (body_type or feature_query):
+        try:
+            from app.retrieval import catalogue_pass
+
+            extra = catalogue_pass.additional_candidates(
+                rows,
+                matched,
+                body_type=body_type,
+                feature_query=feature_query,
+                # The SAME filter, minus only the free-text field being
+                # loosened. Re-deriving it here would be a second definition of
+                # "fits the budget" waiting to drift from the first.
+                still_satisfies=lambda v: bool(
+                    _apply_filters([v], **criteria, skip=("body_type", "brand"))
+                ),
+            )
+            if extra:
+                # HONEST ABOUT WHAT HAPPENED. The customer's words matched no
+                # row literally, so the agent must not present these as having
+                # met a stated criterion — it offers them as an interpretation
+                # ("for a family I'd look at these") and can be corrected.
+                interpreted_loosely = body_type or feature_query
+                matched = list(extra)
+        except Exception:  # noqa: BLE001 — retrieval must never break a search
+            log.exception("catalogue vector pass skipped")
+
     # CAP AT THREE, SERVER-SIDE (FR-BK-09/10, rule 5). MAX_RECOMMENDATIONS was
     # previously applied only to nearest_alternatives, so the happy path — a
     # query that MATCHED — returned every hit, up to the whole nine-model
@@ -789,6 +837,11 @@ def search(
         "no_exact_match": not offered,
         "nearest_alternatives": [],
     }
+    if interpreted_loosely:
+        # Read by the agent, not by the UI: these cars were chosen by MEANING,
+        # not by a filter the customer's words actually satisfied. She should
+        # offer them as her reading of the request, not as a match.
+        result["interpreted_loosely"] = interpreted_loosely
 
     # RANKED_BY IS A RESULT-LEVEL KEY, NOT A PER-MATCH `basis`, and the two must
     # not be confused. Per-match `basis` means "why this car is here when others

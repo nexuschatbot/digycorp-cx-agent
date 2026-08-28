@@ -34,6 +34,7 @@ from app.config import (
     NOTIFY_DISPATCH_ENABLED,
     NOTIFY_POLL_SECONDS,
     PREWARM_PROMPT_CACHE,
+    RETRIEVAL_ENABLED,
     RTC_DEBUG,
 )
 from app.db import SessionLocal
@@ -91,6 +92,22 @@ async def lifespan(app: FastAPI):
         from app.agent.graph import prewarm_cache
 
         prewarm_cache()
+
+    # Retrieval index (T1.4): build or fetch the brochure and knowledge vectors
+    # so the first customer does not pay the ~14s embedding pass. Gated on the
+    # same flag as the rest of retrieval — with it off nothing here runs, and
+    # the 113MB model is never even loaded.
+    #
+    # WRAPPED, unlike the migration above. A schema the code disagrees with must
+    # stop the boot; a cold index must not. Retrieval degrades to the catalogue,
+    # which is the pre-Phase-1 behaviour.
+    if RETRIEVAL_ENABLED:
+        try:
+            from app.retrieval import index as _retrieval_index
+
+            _app_log.info("retrieval index: %s", _retrieval_index.warm())
+        except Exception:  # noqa: BLE001
+            _app_log.exception("retrieval index could not be warmed — degrading")
 
     # Notification dispatcher (AD-F): the in-process APScheduler that reads
     # Notification.send_at and sends due WhatsApp rows (confirmation + T-2h

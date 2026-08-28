@@ -52,7 +52,27 @@ httpx==0.28.1
 # Silero VAD inference for the call's speech gate (services/speech_gate) — the
 # model itself is vendored at app/assets/silero_vad.onnx; this runs it on CPU,
 # locally, no network. Brings numpy.
+#
+# ALSO RUNS THE EMBEDDING MODEL (T1.1): app/assets/multilingual-e5-small-int8.onnx,
+# vendored from Xenova/multilingual-e5-small. Same pattern, same reasons — CPU,
+# offline, no download at boot. NOT sentence-transformers/torch, which would put
+# 2-3GB into an image that also runs the test suite in CI.
 onnxruntime==1.28.0
+
+# Tokenizer for the embedding model. ONNX Runtime does tensors, not text, so
+# something has to turn a sentence into input_ids. This is the Rust tokenizers
+# library the model was exported with — a ~3MB wheel that reads the vendored
+# tokenizer.json. Deliberately NOT `transformers`, which would pull the whole
+# modelling stack to use one class.
+tokenizers==0.21.0
+
+# Cache for the retrieval index and its chunks — NOTHING ELSE (the plan's cache
+# decision). Cars, variants, stock and showrooms read straight from the DB every
+# time: nine models and 66 stock rows are served from memory faster than a
+# round-trip, and caching stock is the one staleness that reaches a customer.
+# Fail-open, exactly like services/salesforce.py: a dead Redis costs the CACHE,
+# never the turn.
+redis==5.2.1
 # WebRTC transport for the call's audio (services/rtc_transport): native AEC3
 # echo cancellation at the browser, Opus bandwidth, jitter handling. The WS
 # keeps signaling and every JSON event; ws-PCM remains the fallback.
