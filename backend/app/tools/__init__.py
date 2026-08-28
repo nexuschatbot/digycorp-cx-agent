@@ -206,4 +206,57 @@ REGISTRY: dict[str, dict] = {
 TOOL_SCHEMAS: list[dict] = [entry["schema"] for entry in REGISTRY.values()]
 TOOL_FNS = {name: entry["fn"] for name, entry in REGISTRY.items()}
 
-__all__ = ["REGISTRY", "TOOL_SCHEMAS", "TOOL_FNS"]
+
+# --------------------------------------------------------------------------- #
+# Which tools WRITE (T4.1)
+# --------------------------------------------------------------------------- #
+# DATA, NOT A COMMENT. The reads/writes split above was a `--- writes ---`
+# divider a reader had to honour; from Phase 4 it is an invariant a TEST
+# enforces, because the whole write architecture rests on it:
+#
+#   - no sub-agent may hold a write tool at all (they return proposals as data);
+#   - Aisha may hold the CONVERSATIONAL writes and no commercial one;
+#   - only the orchestrator books.
+#
+# None of that is checkable while "is this a write?" lives in a comment.
+#
+# THE SPLIT IS BY WHAT THE TOOL DOES TO THE DATABASE, not by how it feels.
+# `send_brochure` is a write because it queues a real message to a real phone;
+# `offer_options` is a read because it draws chips and touches nothing.
+WRITE_TOOLS: frozenset[str] = frozenset({
+    "find_or_create_customer",
+    "record_consent",
+    "send_brochure",
+    "lock_slot",
+    "acknowledge_licence_reminder",
+    "create_booking",
+    "save_memory",
+    "forget_me",
+    "reschedule_booking",
+    "cancel_booking",
+    "request_human_callback",
+    "close_conversation",
+})
+
+# COMMERCIAL writes: the ones that move inventory or money. From Phase 4 these
+# belong to the orchestrator alone — see app/orchestrator/write.py. The rest of
+# WRITE_TOOLS are acts of DIALOGUE (who you are, a yes, a licence
+# acknowledgement, a remembered preference, goodbye) and stay with whoever is
+# talking, because only Aisha talks.
+COMMERCIAL_WRITE_TOOLS: frozenset[str] = frozenset({
+    "lock_slot",
+    "create_booking",
+    "reschedule_booking",
+    "cancel_booking",
+})
+
+READ_TOOLS: frozenset[str] = frozenset(REGISTRY) - WRITE_TOOLS
+
+__all__ = [
+    "REGISTRY",
+    "TOOL_SCHEMAS",
+    "TOOL_FNS",
+    "WRITE_TOOLS",
+    "COMMERCIAL_WRITE_TOOLS",
+    "READ_TOOLS",
+]

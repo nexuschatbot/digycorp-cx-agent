@@ -163,7 +163,29 @@ def lock_slot_intent(body: LockSlotBody, db: Session = Depends(get_db)) -> dict:
     Returns the tool's own envelope verbatim — including the failure case
     ({"locked": false, "reason": "slot_no_longer_available"}) so the UI can
     re-offer gracefully, exactly as the agent would have.
+
+    GATED BY THE BOOKING STATE MACHINE (T4.4). This is the one tap that is a
+    COMMERCIAL write — it moves inventory — and a tap that bypassed the machine
+    would leave it and the database disagreeing about where the booking is. The
+    other two taps are conversational writes (a yes, an acknowledgement) and
+    belong to whoever is talking, so they stay direct.
+
+    THE MACHINE READS COLUMNS, NOT AGENT TURNS, which is what makes a tapped
+    licence acknowledgement advance it identically to a typed one — the tap sets
+    `slot.licence_ack` through the same tool the agent would have called.
     """
+    from app.orchestrator import booking_state
+
+    state = booking_state.read(db, body.session_id)
+    if "lock_slot" not in state.allowed:
+        # Reported as data, not raised: the UI re-offers, exactly as it does for
+        # a slot that was taken.
+        return {
+            "locked": False,
+            "reason": "not_valid_at_this_stage",
+            "stage": state.stage,
+            "next": booking_state.next_step(state),
+        }
     return _tap(db, body.session_id, "lock_slot", {"slot_id": body.slot_id})
 
 

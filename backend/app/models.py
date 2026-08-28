@@ -914,6 +914,25 @@ class ConversationTurn(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     session_id: Mapped[str] = mapped_column(String(64), index=True)
+    # CLOSES THE GAP services/erasure.py NAMED AND COULD NOT FIX (T4.6).
+    #
+    # Its docstring said it plainly: "ConversationTurn carries a session_id but
+    # no customer_id, so there is no direct customer -> conversations edge
+    # anywhere in the schema... A conversation where the customer was identified
+    # but no audited tool call ever ran is therefore unreachable, and its
+    # transcript would survive. Closing that gap properly means putting
+    # customer_id on ConversationTurn at identification time — a schema change,
+    # deliberately not smuggled in here."
+    #
+    # Alembic removed that objection (T0.3), so here it is.
+    #
+    # NULLABLE, AND STAYS NULLABLE. A turn spoken before anyone said who they
+    # were genuinely has no customer, and back-filling it with a guess would be
+    # worse than the gap: it would attach one person's words to another's record.
+    # It is set at identification and back-filled across the session then.
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customers.id"), index=True
+    )
     speaker: Mapped[Speaker] = mapped_column(SAEnum(Speaker))
     lang: Mapped[Language] = mapped_column(SAEnum(Language))
     text: Mapped[str] = mapped_column(Text)  # native script, never translated

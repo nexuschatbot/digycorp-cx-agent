@@ -52,6 +52,7 @@ from app.models import (
     Booking,
     BookingStatus,
     ConversationTurn,
+    TurnTrace,
     Customer,
     DeviceLink,
     HandoffToken,
@@ -87,9 +88,15 @@ def sessions_for_customer(db: Session, customer_id: int, *, current: str | None 
       - the session asking for the erasure, passed in as `current`
 
     A conversation where the customer was identified but no audited tool call
-    ever ran is therefore unreachable, and its transcript would survive. Closing
-    that gap properly means putting customer_id on ConversationTurn at
-    identification time — a schema change, deliberately not smuggled in here.
+    ever ran is therefore unreachable BY THIS FUNCTION.
+
+    THAT GAP IS NOW CLOSED ELSEWHERE (T4.6), and this docstring is left standing
+    because the limit it describes is still true of THIS function. ConversationTurn
+    carries a customer_id from 2026-08-28, so `forget` deletes transcripts by
+    CUSTOMER as well as by session — the two run together, because turns spoken
+    before identification carry a null customer_id and are only reachable by
+    session, while turns in a session this function never found are only
+    reachable by customer. Neither sweep is redundant.
     """
     found: set[str] = set()
     if current:
@@ -262,6 +269,17 @@ def purge(
         released += 1
     counts["slots_released"] = released
 
+    # TRANSCRIPTS BY CUSTOMER (T4.6) — the gap this module's own docstring named.
+    # ConversationTurn now carries customer_id, so a conversation where the
+    # customer was identified but no audited tool call ever ran is reachable at
+    # last. Runs IN ADDITION to the session sweep above, never instead of it:
+    # turns spoken before identification carry a null customer_id and are only
+    # reachable by session.
+    _run(
+        "conversation_turns_by_customer",
+        sa_delete(ConversationTurn).where(ConversationTurn.customer_id == customer_id),
+    )
+
     _run("waitlist", sa_delete(Waitlist).where(Waitlist.customer_id == customer_id))
     _run(
         "handoff_tokens",
@@ -290,8 +308,25 @@ def purge(
         # so both are knowingly traded for a literal erasure. The single receipt
         # written below is what keeps "we honoured it" provable at all.
         _run("audit_events", sa_delete(AuditEvent).where(AuditEvent.session.in_(sessions)))
+        # TURN TRACE (T4.6). models.py has declared this in scope for erasure
+        # since it was written; nothing ever deleted it. It holds the customer's
+        # own message text and, from Phase 3, the routing decision for every
+        # turn — so leaving it behind made "forget me" a partial delete that
+        # LOOKED complete.
+        _run(
+            "turn_trace",
+            sa_delete(TurnTrace).where(TurnTrace.session_id.in_(sessions)),
+        )
     else:
         counts["speech_clips"] = counts["conversation_turns"] = counts["audit_events"] = 0
+        counts["turn_trace"] = 0
+
+    # And by customer_id, for traces recorded under a session the sweep above
+    # could not reach — the same belt-and-braces the audit stragglers get.
+    _run(
+        "turn_trace_by_customer",
+        sa_delete(TurnTrace).where(TurnTrace.customer_id == customer_id),
+    )
 
     # Also catch audit rows attributable by payload but recorded under a session
     # the sweep above did not reach.

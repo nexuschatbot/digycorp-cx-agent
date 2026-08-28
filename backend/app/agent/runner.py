@@ -222,6 +222,45 @@ def _journey_agent(routing, previous_agent: str | None) -> str | None:
     return previous_agent
 
 
+def _attribute_session(db, graph, config, session_id: str) -> None:
+    """Stamp this session's identified customer onto its TRANSCRIPT (T4.6).
+
+    THE EXACT COUNTERPART OF _attach_voice_customer ABOVE, deliberately written
+    to the same shape and called from the same place, because it solves the same
+    problem for a different table: identification happens mid-conversation, and
+    the turns before it are as much the customer's words as the ones after.
+
+    THE GAP THIS CLOSES was named in services/erasure.py's own docstring — "a
+    conversation where the customer was identified but no audited tool call ever
+    ran is therefore unreachable, and its transcript would survive". It could
+    not be fixed there without a schema change; ConversationTurn.customer_id is
+    that change.
+
+    Idempotent and cheap: only ever touches rows where customer_id is null.
+
+    Never allowed to break a turn, for the same reason as its sibling — a
+    customer heard a real answer, and failing to backfill a pointer is not a
+    reason to lose it.
+    """
+    try:
+        snapshot = graph.get_state(config)
+        state = snapshot.values if snapshot else {}
+        customer_id = state.get("customer_id") if isinstance(state, dict) else None
+        if not customer_id:
+            return
+        from sqlalchemy import update
+
+        from app.models import ConversationTurn as _CT
+
+        db.execute(
+            update(_CT)
+            .where(_CT.session_id == session_id, _CT.customer_id.is_(None))
+            .values(customer_id=customer_id)
+        )
+    except Exception:  # noqa: BLE001 — a backfill must never cost a reply
+        log.warning("could not attribute transcript for %s", session_id, exc_info=True)
+
+
 def run_turn(
     session_id: str,
     message: str,
@@ -277,6 +316,11 @@ def run_turn(
                 lang=Language(user_lang), text=message,
                 # Null for a typed turn; the recording's id for a spoken one.
                 audio_id=audio_id,
+                # customer_id is DELIBERATELY NOT SET HERE. This row is written
+                # before the graph runs, so nobody has been identified yet this
+                # turn — and a conversation usually opens anonymous anyway.
+                # _attribute_session below back-fills the whole session the
+                # moment there is somebody to attribute it to (T4.6).
             ))
             db.commit()
 
@@ -434,6 +478,14 @@ def run_turn(
         # recordings made before it to that customer, so "forget me" can
         # find them. No-op on every turn after the first that identifies.
         _attach_voice_customer(db, graph, config, session_id)
+        # THE SAME MOVE FOR TRANSCRIPTS (T4.6), and it belongs right here for
+        # the same reason: a conversation opens anonymous and becomes
+        # identified partway through, so the turns BEFORE that moment are the
+        # customer's words too. Back-filling them is what lets "forget me"
+        # reach a transcript from a session no audited tool call ever touched —
+        # the gap services/erasure.py named and could not close without a
+        # schema change.
+        _attribute_session(db, graph, config, session_id)
         db.commit()
         # `turn_id` is what read-aloud points at (2026-07-21). Read AFTER the
         # commit, because that is when the row has an id — and sent on `done`
