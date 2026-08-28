@@ -465,7 +465,11 @@ def _resolved_body(agent: str | None = None) -> str:
     (the default, and everything that has not been migrated to the router yet)
     returns the single-agent body exactly as it always was.
     """
-    body = _loader.body_for(agent) if agent else _PROMPT_BODY
+    # LEGACY JOURNEY, not the Phase 5 sub-agent of the same name. The shipped
+    # router asks for `testdrive`/`bookingmanagement`; those bodies live inside
+    # aisha/v1.md and differ from the sub-agent bodies — see
+    # loader.legacy_journey_body.
+    body = _loader.legacy_journey_body(agent) if agent else _PROMPT_BODY
     return body.replace(_HELPLINE_TOKEN, config.ELITE_HELPLINE)
 
 

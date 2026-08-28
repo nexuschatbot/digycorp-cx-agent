@@ -276,17 +276,20 @@ def test_the_deleted_python_prose_has_not_come_back():
 # The journey seam: two names, one file
 # --------------------------------------------------------------------------- #
 def test_the_live_journeys_still_get_their_own_bodies():
-    """THE AWKWARD SEAM OF PHASE 2, pinned.
+    """THE AWKWARD SEAM, now explicit. The shipped router binds tools per JOURNEY
+    (testdrive, bookingmanagement) and asks for a prompt per journey. Their prose
+    merged into one aisha/v1.md at T2.1, so those bodies are RECONSTRUCTED from
+    the provenance markers.
 
-    The router binds tools per JOURNEY (testdrive, bookingmanagement) and asks
-    for a prompt per journey. Their prose merged into one aisha/v1.md at T2.1,
-    so those bodies are now RECONSTRUCTED from the provenance markers. If that
-    reconstruction broke, each journey would silently receive the other's rules
-    — which is precisely the defect evals/differential.py exists to catch, made
-    invisible.
+    RE-POINTED AT T5.2. `body_for("testdrive")` used to answer this; it now
+    answers for the PHASE 5 SUB-AGENT of the same name, which is a different
+    body — it absorbs bookingmanagement and gives the car-choosing sections to
+    Sales. The legacy lookup got its own function precisely so the two can never
+    be confused, because handing the router the sub-agent's body would silently
+    drop sections it still has tools for.
     """
-    td = loader.body_for("testdrive")
-    bm = loader.body_for("bookingmanagement")
+    td = loader.legacy_journey_body("testdrive")
+    bm = loader.legacy_journey_body("bookingmanagement")
     blocks = loader.sections("aisha")
 
     assert blocks["RESCHEDULING"] in bm and blocks["RESCHEDULING"] not in td
@@ -295,29 +298,53 @@ def test_the_live_journeys_still_get_their_own_bodies():
         assert base_text in td and base_text in bm
 
 
-def test_a_name_that_is_both_a_card_and_a_journey_resolves_to_the_journey():
-    """`testdrive` is BOTH a Phase-3 routing card (a directory with frontmatter
-    and no prose) and one of today's live journeys (prose inside aisha/v1.md).
+def test_the_two_meanings_of_testdrive_resolve_to_different_bodies():
+    """`testdrive` names BOTH a live router journey and a Phase 5 sub-agent, and
+    they are not interchangeable:
 
-    Resolved by what actually HAS a body, never by which directory exists — the
-    card is the empty one, and resolving to it would hand the router a prompt
-    with no journey rules at all.
+        legacy journey  base + the 13 testdrive-origin sections of aisha/v1.md
+        sub-agent       base + testdrive/v1.md, which absorbs bookingmanagement
+                        and gives BROCHURE/COMPARE/MODEL_LOOKUP to Sales
+
+    Resolving both through one lookup is how the router silently loses the
+    sections it still binds tools for.
     """
-    assert (AGENTS_DIR / "testdrive").is_dir()
-    assert loader.sections("testdrive") == {}, "the card is bodyless in Phase 2"
-    assert len(loader.body_for("testdrive")) > 40_000, "resolved to the empty card"
+    legacy = loader.legacy_journey_body("testdrive")
+    sub = loader.body_for("testdrive")
+    assert legacy != sub
+
+    blocks = loader.sections("aisha")
+    assert blocks["BROCHURE"] in legacy, "the router still owns brochures"
+    assert blocks["BROCHURE"] not in sub, "the sub-agent gave them to Sales"
+    assert blocks["RESCHEDULING"] in sub, "the sub-agent absorbed bookingmanagement"
+    assert blocks["RESCHEDULING"] not in legacy
 
 
-def test_a_bodyless_card_with_no_journey_behind_it_is_refused():
-    """`sales` has no prose anywhere until Phase 5. Base alone is not a usable
-    prompt, so asking must raise rather than serve half of one."""
-    with pytest.raises(loader.PromptError, match="Phase 5"):
-        loader.body_for("sales")
+def test_every_sub_agent_now_has_a_body():
+    """Phase 2 shipped them bodyless on purpose; T5.2 fills them in."""
+    for agent in ("sales", "testdrive", "finance"):
+        assert loader.sections(agent), f"{agent} has no prompt body"
+        assert len(loader.body_for(agent)) > 20_000
+
+
+def test_a_sub_agent_body_carries_every_base_block():
+    """Grounding and data minimisation are not optional for anyone."""
+    for agent in ("sales", "testdrive", "finance"):
+        body = loader.body_for(agent)
+        for base_text in loader.sections("base").values():
+            assert base_text in body, agent
+
+
+def test_an_unknown_agent_is_still_refused():
+    with pytest.raises(loader.PromptError):
+        loader.body_for("concierge")
+    with pytest.raises(loader.PromptError):
+        loader.legacy_journey_body("sales")
 
 
 def test_the_journey_bodies_do_not_leak_into_each_other():
-    td = loader.body_for("testdrive")
-    bm = loader.body_for("bookingmanagement")
+    td = loader.legacy_journey_body("testdrive")
+    bm = loader.legacy_journey_body("bookingmanagement")
     origins = loader.origins("aisha")
     for name, text in loader.sections("aisha").items():
         if origins[name] == "testdrive":

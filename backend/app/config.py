@@ -136,6 +136,19 @@ REDIS_URL: str = os.getenv("REDIS_URL", "").strip()
 # how it ran before Phase 1 — not "runs the vector pass and discards it".
 RETRIEVAL_ENABLED: bool = _get_bool("RETRIEVAL_ENABLED", False)
 
+# --------------------------------------------------------------------------- #
+# Multi-agent (Phase 5)
+# --------------------------------------------------------------------------- #
+# THE KILL SWITCH, same pattern as ROUTER_ENABLED. Off by default: the whole
+# point of shipping behind a flag is that the single-agent path stays the one
+# customers meet until the baseline has been re-measured against the new one.
+#
+# PER CHANNEL, NOT GLOBAL. app/orchestrator/turn.enabled() excludes voice even
+# when this is true — `run_turn` is shared, and realtime has a 400ms first-audio
+# budget that a fan-out cannot meet (the measured Haiku round trip alone is
+# 1088ms p50). Voice keeps its own fast path until Phase 9.
+MULTI_AGENT_ENABLED: bool = _get_bool("MULTI_AGENT_ENABLED", False)
+
 # Slot lock TTL (minutes) — abandoned conversations release inventory (FR-SL).
 SLOT_LOCK_TTL_MINUTES: int = _get_int("SLOT_LOCK_TTL_MINUTES", 10)
 

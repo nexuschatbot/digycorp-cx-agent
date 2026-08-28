@@ -1131,7 +1131,19 @@ export function useChat(): UseChat {
         void showBookingCard(e.booking_ref, turnDirRef.current)
       },
       // Rule 17: seal this bubble, start the next. Never empties anything.
-      onTextBreak: breakBubble,
+      onTextBreak: () => {
+        // THE GAP THIS CLOSES (T5.7). onToken clears the working indicator on
+        // the FIRST token, and nothing restores it until a tool_event arrives.
+        // In a single-agent turn that gap is invisible. In a multi-agent turn
+        // Aisha streams her opening line, text_break seals it, and then the
+        // sub-agents run for seconds with NO indicator at all — the UI looks
+        // finished while the answer is still being gathered.
+        //
+        // A text_break means "that bubble is done and there is more coming",
+        // which is exactly when the indicator should come back.
+        breakBubble()
+        setWorking('Working…')
+      },
       // Rule 19a: the agent said goodbye and closed the chat server-side.
       // No line is appended — its farewell is the last bubble already, in
       // the customer's own language. This also CANCELS the idle timer, so

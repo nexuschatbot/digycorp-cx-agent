@@ -845,10 +845,16 @@ export default function App() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Write a message…"
             rows={1}
             dir="auto"
-            disabled={transcribing}
+            /* BLOCKED WHILE A TURN IS IN FLIGHT (T5.7). `submit()` already
+               refused to send while streaming, so nothing raced — but the box
+               stayed enabled, so pressing Enter did NOTHING AND SAID NOTHING.
+               Multi-agent turns run 4-6s instead of ~2s, which is long enough
+               that a customer types again and watches their message vanish.
+               Disabling it makes the wait visible instead of silent. */
+            disabled={transcribing || streaming}
+            placeholder={streaming ? 'Aisha is working…' : 'Write a message…'}
           />
           {streaming ? (
             /* Stop shares the round send slot, so it takes the round icon shape

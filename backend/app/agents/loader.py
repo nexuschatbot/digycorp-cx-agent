@@ -290,54 +290,68 @@ def single_agent_body() -> str:
         return _cache[key]
 
 
-def journey_order(agent: str) -> tuple[tuple[str, str], ...]:
-    """BASE blocks in their original order, then `agent`'s in theirs.
+# The two journeys the SHIPPED single-agent router binds tools for. Their prose
+# lives inside aisha/v1.md and is told apart by provenance.
+LEGACY_JOURNEYS: tuple[str, ...] = ("testdrive", "bookingmanagement")
 
-    RECOVERED FROM PROVENANCE, because the two journeys merged into one file at
-    T2.1 while TOOL BINDINGS ARE STILL PER JOURNEY. `testdrive` and
-    `bookingmanagement` are not directories — their sections live in aisha/v1.md
-    and are told apart by the origin marker the migration wrote above each one.
 
-    An agent with its own directory (base, aisha, and the Phase 5 sub-agents)
-    resolves to its own sections. Anything else must be a known journey, or it
-    is not an agent at all and asking raises — a body of "" is a prompt with no
-    persona and no guardrails.
+def _base_blocks() -> list[str]:
+    """Every base section, in the order it ships in."""
+    blocks = sections("base")
+    return [blocks[n] for a, n in SINGLE_AGENT_ORDER if a == "base"]
+
+
+def legacy_journey_body(journey: str) -> str:
+    """The prompt for one of TODAY'S two journeys: base + that journey's prose.
+
+    ⚠️ `testdrive` MEANS TWO DIFFERENT THINGS AND THIS IS THE OLDER ONE.
+
+    The shipped router binds tools for `testdrive` and `bookingmanagement`, and
+    their prose sits inside aisha/v1.md, separated by the provenance markers the
+    T2.1 migration wrote. The PHASE 5 sub-agent of the same name is a different
+    body: it absorbs bookingmanagement (per the plan's roster) and gives up the
+    four car-choosing sections to Sales.
+
+    They are not interchangeable and must not be resolved by the same lookup —
+    handing the router the sub-agent's body would silently drop the sections it
+    still has tools for, which is the orphaned-rule defect wearing a new hat.
     """
-    base_blocks = [(a, n) for a, n in SINGLE_AGENT_ORDER if a == "base"]
-
-    # A NAME CAN MEAN TWO THINGS RIGHT NOW, and this is the awkward seam of
-    # Phase 2. `testdrive` is BOTH a Phase-3 routing card (a directory with
-    # frontmatter and no prose) AND one of today's two live journeys (whose
-    # prose sits inside aisha/v1.md). Resolved by what actually HAS a body,
-    # never by which directory happens to exist — the card is the empty one.
-    own = [(a, n) for a, n in SINGLE_AGENT_ORDER if a == agent]
-    if own:
-        return tuple(base_blocks + own)
-
-    # The live journeys: sections inside aisha/v1.md, told apart by provenance.
+    if journey not in LEGACY_JOURNEYS:
+        raise PromptError(f"unknown legacy journey: {journey!r}")
+    blocks = sections("aisha")
     origin = origins("aisha")
-    journey = [("aisha", n) for a, n in SINGLE_AGENT_ORDER
-               if a == "aisha" and origin.get(n) == agent]
-    if journey:
-        return tuple(base_blocks + journey)
-
-    if (AGENTS_DIR / agent).is_dir():
-        # A routing card whose prose lands in Phase 5. Base alone is not a
-        # usable prompt, so say so rather than serve half of one.
-        raise PromptError(f"{agent} has no prompt body yet (its prose lands in Phase 5)")
-    raise PromptError(f"unknown agent: {agent!r}")
+    own = [
+        blocks[n] for a, n in SINGLE_AGENT_ORDER
+        if a == "aisha" and origin.get(n) == journey
+    ]
+    if not own:
+        raise PromptError(f"no prose found for legacy journey {journey!r}")
+    return "".join(_base_blocks() + own)
 
 
 def body_for(agent: str) -> str:
-    """The prompt body for one journey agent.
+    """The prompt body for one agent: every base block, then its own.
 
-    Byte-identical to what the deleted prompts/compose.body_for() produced —
-    tests/test_prompt_versions.py asserts the reconstruction against the same
-    fixture-derived expectations the router tests have always used.
+    SUB-AGENT SECTIONS ARE TAKEN IN FILE ORDER, not from SINGLE_AGENT_ORDER —
+    sales, testdrive and finance have sections that never appear in the
+    single-agent body at all, so that tuple cannot order them.
+
+    Legacy journey names route to legacy_journey_body; see its docstring for why
+    `testdrive` needs two answers.
     """
     if agent == "base":
-        return "".join(sections("base")[n] for _, n in SINGLE_AGENT_ORDER if _ == "base")
-    return "".join(sections(a)[n] for a, n in journey_order(agent))
+        return "".join(_base_blocks())
+
+    own = sections(agent) if (AGENTS_DIR / agent).is_dir() else {}
+    if own:
+        return "".join(_base_blocks() + list(own.values()))
+
+    if agent in LEGACY_JOURNEYS:
+        return legacy_journey_body(agent)
+
+    if (AGENTS_DIR / agent).is_dir():
+        raise PromptError(f"{agent} has no prompt body yet")
+    raise PromptError(f"unknown agent: {agent!r}")
 
 
 def reset() -> None:
