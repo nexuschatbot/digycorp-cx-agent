@@ -53,6 +53,21 @@ def test_the_markdown_reassembles_byte_identically_to_the_body_that_shipped():
     step. Regenerating it is NOT how you fix a failure here: if the body must
     change, change it in the MD and update the fixture in the same commit,
     deliberately.
+
+    IT HAS BEEN REGENERATED EXACTLY ONCE, AT PHASE 6, and that was the point of
+    Phase 6 — "the only deliberate re-authoring of battle-tested prose". Four
+    changes, each a decision rather than an edit:
+
+      - rule 13's scope: indicative on-road prices and instalments are now
+        Aisha's; the commitment is not;
+      - HOLDING THE LINE stops forbidding financing outright;
+      - the handoff may not promise a time, because it joins a queue and not a
+        phone that rings;
+      - the third-person leak the T0.1 baseline caught, where notes-to-self
+        written before a tool call were delivered to the customer verbatim.
+
+    The diff was read line by line before the fixture was accepted. Everything
+    since S5 was a MOVE; this was the first CHANGE.
     """
     assert loader.single_agent_body() == FIXTURE.read_text(encoding="utf-8")
 
