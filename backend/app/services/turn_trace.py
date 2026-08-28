@@ -50,6 +50,7 @@ def record(
     detected_lang: str | None = None,
     previous_agent: str | None = None,
     prompt_versions: dict | None = None,
+    steps: list | None = None,
     tool_calls: list | None = None,
     agent_response: str | None = None,
     tokens_in: int | None = None,
@@ -77,6 +78,7 @@ def record(
             # to pass them: a turn that forgot would record null and look like
             # a pre-Phase-2 turn, which is a different and misleading claim.
             prompt_versions=prompt_versions if prompt_versions is not None else _live_versions(),
+            steps=steps,
             routed_by=getattr(routing, "layer", None) if routing else None,
             router_reason=(getattr(routing, "reason", None) or None) if routing else None,
             # Only a classifier turn has these. See the module docstring.

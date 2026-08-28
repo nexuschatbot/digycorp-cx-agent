@@ -1477,6 +1477,21 @@ class TurnTrace(Base):
     # Nullable: turns recorded before this column existed carry no value, and a
     # null must read as "not recorded", never as "v1".
     prompt_versions: Mapped[dict | None] = mapped_column(JSON)
+    # PER-STEP ORCHESTRATION RECORD (T3.5): which agent ran, how it was chosen,
+    # how confident, how long, and whether it worked.
+    #
+    # DELIBERATELY NO BRIEF TEXT, and that is what unblocks this column. The
+    # plan sequenced T3.5 after the erasure work "because the column carries
+    # brief text, so it carries the profile" — family size, area, budget, the
+    # soft facts a customer volunteers. It does not: what lands here is the
+    # DECISION, not the request. So this adds no personal data that
+    # `user_message` on this same row does not already hold, and the erasure
+    # gap for turn_trace is exactly as it was — still real, still T4.6's.
+    #
+    # WHY THE SCORES ARE HERE AT ALL. The selection threshold was calibrated on
+    # 32 synthetic utterances; these rows are how it gets re-calibrated against
+    # real briefs, which is the only way that number stops being a guess.
+    steps: Mapped[list | None] = mapped_column(JSON)
     # Which layer of the cascade decided: "prefilter" | "sticky" | "classifier".
     # The share of turns settled without a model call is a cost AND latency
     # metric, and it is the first thing to look at when the voice p95 moves.
