@@ -1,0 +1,31 @@
+{
+  "_source": "Elite workbook, 'Fuel Consumption' data supplied 2026-08-28 (image).",
+  "_authoritative_column": "Fuel Consumption Per Liter (km/L) — Elite's decision.",
+  "_note": "NOT from the brochures. Nine of ten brochures publish no economy figure at all; only g700 does. This is the only source, which is why it lives here rather than in content/brochures/.",
+  "_repairs": [
+    "T2 Luxury Plus: sheet reads '1 to 11.5 km/L'. Stored as 11.0-11.5. The L/100km column (8.7-9.1) converts to exactly 11.0-11.5, so the leading '1' is a truncated '11'. No car does 1 km/L.",
+    "T1 Luxury: sheet reads '9.0 to 11.0 km'L' (apostrophe typo only). Value is CORRECT - 9.0-11.0 L/100km converts to 9.1-11.1 km/L. Stored as written."
+  ],
+  "_flagged_not_changed": [
+    "T2 i-DM: '18 km/L' is a single optimistic value; 5.5-6.7 L/100km converts to 14.9-18.2 km/L. Stored as Elite wrote it.",
+    "Dashing 1.6 Luxury: '9.7 to 10.3 km/L'. Lower bound should be 10.0 on the 9.7-10 L/100km conversion. Stored as written.",
+    "T1 Flagship: 13.7-14.7 km/L against Comfort/Luxury at 9-11 - a 40% jump within one model. Worth Elite confirming, as this workbook already had T1's Luxury/Flagship PRICES transposed."
+  ],
+  "variants": [
+    {"model": "Jetour G700",          "variant": "Comfort",      "km_per_l_min": 10.0, "km_per_l_max": 11.0,  "l_per_100km_min": null, "l_per_100km_max": null},
+    {"model": "Jetour G700",          "variant": "Luxury",       "km_per_l_min": 10.0, "km_per_l_max": 11.6,  "l_per_100km_min": null, "l_per_100km_max": null},
+    {"model": "Jetour G700",          "variant": "Flagship",     "km_per_l_min": 11.6, "km_per_l_max": 11.6,  "l_per_100km_min": null, "l_per_100km_max": null},
+    {"model": "Jetour T2 Luxury Plus","variant": null,           "km_per_l_min": 11.0, "km_per_l_max": 11.5,  "l_per_100km_min": 8.7,  "l_per_100km_max": 9.1,  "repaired": true},
+    {"model": "Jetour T2 i-DM",       "variant": null,           "km_per_l_min": 18.0, "km_per_l_max": 18.0,  "l_per_100km_min": 5.5,  "l_per_100km_max": 6.7},
+    {"model": "Jetour T1",            "variant": "Comfort",      "km_per_l_min": 10.0, "km_per_l_max": 10.0,  "l_per_100km_min": 9.0,  "l_per_100km_max": 11.0},
+    {"model": "Jetour T1",            "variant": "Luxury",       "km_per_l_min": 9.0,  "km_per_l_max": 11.0,  "l_per_100km_min": 9.0,  "l_per_100km_max": 11.0},
+    {"model": "Jetour T1",            "variant": "Flagship",     "km_per_l_min": 13.7, "km_per_l_max": 14.7,  "l_per_100km_min": null, "l_per_100km_max": null},
+    {"model": "Jetour Dashing",       "variant": "1.5 Standard", "km_per_l_min": 8.3,  "km_per_l_max": 10.3,  "l_per_100km_min": 9.7,  "l_per_100km_max": 12.0},
+    {"model": "Jetour Dashing",       "variant": "1.6 Luxury",   "km_per_l_min": 9.7,  "km_per_l_max": 10.3,  "l_per_100km_min": 9.7,  "l_per_100km_max": 10.0},
+    {"model": "Jetour X70 FL",        "variant": "Luxury",       "km_per_l_min": 13.7, "km_per_l_max": 13.7,  "l_per_100km_min": 7.3,  "l_per_100km_max": 7.3},
+    {"model": "Jetour X70 FL Plus",   "variant": "Luxury",       "km_per_l_min": 12.0, "km_per_l_max": 13.5,  "l_per_100km_min": 7.3,  "l_per_100km_max": 7.9},
+    {"model": "Jetour X50",           "variant": null,           "km_per_l_min": 12.0, "km_per_l_max": 14.0,  "l_per_100km_min": 7.0,  "l_per_100km_max": 7.8},
+    {"model": "Jetour T1 i-DM",       "variant": null,           "km_per_l_min": 15.8, "km_per_l_max": 18.5,  "l_per_100km_min": 5.4,  "l_per_100km_max": 6.3},
+    {"model": "G700 Top Fire",        "variant": null,           "km_per_l_min": null, "km_per_l_max": null,  "l_per_100km_min": null, "l_per_100km_max": null, "coming_soon": true}
+  ]
+}

@@ -24,7 +24,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
-from app.models import FuelType, LocationType, Showroom, Slot, SlotStatus, VehicleModel
+from app.models import (
+    Accessory,
+    FinanceBank,
+    FuelType,
+    LocationType,
+    Showroom,
+    Slot,
+    SlotStatus,
+    Stock,
+    VehicleModel,
+    VehicleVariant,
+)
 from app.services import slots as slots_service
 
 SEED_DIR = Path(__file__).resolve().parent.parent / "seed"
@@ -293,8 +304,62 @@ def db() -> Session:
                 # Arabic dialog would pass against empty data.
                 headline_features_ar=r["headline_features_ar"],
                 showroom_ids=r["showroom_ids"],
+                interior_colours=r["interior_colours"],
                 data_provenance=r["data_provenance"],
                 images=r["images"],
+            )
+        )
+        # Variants come from the SAME fixture as their model, so the two can
+        # never drift: a model's price range is derived from its trims, and a
+        # test asserting on one is asserting on the other.
+        for v in r["variants"]:
+            session.add(
+                VehicleVariant(
+                    id=v["id"],
+                    model_id=r["id"],
+                    name=v["name"],
+                    price_aed=v["price_aed"],
+                    insurance_aed=v["insurance_aed"],
+                    registration_aed=v["registration_aed"],
+                    km_per_l_min=v["km_per_l_min"],
+                    km_per_l_max=v["km_per_l_max"],
+                    seats_min=v["seats_min"],
+                    seats_max=v["seats_max"],
+                    coming_soon=v["coming_soon"],
+                )
+            )
+    # Stock LAST of the catalogue tables: it FKs to both variants and showrooms.
+    for r in _load("stock.json"):
+        session.add(
+            Stock(
+                variant_id=r["variant_id"],
+                showroom_id=r["showroom_id"],
+                colour=r["colour"],
+                units=r["units"],
+            )
+        )
+    for r in _load("finance_banks.json"):
+        session.add(
+            FinanceBank(
+                id=r["id"],
+                name=r["name"],
+                rate_percent=r["rate_percent"],
+                min_down_payment_percent=r["min_down_payment_percent"],
+                max_tenure_months=r["max_tenure_months"],
+                islamic=r["islamic"],
+                is_sample=r["is_sample"],
+            )
+        )
+    for r in _load("accessories.json"):
+        session.add(
+            Accessory(
+                id=r["id"],
+                part_code=r["part_code"],
+                name_en=r["name_en"],
+                description_en=r["description_en"],
+                name_ar=r["name_ar"],
+                price_aed=r["price_aed"],
+                model_id=r["model_id"],
             )
         )
     session.commit()

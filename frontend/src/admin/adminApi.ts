@@ -122,6 +122,28 @@ export const isAbort = (r: Result<unknown>): boolean =>
 // --------------------------------------------------------------------------- //
 // Row types — mirror services/console.py exactly.
 // --------------------------------------------------------------------------- //
+/** One purchasable trim. Mirrors console._variant_row. */
+export interface VehicleVariantRow {
+  variant_id: number
+  /** NULL means "the only version", NOT "unknown" — several models ship one
+   *  trim the workbook never names. Render the model name alone, never "None". */
+  name: string | null
+  /** All nullable together: the G700 Top Fire is coming soon and has none. */
+  price_aed: number | null
+  insurance_aed: number | null
+  registration_aed: number | null
+  /** Price + insurance + registration, or null unless ALL THREE are present —
+   *  a partial sum would land below the list price and read as a discount. */
+  on_road_aed: number | null
+  seats_min: number | null
+  seats_max: number | null
+  km_per_l_min: number | null
+  km_per_l_max: number | null
+  /** NOT the same as sold out and NOT the same as a missing price. It is the
+   *  answer to "why won't Aisha quote this car?", so it must be visible. */
+  coming_soon: boolean
+}
+
 export interface VehicleRow {
   vehicle_id: number
   model_code: string | null
@@ -143,6 +165,12 @@ export interface VehicleRow {
    *  derivation the chat's vehicle cards use). Null when the row has no image —
    *  render the absence, never a broken <img>. */
   image_url: string | null
+  /** Ordered by PRICE, never by name — the T1's Luxury is its 4WD range-topper
+   *  and costs more than its Flagship. Unpriced sorts last. */
+  variants: VehicleVariantRow[]
+  /** Model-level palette. NOT paired with the exterior colour and NOT stocked —
+   *  it answers "which interiors exist", never "is that combination available". */
+  interior_colours: string[]
 }
 
 export interface ShowroomRow {

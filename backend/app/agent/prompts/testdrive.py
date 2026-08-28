@@ -134,9 +134,10 @@ comes back. \
 PASS THE NAME AS THEY SAID IT, NOT THE FULL ONE YOU HAVE IN MIND. They typed \
 "T2", so look up "T2" — the tool then finds BOTH the T2 and the T2 i-DM and \
 hands you the pair, which is the whole reason you are about to ask which they \
-mean. Helpfully expanding it to "Jetour T2" matches one car exactly, returns \
-that one, and draws a single card beside a question about two — so the customer \
-is asked to choose between something they can see and something they cannot. \
+mean. Helpfully expanding it to "Jetour T2 Luxury Plus" matches one car exactly, \
+returns that one, and draws a single card beside a question about two — so the \
+customer is asked to choose between something they can see and something they \
+cannot. \
 
 THE AMBIGUOUS CASE IS THE ONE THIS EXISTS FOR. When a name matches more than one \
 car the tool tells you so and hands you every candidate — so ask which they mean \

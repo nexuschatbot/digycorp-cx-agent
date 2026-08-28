@@ -1,4 +1,5 @@
-"""Seed the `vehicle_models` table from seed/vehicle_models.json.
+"""Seed the `vehicle_models` AND `vehicle_variants` tables from
+seed/vehicle_models.json.
 
 Recreates the `vehicle_models` table (drop + create) so the current schema —
 including the columns added for the catalogue (model_code, data_provenance,
@@ -25,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db import SessionLocal, engine  # noqa: E402
-from app.models import FuelType, VehicleModel  # noqa: E402
+from app.models import FuelType, VehicleModel, VehicleVariant  # noqa: E402
 
 FIXTURE = Path(__file__).with_name("vehicle_models.json")
 
@@ -38,9 +39,15 @@ def main() -> None:
     # Postgres will not drop a table other tables reference, and reset-demo owns
     # schema changes by dropping the whole schema first.
     VehicleModel.__table__.create(engine, checkfirst=True)
+    VehicleVariant.__table__.create(engine, checkfirst=True)
 
     session = SessionLocal()
     try:
+        # Variants first: they FK to vehicle_models, so clearing the parent
+        # first would fail on Postgres (SQLite would let it through and
+        # leave orphans, which is worse — a silent difference between the
+        # dev database and the deployed one).
+        session.query(VehicleVariant).delete()
         session.query(VehicleModel).delete()
         for r in rows:
             session.add(
@@ -50,7 +57,7 @@ def main() -> None:
                     brand=r["brand"],
                     name=r["name"],
                     body_type=r["body_type"],
-                    # Seat RANGE, not a value — X70 Plus is 5-7 (FR-BK-09/10).
+                    # Seat RANGE, not a value — X70 FL is 5-7 (FR-BK-09/10).
                     seats_min=r["seats_min"],
                     seats_max=r["seats_max"],
                     # Null bounds (JET-T1-IDM) are intentional: price not
@@ -64,12 +71,51 @@ def main() -> None:
                     # Arabic conversation (LOC-01).
                     headline_features_ar=r["headline_features_ar"],
                     showroom_ids=r["showroom_ids"],
+                    # Elite's per-MODEL interior palette. Required, not .get():
+                    # a model imported without one should fail here rather than
+                    # answer "no interior colours" as though that were a fact.
+                    interior_colours=r["interior_colours"],
                     data_provenance=r["data_provenance"],
                     images=r["images"],
                 )
             )
+        # Flush the models before the variants so the FK targets exist.
+        session.flush()
+
+        variants = 0
+        for r in rows:
+            for v in r["variants"]:
+                variants += 1
+                session.add(
+                    VehicleVariant(
+                        id=v["id"],
+                        model_id=r["id"],
+                        # NULL name = "the only version", not "unknown"
+                        # (VehicleVariant docstring). Several models ship one
+                        # trim the workbook never names.
+                        name=v["name"],
+                        # All three price parts are nullable together: the G700
+                        # Top Fire is coming soon and has none. `on_road_aed`
+                        # returns None unless all three are present, so a
+                        # missing part can never be quoted as a discount.
+                        price_aed=v["price_aed"],
+                        insurance_aed=v["insurance_aed"],
+                        registration_aed=v["registration_aed"],
+                        km_per_l_min=v["km_per_l_min"],
+                        km_per_l_max=v["km_per_l_max"],
+                        # Per-TRIM, not per-model. The G700 Comfort seats 5 and
+                        # its Luxury/Flagship seat 6; null means unpublished
+                        # (the T1 i-DM), never zero and never a guess.
+                        seats_min=v["seats_min"],
+                        seats_max=v["seats_max"],
+                        coming_soon=v["coming_soon"],
+                    )
+                )
         session.commit()
-        print(f"Seeded {len(rows)} vehicle models into {engine.url}")
+        print(
+            f"Seeded {len(rows)} vehicle models and {variants} variants "
+            f"into {engine.url}"
+        )
     finally:
         session.close()
 

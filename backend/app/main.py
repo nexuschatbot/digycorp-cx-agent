@@ -36,10 +36,12 @@ from app.config import (
     PREWARM_PROMPT_CACHE,
     RTC_DEBUG,
 )
-from app.db import Base, SessionLocal, engine
+from app.db import SessionLocal
 
-# Import models so their tables are registered on Base.metadata before create_all.
-from app import models  # noqa: F401
+# Import models so their tables are registered on Base.metadata before the
+# migration runs — app/migrate.py compares against it to decide whether this is
+# a fresh database or a create_all one being adopted.
+from app import migrate, models  # noqa: F401
 
 # uvicorn configures only its own loggers, so the app's INFO logs (agent
 # iterations, AD-E aborts) would go nowhere. Attach a stream handler to the "app"
@@ -74,8 +76,13 @@ if RTC_DEBUG:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables only (dev convenience; migrations come later).
-    Base.metadata.create_all(bind=engine)
+    # Startup: bring the schema to head (T0.3). This REPLACED
+    # `Base.metadata.create_all`, which created missing tables and silently did
+    # nothing else — no added columns, no changed nullability, no error. A
+    # database that already exists is adopted by stamping rather than rebuilt;
+    # see app/migrate.py. Deliberately NOT wrapped in a try: a schema the code
+    # disagrees with must stop the boot, not become a runtime surprise.
+    migrate.upgrade_to_head()
     # Then, if enabled, write the cached prompt prefix so the first customer of
     # the demo reads it rather than creating it. Off by default — one live API
     # call per boot. Imported here, not at module scope, so importing app.main

@@ -7,8 +7,8 @@
     "body_type": "Full-size luxury off-road SUV (body-on-frame)",
     "seats_min": 5,
     "seats_max": 6,
-    "price_aed_min": 179000,
-    "price_aed_max": 229000,
+    "price_aed_min": 169000,
+    "price_aed_max": 240450,
     "fuel_type": "phev",
     "headline_features": [
       "2.0TD turbo petrol + dual electric motors, 4WD",
@@ -33,21 +33,75 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-g700.jpeg"
+    ],
+    "interior_colours": [
+      "Orange",
+      "Ivory"
+    ],
+    "variants": [
+      {
+        "id": 1,
+        "name": "Comfort",
+        "price_aed": 169000,
+        "insurance_aed": 2500,
+        "registration_aed": 1000,
+        "km_per_l_min": 10.0,
+        "km_per_l_max": 11.0,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      },
+      {
+        "id": 2,
+        "name": "Luxury",
+        "price_aed": 210000,
+        "insurance_aed": 3500,
+        "registration_aed": 1000,
+        "km_per_l_min": 10.0,
+        "km_per_l_max": 11.6,
+        "seats_min": 6,
+        "seats_max": 6,
+        "coming_soon": false
+      },
+      {
+        "id": 3,
+        "name": "Flagship",
+        "price_aed": 240450,
+        "insurance_aed": 5000,
+        "registration_aed": 1000,
+        "km_per_l_min": 11.6,
+        "km_per_l_max": 11.6,
+        "seats_min": 6,
+        "seats_max": 6,
+        "coming_soon": false
+      },
+      {
+        "id": 4,
+        "name": "Top Fire",
+        "price_aed": null,
+        "insurance_aed": null,
+        "registration_aed": null,
+        "km_per_l_min": null,
+        "km_per_l_max": null,
+        "seats_min": null,
+        "seats_max": null,
+        "coming_soon": true
+      }
     ]
   },
   {
     "id": 2,
     "model_code": "JET-T2",
     "brand": "Jetour",
-    "name": "Jetour T2",
+    "name": "Jetour T2 Luxury Plus",
     "body_type": "Mid-size off-road SUV, 5-door",
     "seats_min": 5,
     "seats_max": 5,
     "price_aed_min": 146000,
-    "price_aed_max": 179000,
+    "price_aed_max": 146000,
     "fuel_type": "petrol",
     "headline_features": [
       "2.0L turbo 4-cylinder, 390 Nm, 7-speed DCT",
@@ -72,9 +126,27 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-t2.png"
+    ],
+    "interior_colours": [
+      "Beige",
+      "Green"
+    ],
+    "variants": [
+      {
+        "id": 5,
+        "name": null,
+        "price_aed": 146000,
+        "insurance_aed": 2200,
+        "registration_aed": 1000,
+        "km_per_l_min": 11.0,
+        "km_per_l_max": 11.5,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      }
     ]
   },
   {
@@ -85,7 +157,7 @@
     "body_type": "Mid-size off-road SUV, 5-door",
     "seats_min": 5,
     "seats_max": 5,
-    "price_aed_min": 144000,
+    "price_aed_min": 159000,
     "price_aed_max": 159000,
     "fuel_type": "phev",
     "headline_features": [
@@ -111,9 +183,27 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-t2-idm.png"
+    ],
+    "interior_colours": [
+      "Green",
+      "Ivory / Blue"
+    ],
+    "variants": [
+      {
+        "id": 6,
+        "name": null,
+        "price_aed": 159000,
+        "insurance_aed": 2400,
+        "registration_aed": 1000,
+        "km_per_l_min": 18.0,
+        "km_per_l_max": 18.0,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      }
     ]
   },
   {
@@ -125,7 +215,7 @@
     "seats_min": 5,
     "seats_max": 5,
     "price_aed_min": 109000,
-    "price_aed_max": 130200,
+    "price_aed_max": 129000,
     "fuel_type": "petrol",
     "headline_features": [
       "2.0L T-GDI, 254 HP / 390 Nm, 8-speed automatic",
@@ -150,9 +240,52 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-t1.jpeg"
+    ],
+    "interior_colours": [
+      "Black & Orange",
+      "Black & Green",
+      "Black & Light Grey"
+    ],
+    "variants": [
+      {
+        "id": 7,
+        "name": "Comfort",
+        "price_aed": 109000,
+        "insurance_aed": 2000,
+        "registration_aed": 1000,
+        "km_per_l_min": 10.0,
+        "km_per_l_max": 10.0,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      },
+      {
+        "id": 8,
+        "name": "Luxury",
+        "price_aed": 129000,
+        "insurance_aed": 2200,
+        "registration_aed": 1000,
+        "km_per_l_min": 9.0,
+        "km_per_l_max": 11.0,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      },
+      {
+        "id": 9,
+        "name": "Flagship",
+        "price_aed": 125785,
+        "insurance_aed": 2100,
+        "registration_aed": 1000,
+        "km_per_l_min": 13.7,
+        "km_per_l_max": 14.7,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      }
     ]
   },
   {
@@ -161,9 +294,9 @@
     "brand": "Jetour",
     "name": "Jetour T1 i-DM",
     "body_type": "Compact urban light off-road SUV",
-    "seats_min": 5,
-    "seats_max": 5,
-    "price_aed_min": 129000,
+    "seats_min": null,
+    "seats_max": null,
+    "price_aed_min": 144000,
     "price_aed_max": 144000,
     "fuel_type": "phev",
     "headline_features": [
@@ -189,9 +322,27 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. AED range added 2026-07-27 — CONFIRM THE SOURCE before demo day. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-t1-idm.jpeg"
+    ],
+    "interior_colours": [
+      "Black & Orange",
+      "Grey & Black"
+    ],
+    "variants": [
+      {
+        "id": 10,
+        "name": null,
+        "price_aed": 144000,
+        "insurance_aed": 2200,
+        "registration_aed": 1000,
+        "km_per_l_min": 15.8,
+        "km_per_l_max": 18.5,
+        "seats_min": null,
+        "seats_max": null,
+        "coming_soon": false
+      }
     ]
   },
   {
@@ -202,8 +353,8 @@
     "body_type": "Compact urban SUV",
     "seats_min": 5,
     "seats_max": 5,
-    "price_aed_min": 93450,
-    "price_aed_max": 115900,
+    "price_aed_min": 89000,
+    "price_aed_max": 114000,
     "fuel_type": "petrol",
     "headline_features": [
       "1.5T (~154 HP) or 1.6T TGDI (197 HP / 290 Nm)",
@@ -228,33 +379,63 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-dash.png"
+    ],
+    "interior_colours": [
+      "Black",
+      "Ivory"
+    ],
+    "variants": [
+      {
+        "id": 11,
+        "name": "1.5 Standard",
+        "price_aed": 89000,
+        "insurance_aed": 1800,
+        "registration_aed": 1000,
+        "km_per_l_min": 8.3,
+        "km_per_l_max": 10.3,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      },
+      {
+        "id": 12,
+        "name": "1.6 Luxury",
+        "price_aed": 114000,
+        "insurance_aed": 2000,
+        "registration_aed": 1000,
+        "km_per_l_min": 9.7,
+        "km_per_l_max": 10.3,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      }
     ]
   },
   {
     "id": 7,
     "model_code": "JET-X70P",
     "brand": "Jetour",
-    "name": "Jetour X70 Plus",
-    "body_type": "Mid-size family SUV",
-    "seats_min": 5,
+    "name": "Jetour X70 FL Plus",
+    "body_type": "Mid-size 7-seater family SUV",
+    "seats_min": 7,
     "seats_max": 7,
-    "price_aed_min": 75000,
-    "price_aed_max": 103950,
+    "price_aed_min": 89000,
+    "price_aed_max": 89000,
     "fuel_type": "petrol",
     "headline_features": [
-      "1.6L TGDI turbo, Comfort & Luxury trims",
-      "Seven-seat configuration available",
+      "1.6L TGDI turbo, 197 hp, 7-speed DCT",
+      "True seven-seater — second and third rows removable",
       "10.25\" touchscreen + all-digital cluster",
       "Full ADAS: ACC, AEB, BSD, FCW, LDW",
       "20\" lightweight alloys, panoramic sunroof",
       "Foldable rear seats, automatic luggage door"
     ],
     "headline_features_ar": [
-      "محرك تيربو TGDI سعة 1.6 لتر، بفئتي Comfort وLuxury",
-      "تهيئة بسبعة مقاعد متوفرة",
+      "محرك 1.6 لتر تيربو حقن مباشر، 197 حصان، ناقل 7 سرعات",
+      "سبعة مقاعد حقيقية — الصف الثاني والثالث قابلان للإزالة",
       "شاشة لمس 10.25 بوصة ولوحة عدادات رقمية بالكامل",
       "حزمة ADAS متكاملة: ACC، AEB، BSD، FCW، LDW",
       "جنوط ألمنيوم خفيفة 20 بوصة وفتحة سقف بانورامية",
@@ -267,9 +448,26 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-x70p.png"
+    ],
+    "interior_colours": [
+      "Beige"
+    ],
+    "variants": [
+      {
+        "id": 13,
+        "name": "Luxury",
+        "price_aed": 89000,
+        "insurance_aed": 1800,
+        "registration_aed": 1000,
+        "km_per_l_min": 12.0,
+        "km_per_l_max": 13.5,
+        "seats_min": 7,
+        "seats_max": 7,
+        "coming_soon": false
+      }
     ]
   },
   {
@@ -277,26 +475,26 @@
     "model_code": "JET-X70FL",
     "brand": "Jetour",
     "name": "Jetour X70 FL",
-    "body_type": "Mid-size 7-seater SUV",
-    "seats_min": 7,
+    "body_type": "Mid-size family SUV, 5 or 5+2 seats",
+    "seats_min": 5,
     "seats_max": 7,
-    "price_aed_min": 73000,
-    "price_aed_max": 106000,
+    "price_aed_min": 79000,
+    "price_aed_max": 79000,
     "fuel_type": "petrol",
     "headline_features": [
       "1.5L turbo, 6-speed DCT, front-wheel drive",
-      "True 7-seater family layout",
-      "12.3\" central control screen",
+      "Five seats, with an occasional 5+2 third row",
+      "12.3\" digital cluster + 10.2\" touch infotainment",
       "Matrix LED smart day lights",
-      "13.5 km/L fuel economy",
+      "8 speakers, panoramic roof, 20-inch alloys",
       "ABS, hill-start assist, parking sensors"
     ],
     "headline_features_ar": [
       "محرك تيربو سعة 1.5 لتر، ناقل DCT بست سرعات، دفع أمامي",
-      "تهيئة عائلية بسبعة مقاعد حقيقية",
-      "شاشة تحكم مركزية 12.3 بوصة",
+      "خمسة مقاعد مع صف ثالث عَرَضي (5+2)",
+      "لوحة عدادات رقمية 12.3 بوصة وشاشة لمس 10.2 بوصة",
       "إضاءة نهارية ذكية LED مصفوفية",
-      "استهلاك وقود 13.5 كم/لتر",
+      "8 مكبرات صوت، سقف بانورامي، جنوط 20 بوصة",
       "نظام ABS، مساعد الانطلاق على المنحدرات، وحساسات ركن"
     ],
     "showroom_ids": [
@@ -306,9 +504,27 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-x70fl.jpeg"
+    ],
+    "interior_colours": [
+      "Black",
+      "White"
+    ],
+    "variants": [
+      {
+        "id": 14,
+        "name": "Luxury",
+        "price_aed": 79000,
+        "insurance_aed": 1700,
+        "registration_aed": 1000,
+        "km_per_l_min": 13.7,
+        "km_per_l_max": 13.7,
+        "seats_min": 5,
+        "seats_max": 7,
+        "coming_soon": false
+      }
     ]
   },
   {
@@ -320,14 +536,14 @@
     "seats_min": 5,
     "seats_max": 5,
     "price_aed_min": 69000,
-    "price_aed_max": 72450,
+    "price_aed_max": 69000,
     "fuel_type": "petrol",
     "headline_features": [
       "1.5L turbo, FWD — entry point to the range",
       "Rear multi-link independent suspension (rare in class)",
       "3D 360° AVM from four HD cameras",
       "10.25\" HD infotainment + Jetour voice assistant",
-      "17.9 km/L — most efficient in the UAE range",
+      "10-year / 1,000,000 km warranty",
       "Quilted leather seats, class-leading boot space"
     ],
     "headline_features_ar": [
@@ -335,7 +551,7 @@
       "تعليق خلفي مستقل متعدد الوصلات (نادر في فئتها)",
       "نظام رؤية محيطية ثلاثي الأبعاد 360° بأربع كاميرات HD",
       "نظام ترفيه ومعلومات HD مقاس 10.25 بوصة مع المساعد الصوتي من Jetour",
-      "17.9 كم/لتر — الأقل استهلاكاً في تشكيلة الإمارات",
+      "ضمان 10 سنوات / مليون كيلومتر",
       "مقاعد جلدية مبطنة ومساحة صندوق رائدة في فئتها"
     ],
     "showroom_ids": [
@@ -345,9 +561,27 @@
       5,
       6
     ],
-    "data_provenance": "From Elite Group Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026; official site jetouruae.com. Prices indicative and subject to change; confirm with showroom.",
+    "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-x50.jpeg"
+    ],
+    "interior_colours": [
+      "Black",
+      "Blue & Grey"
+    ],
+    "variants": [
+      {
+        "id": 15,
+        "name": "Premium",
+        "price_aed": 69000,
+        "insurance_aed": 1600,
+        "registration_aed": 1000,
+        "km_per_l_min": 12.0,
+        "km_per_l_max": 14.0,
+        "seats_min": 5,
+        "seats_max": 5,
+        "coming_soon": false
+      }
     ]
   }
 ]

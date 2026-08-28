@@ -119,13 +119,18 @@ def test_null_price_model_does_not_crash_price_sorted_alternatives(db):
 # no-match must be USEFUL (FR-BK-10)
 # --------------------------------------------------------------------------- #
 def test_seven_seater_under_60k_offers_the_cheapest_real_seven_seater(db):
-    """The honest answer is "our 7-seater starts at AED 73,000"."""
+    """The honest answer is "our 7-seater starts at AED 79,000".
+
+    The figure was 73,000 until T0.5, when Elite's workbook re-priced the X70 FL.
+    The CAR is unchanged: it is still the cheapest thing that can seat seven,
+    because min_seats filters on seats_max and the FL's is 7 (a 5+2 third row).
+    """
     out = catalogue.search(db, min_seats=7, max_price_aed=60000)
     assert out["no_exact_match"] is True
     alts = out["nearest_alternatives"]
     assert alts, "a no-match must offer the nearest real alternative"
     assert alts[0]["code"] == "JET-X70FL"
-    assert alts[0]["price_aed_min"] == 73000
+    assert alts[0]["price_aed_min"] == 79000
     assert alts[0]["relaxed"] == ["max_price_aed"]
 
 
@@ -208,9 +213,30 @@ def test_t1_and_x70_are_ambiguous_too(db):
 
 
 def test_exact_full_name_is_not_ambiguous_despite_being_a_prefix(db):
-    """"Jetour T2" is an exact name even though "Jetour T2 i-DM" contains it."""
+    """"Jetour X70 FL" is an exact name even though "Jetour X70 FL Plus" contains it.
+
+    RE-POINTED AT T0.5. The pair used to be "Jetour T2" inside "Jetour T2 i-DM";
+    the workbook renamed that model to "Jetour T2 Luxury Plus", so the bare
+    "Jetour T2" is no longer any model's exact name and could not test this. The
+    X70s are now the exact same shape, and closer to home — customers say "the
+    X70" constantly.
+    """
+    out = catalogue.get_details(db, name="Jetour X70 FL")
+    assert out["vehicle"]["code"] == "JET-X70FL"
+
+
+def test_the_bare_t2_is_now_ambiguous_between_the_two_t2s(db):
+    """A PRODUCT CHANGE, not a bug, recorded so it is not "fixed" later.
+
+    Elite sells two T2s — the T2 Luxury Plus and the T2 i-DM — and neither is
+    called plain "Jetour T2" any more. Someone saying "the T2" has genuinely not
+    said which, so the honest response is the disambiguation path, not a guess at
+    the petrol one. Before T0.5 the petrol car WAS named "Jetour T2" and won this
+    outright.
+    """
     out = catalogue.get_details(db, name="Jetour T2")
-    assert out["vehicle"]["code"] == "JET-T2"
+    assert "vehicle" not in out
+    assert {c["code"] for c in out["candidates"]} == {"JET-T2", "JET-T2-IDM"}
 
 
 def test_code_match_wins_outright(db):

@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "part_code": "ACC-001",
+    "name_en": "Alloy Wheel Upgrade",
+    "name_ar": null,
+    "description_en": "20\" sport alloy rims, set of 4, direct-fit replacement for standard steel/alloy wheels",
+    "price_aed": 4500,
+    "model_id": null
+  },
+  {
+    "id": 2,
+    "part_code": "ACC-002",
+    "name_en": "Window Tinting",
+    "name_ar": null,
+    "description_en": "Premium film blocking 99% UV rays and reducing cabin heat, full vehicle",
+    "price_aed": 900,
+    "model_id": null
+  },
+  {
+    "id": 3,
+    "part_code": "ACC-003",
+    "name_en": "Ceramic Coating",
+    "name_ar": null,
+    "description_en": "Hydrophobic paint protection layer for enhanced gloss and scratch resistance",
+    "price_aed": 1800,
+    "model_id": null
+  },
+  {
+    "id": 4,
+    "part_code": "ACC-004",
+    "name_en": "Paint Protection Film (PPF)",
+    "name_ar": null,
+    "description_en": "Scratch-resistant, self-healing film for front bumper, hood and mirrors",
+    "price_aed": 2200,
+    "model_id": null
+  },
+  {
+    "id": 5,
+    "part_code": "ACC-005",
+    "name_en": "All-Weather Floor Mats",
+    "name_ar": null,
+    "description_en": "Premium rubber mats, full set, tailored fit for interior protection",
+    "price_aed": 450,
+    "model_id": null
+  }
+]

@@ -70,6 +70,7 @@ from app.models import (
     SlotStatus,
     Speaker,
     VehicleModel,
+    VehicleVariant,
 )
 from app.services import conversation
 from app.services.catalogue import _image_url
@@ -161,7 +162,36 @@ def _coerce_enum(raw: object, enum_cls):
 # --------------------------------------------------------------------------- #
 # Catalogue
 # --------------------------------------------------------------------------- #
-def _vehicle_row(v: VehicleModel) -> dict:
+def _variant_row(x: VehicleVariant) -> dict:
+    """One trim, as the console shows it (T0.11).
+
+    ON-ROAD IS THE MODEL'S PROPERTY, NOT A SUM HERE. It returns None unless
+    price, insurance and registration are all present — a partial total would
+    land BELOW the list price and read as a discount on an internal screen the
+    operator trusts.
+    """
+    return {
+        "variant_id": x.id,
+        # NULL NAME MEANS "the only version", not "unknown". The UI must render
+        # the model name alone rather than the word None.
+        "name": x.name,
+        "price_aed": x.price_aed,
+        "insurance_aed": x.insurance_aed,
+        "registration_aed": x.registration_aed,
+        "on_road_aed": x.on_road_aed,
+        "seats_min": x.seats_min,
+        "seats_max": x.seats_max,
+        "km_per_l_min": x.km_per_l_min,
+        "km_per_l_max": x.km_per_l_max,
+        # WHY THE OPERATOR CAME TO THIS SCREEN, half the time. "Coming soon" is
+        # not "sold out" and not "price missing" — it is the answer to "why
+        # won't Aisha quote this car?", which the module comment above already
+        # names as the reason the price absence is rendered visibly.
+        "coming_soon": bool(x.coming_soon),
+    }
+
+
+def _vehicle_row(v: VehicleModel, variants: list | None = None) -> dict:
     return {
         "vehicle_id": v.id,
         "model_code": v.model_code,
@@ -187,6 +217,20 @@ def _vehicle_row(v: VehicleModel) -> dict:
         # tidier imports. None when the row has no image — render no image, never
         # a broken one.
         "image_url": _image_url(v.images),
+        # T0.11: the catalogue is variant-level now, and a model card showing
+        # only a RANGE hides what the operator came to check. Ordered by PRICE,
+        # never by name — the T1's Luxury is its 4WD range-topper and costs more
+        # than its Flagship, so a name sort would draw a ladder that does not
+        # exist. Unpriced sorts last: coming soon, not cheapest.
+        "variants": [
+            _variant_row(x)
+            for x in sorted(
+                variants or [], key=lambda x: (x.price_aed is None, x.price_aed or 0, x.id)
+            )
+        ],
+        # Model-level and identical across trims. NOT paired with an exterior
+        # colour and not stocked — see VehicleModel.interior_colours.
+        "interior_colours": v.interior_colours or [],
     }
 
 
@@ -213,8 +257,19 @@ def list_vehicles(
     rows = db.scalars(
         stmt.order_by(VehicleModel.brand, VehicleModel.name).limit(lim).offset(off)
     ).all()
+    # ONE QUERY FOR EVERY CARD'S TRIMS. A page is twelve vehicles, so a
+    # per-row lookup would be twelve round trips for a fifteen-row table.
+    by_model: dict[int, list] = {}
+    if rows:
+        for x in db.scalars(
+            select(VehicleVariant)
+            .where(VehicleVariant.model_id.in_([v.id for v in rows]))
+            .order_by(VehicleVariant.model_id, VehicleVariant.id)
+        ).all():
+            by_model.setdefault(x.model_id, []).append(x)
+
     return _envelope(
-        [_vehicle_row(v) for v in rows],
+        [_vehicle_row(v, by_model.get(v.id, [])) for v in rows],
         _count(db, VehicleModel.id, filters),
         lim,
         off,

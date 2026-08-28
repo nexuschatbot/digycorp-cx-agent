@@ -106,3 +106,87 @@ def test_a_blocked_network_degrades_immediately(monkeypatch):
     decision = classifier.classify("what about the weekend?")
     assert decision.agent == "fallback"
     assert decision.confidence == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# The checkpoint read is best-effort, and must behave like it
+# --------------------------------------------------------------------------- #
+def test_a_failed_checkpoint_read_does_not_kill_the_turn(
+    routing_on, monkeypatch, db
+):
+    """A checkpoint that cannot be read costs the sticky hint, not the answer.
+
+    THE BUG THIS PINS. runner.py caught the failure and logged it through `_log`
+    — a name that does not exist in that module (it is `log`). So the handler
+    itself raised NameError, the `except` swallowed nothing, and a turn that
+    should have degraded to "no previous agent" died instead. Worse, it died
+    only on the routed path and only when the checkpoint read failed, which is
+    why 388 tests never saw it.
+
+    The point of the assertion is therefore NOT that a warning is logged. It is
+    that the customer still gets their answer when the telemetry underneath
+    fails — the same contract services/turn_trace.py holds.
+    """
+    import logging
+    import threading
+
+    from sqlalchemy.orm import Session
+
+    from app.agent import runner
+    from app.agent.router.policy import Routing
+
+    class _UnreadableCheckpoint:
+        """Reads fail; generation is fine. The real shape of a corrupt WAL."""
+
+        def __init__(self) -> None:
+            self.get_state_calls = 0
+
+        def get_state(self, config):
+            self.get_state_calls += 1
+            raise RuntimeError("checkpoint db is locked")
+
+        def stream(self, state, config, stream_mode=None):
+            yield {"type": "token", "text": "Of course — let me help with that."}
+
+    stub = _UnreadableCheckpoint()
+    monkeypatch.setattr(runner, "build_graph", lambda checkpointer: stub)
+    # Keep the router off the network: the classifier is not what is under test.
+    monkeypatch.setattr(runner, "_route", lambda *a, **k: Routing("testdrive", "stub"))
+
+    # CAPTURED OFF THE LOGGER ITSELF, not via caplog. app/main.py sets
+    # `propagate = False` on the "app" logger, so once ANY test in the suite has
+    # imported main, records from app.agent.runner never reach caplog's root
+    # handler — and this assertion passed alone and failed in the full run,
+    # depending on import order. A handler on the exact logger does not care.
+    captured: list[str] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            captured.append(record.getMessage())
+
+    runner_log = logging.getLogger("app.agent.runner")
+    handler = _Capture(level=logging.WARNING)
+    runner_log.addHandler(handler)
+
+    events: list[tuple[str, dict]] = []
+    try:
+        result = runner.run_turn(
+            "sess-unreadable-checkpoint",
+            "I'd like to book a test drive",
+            on_event=lambda e, d: events.append((e, d)),
+            cancel=threading.Event(),
+            session_factory=lambda: Session(db.get_bind()),
+        )
+    finally:
+        runner_log.removeHandler(handler)
+
+    # The read was attempted, and it failed. TWICE, not once: _attach_voice_customer
+    # reads the checkpoint too (runner.py:83), and it has its own guard. Pinning
+    # this to == 1 would make the test fail the day either caller is touched,
+    # which is not what is being protected here.
+    assert stub.get_state_calls >= 1
+    # And the turn survived it, all the way to a delivered answer.
+    assert result.status != "error"
+    assert ("token", {"text": "Of course — let me help with that."}) in events
+    # Degraded loudly, not silently.
+    assert any("could not read prior agent from checkpoint" in m for m in captured)

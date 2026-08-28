@@ -7,9 +7,13 @@ Two rules run through this whole module:
 
 1. Facts come from the data, never from phrasing. Every value returned here is
    read from the DB; nothing is inferred, rounded, or invented (FR-CX-07).
-2. Null price is a MEANINGFUL state, not missing data. price_aed_min/max are
-   null for JET-T1-IDM because the price is not published. We never coerce that
-   to 0, never render "None", and never let it masquerade as "under budget"
+2. Null price is a MEANINGFUL state, not missing data. We never coerce it to 0,
+   never render "None", and never let it masquerade as "under budget".
+   THE EXAMPLE MOVED AT T0.5: this used to name JET-T1-IDM, which had no
+   published price and now costs AED 144,000. Every one of the nine MODELS is
+   priced today; the unpriced car is a VARIANT — the G700 Top Fire, coming soon
+   — so the guards live on `_ranked_for`'s bases and `_apply_filters`' budget
+   filter, and tests/test_unpriced_vehicle.py is what holds them there"
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import FuelType, Showroom, VehicleModel
+from app.models import FuelType, Showroom, VehicleModel, VehicleVariant
 
 # --------------------------------------------------------------------------- #
 # Input normalisation
@@ -170,6 +174,133 @@ def _fleet_filter_details(db: Session, payload: dict) -> dict:
     return payload
 
 
+# --------------------------------------------------------------------------- #
+# Variants (T0.9)
+# --------------------------------------------------------------------------- #
+# THE MODEL CARD IS STILL THE UNIT OF DISCOVERY. A customer asking "what SUVs do
+# you have" wants nine cars, not fifteen trims, so search() returns models with a
+# price RANGE exactly as before and _pick_spread is untouched.
+#
+# WHAT VARIANT-AWARENESS FIXES IS A RANGE THAT LIES BY OMISSION. The G700 spans
+# AED 169,000-240,450 and seats 5-6, so it matches a 180,000 budget and it
+# matches "I need six seats" — but only its Comfort fits the first and only its
+# Luxury and Flagship fit the second, and NEITHER FITS BOTH. Before this, the
+# agent was told the model matched and had no way to know which trim did; the
+# customer found out at the showroom.
+#
+# So a constrained search now says which trims actually satisfy the constraint,
+# and the card keeps its honest model-level range beside it.
+
+
+def _variants_by_model(db: Session, model_ids: list[int]) -> dict[int, list]:
+    """All variants for these models, in one query, grouped by model.
+
+    ONE QUERY, not one per card: search returns up to three matches and up to
+    three alternatives, and a per-card lookup would be six round trips for a
+    fifteen-row table.
+    """
+    if not model_ids:
+        return {}
+    rows = db.scalars(
+        select(VehicleVariant)
+        .where(VehicleVariant.model_id.in_(model_ids))
+        .order_by(VehicleVariant.model_id, VehicleVariant.id)
+    ).all()
+    out: dict[int, list] = {}
+    for r in rows:
+        out.setdefault(r.model_id, []).append(r)
+    return out
+
+
+def _variant_brief(v: VehicleVariant) -> dict:
+    """The compact form that rides on a search match.
+
+    NO on-road price and no insurance breakdown: those belong to Finance, which
+    has its own tool, and putting them here would grow every search result with
+    numbers the agent must not quote as a total anyway.
+    """
+    return {
+        "variant_id": v.id,
+        "name": v.name,
+        "price_aed": v.price_aed,
+        "seats_min": v.seats_min,
+        "seats_max": v.seats_max,
+        "coming_soon": bool(v.coming_soon),
+    }
+
+
+def _variant_full(v: VehicleVariant) -> dict:
+    """Everything known about one trim, for get_variants and get_details.
+
+    on_road_aed comes from the model property, which returns None unless price,
+    insurance and registration are ALL present — a partial sum would land below
+    the list price and read as a discount.
+    """
+    return {
+        **_variant_brief(v),
+        "insurance_aed": v.insurance_aed,
+        "registration_aed": v.registration_aed,
+        "on_road_aed": v.on_road_aed,
+        # Elite's authoritative column is km/L. A RANGE, not a value: most
+        # figures are quoted as one and collapsing them would over- or
+        # understate. Null where nothing is published — never zero.
+        "km_per_l_min": v.km_per_l_min,
+        "km_per_l_max": v.km_per_l_max,
+    }
+
+
+def _variants_satisfying(
+    variants: list, *, min_seats: int | None, max_price_aed: int | None
+) -> list:
+    """The trims that actually meet the constraints the customer gave.
+
+    Only price and seats discriminate WITHIN a model — body type, fuel and brand
+    are model-level and are the same for every trim, so filtering on them here
+    would return either all of them or none and say nothing.
+
+    A COMING-SOON TRIM NEVER SATISFIES A BUDGET, for the same reason a null price
+    never does: we cannot promise a car fits a budget when we do not know what it
+    costs. It CAN satisfy a seat constraint if its seats are published.
+    """
+    out = []
+    for v in variants:
+        if max_price_aed is not None:
+            if v.price_aed is None or v.price_aed > max_price_aed:
+                continue
+        if min_seats is not None:
+            # seats_max, matching _apply_filters: a 5-7 trim satisfies "I need 7".
+            if v.seats_max is None or v.seats_max < min_seats:
+                continue
+        out.append(v)
+    return out
+
+
+def _satisfying_block(
+    variants: list, *, min_seats: int | None = None, max_price_aed: int | None = None
+) -> dict:
+    """The `matching_variants` key, or nothing at all.
+
+    OMITTED ENTIRELY WHEN NO CONSTRAINT DISCRIMINATES — an unfiltered "what SUVs
+    do you have" pays not one token for it, and the search result keeps exactly
+    the shape it had before T0.9.
+
+    Present when the customer named a budget or a seat count, because that is
+    when the model-level range stops being the whole truth. Compare its length
+    against `variant_count` on the same card: fewer means some trims do NOT fit,
+    and the agent should say so rather than let "the G700 fits" stand.
+    """
+    if min_seats is None and max_price_aed is None:
+        return {}
+    return {
+        "matching_variants": [
+            _variant_brief(x)
+            for x in _variants_satisfying(
+                variants, min_seats=min_seats, max_price_aed=max_price_aed
+            )
+        ]
+    }
+
+
 def _showroom_brief(s: Showroom) -> dict:
     return {"showroom_id": s.id, "name": s.name, "emirate": s.emirate}
 
@@ -187,13 +318,35 @@ def _image_url(paths: list | None) -> str | None:
     return None
 
 
-def _vehicle_dict(db: Session, v: VehicleModel, *, full: bool = False) -> dict:
+def _vehicle_dict(
+    db: Session,
+    v: VehicleModel,
+    *,
+    full: bool = False,
+    variants: list | None = None,
+) -> dict:
     """Serialise a vehicle. price_aed_min/max stay None when not published —
     the caller must never render that as "None" to a customer (FR-CX-07).
+
+    STILL A MODEL CARD (T0.9). Two variant-DERIVED facts were added and no trim
+    list was: `variant_count`, so the agent knows there is a choice to ask about
+    rather than presenting a range as a single car, and the km/L band, because
+    "my commute is 50km a day" is a running-costs question the catalogue could
+    not previously answer at all.
+
+    `variants` is the pre-fetched list for this model, passed by callers that
+    serialise several cards so fifteen rows are not fetched six times.
     """
     showrooms = db.scalars(
         select(Showroom).where(Showroom.id.in_(v.showroom_ids or [])).order_by(Showroom.id)
     ).all()
+    if variants is None:
+        variants = _variants_by_model(db, [v.id]).get(v.id, [])
+    economy = [
+        (x.km_per_l_min, x.km_per_l_max)
+        for x in variants
+        if x.km_per_l_min is not None and x.km_per_l_max is not None
+    ]
     out = {
         "vehicle_id": v.id,
         "code": v.model_code,
@@ -212,10 +365,24 @@ def _vehicle_dict(db: Session, v: VehicleModel, *, full: bool = False) -> dict:
         "image_url": _image_url(v.images),
         "headline_features": list(v.headline_features or []),
         "available_showrooms": [_showroom_brief(s) for s in showrooms],
+        # The count, not the list. "The G700 comes in three trims" is what stops
+        # a price RANGE being read out as one car's price; which three is a
+        # follow-up question with its own tool (get_variants).
+        "variant_count": len(variants),
+        # Band across the trims that publish a figure. None when none does —
+        # the T1 i-DM's economy is known but the G700 Top Fire's is not, and a
+        # missing figure must never render as 0 km/L.
+        "km_per_l_min": min(e[0] for e in economy) if economy else None,
+        "km_per_l_max": max(e[1] for e in economy) if economy else None,
     }
     if full:
         out["data_provenance"] = v.data_provenance
         out["images"] = list(v.images or [])
+        out["interior_colours"] = list(v.interior_colours or [])
+        # THE FULL PATH IS ONE NAMED MODEL, so the trims come with it rather
+        # than costing a second round trip. Deliberately NOT on the base dict,
+        # which serialises up to six cards per search.
+        out["variants"] = [_variant_full(x) for x in variants]
     return out
 
 
@@ -307,14 +474,24 @@ def _apply_filters(
             if body_type not in (v.body_type or "").lower():
                 continue
         if min_seats is not None and "min_seats" not in skip:
-            # seats_max, NOT seats_min: the X70 Plus (5-7) satisfies "I need 7".
+            # seats_max, NOT seats_min: the X70 FL (5-7) satisfies "I need 7".
+            # (This example used to name the X70 Plus; the two were swapped in
+            # the seed until T0.4 read the brochures. The Plus is 7-7.)
             if v.seats_max is None or v.seats_max < min_seats:
                 continue
         if fuel and "fuel" not in skip:
             if not v.fuel_type or v.fuel_type.value != fuel:
                 continue
         if max_price_aed is not None and "max_price_aed" not in skip:
-            if v.price_aed_min > max_price_aed:
+            # NULL GUARD RESTORED (T0.7), and this one is a CRASH not a
+            # mis-sort: `None > int` raises TypeError, so a coming-soon model
+            # would take down every budget query the moment it was seeded.
+            #
+            # An unpriced car is EXCLUDED from a budget filter rather than
+            # included — the old models.py note put it exactly right: it should
+            # "vanish from every budget query". We cannot promise a car fits a
+            # budget when we do not know what it costs.
+            if v.price_aed_min is None or v.price_aed_min > max_price_aed:
                 continue
         out.append(v)
     return out
@@ -345,19 +522,39 @@ def _ranked_for(rows: list[VehicleModel], basis: str) -> list[VehicleModel]:
 
     if basis == "most_seats":
         pool = [v for v in rows if v.seats_max is not None]
-        # seats_min breaks the X70 FL (7-7) / X70 Plus (5-7) tie toward the car
-        # that is ALWAYS a seven-seater over the one that optionally is.
+        # seats_min breaks a tie toward the car that is ALWAYS a seven-seater
+        # over the one that optionally is.
+        #
+        # THE EXAMPLE THIS COMMENT USED TO GIVE WAS BACKWARDS, and the seed data
+        # it described was wrong with it (T0.4). It read "the X70 FL (7-7) / X70
+        # Plus (5-7)". The brochures say the opposite: the X70 FL's spec table is
+        # `5/5+2` and the X70 FL PLUS's is `7`, with a removable second row. So
+        # the Plus is the true seven-seater and the FL is the one that optionally
+        # seats seven. Both were corrected in seed/vehicle_models.json at T0.5,
+        # and tests/test_seed_variants.py now pins them: the FL is 5-7 and the
+        # Plus is 7-7, so this tiebreak resolves to the PLUS. That is the whole
+        # reason the reference query used to answer with the wrong car.
         key = lambda v: (-v.seats_max, -(v.seats_min or 0), v.id)  # noqa: E731
     elif basis == "efficiency":
-        pool = [v for v in rows if v.fuel_type and v.fuel_type.value == "phev"]
-        # Cheapest PHEV. Every model carries a price since 2026-07-27, so there
-        # is no unpublished case to sort last any more.
+        # Cheapest PHEV — with the price guard RESTORED (T0.7). price_aed_min
+        # is nullable again now that a coming-soon model exists, and an unpriced
+        # car with a null here would sort as FREE and take this basis.
+        pool = [
+            v for v in rows
+            if v.fuel_type and v.fuel_type.value == "phev" and v.price_aed_min is not None
+        ]
         key = lambda v: (v.price_aed_min, v.id)  # noqa: E731
     elif basis == "lowest_price":
-        pool = list(rows)
+        # GUARD RESTORED (T0.7). This is the basis the old models.py note named
+        # explicitly: "restoring the column alone would let an unpriced car sort
+        # as free in lowest_price". An unpriced car is not the cheapest car — it
+        # is a car whose price we cannot state.
+        pool = [v for v in rows if v.price_aed_min is not None]
         key = lambda v: (v.price_aed_min, v.id)  # noqa: E731
     elif basis == "flagship":
-        pool = list(rows)
+        # GUARD RESTORED (T0.7). Symmetrical to lowest_price: we cannot call a
+        # car the most expensive when its ceiling is unpublished either.
+        pool = [v for v in rows if v.price_aed_max is not None]
         key = lambda v: (-v.price_aed_max, v.id)  # noqa: E731
     else:  # unknown basis — never silently pick something
         return []
@@ -566,9 +763,20 @@ def search(
     else:
         offered = [(v, None) for v in matched]
 
+    # ONE QUERY FOR EVERY CARD'S TRIMS, not one per card.
+    variants_by_model = _variants_by_model(db, [v.id for v, _ in offered])
+
     result: dict = {
         "matches": [
-            {**_vehicle_dict(db, v), **({"basis": b} if b else {})}
+            {
+                **_vehicle_dict(db, v, variants=variants_by_model.get(v.id, [])),
+                **_satisfying_block(
+                    variants_by_model.get(v.id, []),
+                    min_seats=min_seats,
+                    max_price_aed=max_price_aed,
+                ),
+                **({"basis": b} if b else {}),
+            }
             for v, b in offered
         ],
         # KEYED ON `offered`, NOT `matched`. A basis that cannot resolve — the
@@ -612,15 +820,70 @@ def search(
         if not candidates:
             continue
         if relax == "max_price_aed":
-            # Cheapest first: "our 7-seater starts at AED 73,000".
+            # Cheapest first: "our 7-seater starts at AED 79,000".
             candidates.sort(key=lambda v: (v.price_aed_min is None, v.price_aed_min or 0))
+        alt_variants = _variants_by_model(
+            db, [v.id for v in candidates[:MAX_RECOMMENDATIONS]]
+        )
+        # The RELAXED criterion is excluded from the satisfying check: an
+        # alternative is offered precisely because it fails that one, so
+        # reporting "no trim satisfies your budget" beside it would be noise.
+        kept = {k: v for k, v in dict(
+            min_seats=min_seats, max_price_aed=max_price_aed
+        ).items() if k != relax}
         result["nearest_alternatives"] = [
-            {**_vehicle_dict(db, v), "relaxed": [relax]}
+            {
+                **_vehicle_dict(db, v, variants=alt_variants.get(v.id, [])),
+                **_satisfying_block(alt_variants.get(v.id, []), **kept),
+                "relaxed": [relax],
+            }
             for v in candidates[:MAX_RECOMMENDATIONS]
         ]
         break
 
     return result
+
+
+# --------------------------------------------------------------------------- #
+# get_variants — the trims of one model (T0.9)
+# --------------------------------------------------------------------------- #
+def get_variants(db: Session, vehicle_id: int) -> dict:
+    """Every trim of one model, priced and specified.
+
+    WHY THIS IS ITS OWN CALL AND NOT PART OF DISCOVERY. search() answers "which
+    car"; this answers "which one of that car". Folding it into every search
+    result would put fifteen trims' worth of prices into a nine-model browse and
+    invite the agent to compare trims before the customer has chosen a model.
+
+    IT IS ALSO HOW SALES PRODUCES A `variant_id`. Finance needs one to quote an
+    on-road price or an instalment; stock needs one to answer a colour question.
+    The model id alone reaches neither.
+
+    TRIMS ARE ORDERED BY PRICE, NOT BY NAME, and the T1 is why: its Luxury is the
+    four-wheel-drive range-topper and its Flagship is specified close to Comfort,
+    so alphabetical or seed order would present a ladder that does not exist.
+    Unpriced trims sort last — the G700 Top Fire is coming soon, not cheapest.
+    """
+    v = db.get(VehicleModel, vehicle_id)
+    if v is None:
+        return {"error": "vehicle_not_found", "vehicle_id": vehicle_id}
+
+    rows = _variants_by_model(db, [v.id]).get(v.id, [])
+    rows = sorted(rows, key=lambda x: (x.price_aed is None, x.price_aed or 0, x.id))
+
+    return {
+        "vehicle_id": v.id,
+        "name": v.name,
+        "variants": [_variant_full(x) for x in rows],
+        # Model-level and identical across trims, so it belongs here rather than
+        # repeated fifteen times. NOT paired with an exterior colour and not
+        # stocked — see VehicleModel.interior_colours before answering with it.
+        "interior_colours": list(v.interior_colours or []),
+        # A trim named `null` means "the only version", not "unknown". Said
+        # explicitly so the agent renders the model name alone rather than the
+        # word None.
+        "single_unnamed_variant": len(rows) == 1 and rows[0].name is None,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -669,7 +932,12 @@ def get_details(
     rows = list(db.scalars(select(VehicleModel).order_by(VehicleModel.id)).all())
 
     # An exact full-name match is unambiguous even if it is a prefix of another
-    # model ("Jetour T2" vs "Jetour T2 i-DM").
+    # model ("Jetour X70 FL" vs "Jetour X70 FL Plus").
+    #
+    # THIS EXAMPLE USED TO BE "Jetour T2" vs "Jetour T2 i-DM" and stopped being
+    # one at T0.5: Elite's workbook names that car "Jetour T2 Luxury Plus", so a
+    # bare "Jetour T2" is now no model's exact name and correctly falls through
+    # to the ambiguous branch below.
     exact = [v for v in rows if (v.name or "").lower() == needle]
     if len(exact) == 1:
         return {"vehicle": _vehicle_dict(db, exact[0], full=True)}

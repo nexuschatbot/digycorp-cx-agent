@@ -121,7 +121,7 @@ def test_recall_reaches_the_model_as_a_sibling_of_customer(db):
     assert "memory" not in result["customer"], "two gates must not hide behind one key"
     assert result["memory"]["preferred_showroom"]["name"] == "Jetour Deira"
     assert result["memory"]["preferred_daypart"] == "evening"
-    assert result["memory"]["preferred_models"][0]["name"] == "Jetour T2"
+    assert result["memory"]["preferred_models"][0]["name"] == "Jetour T2 Luxury Plus"
 
 
 def test_a_new_customer_gets_no_memory_key_at_all(db):

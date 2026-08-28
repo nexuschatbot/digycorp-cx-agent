@@ -56,11 +56,14 @@ def test_lowest_price_leads_with_the_cheapest_car(db):
 
 
 def test_most_seats_leads_with_the_seven_seater(db):
-    """X70 FL (7-7) over X70 Plus (5-7): always a seven-seater beats optionally
-    one — the same tiebreak the spread uses, because it is the same sort."""
+    """X70 FL PLUS (7-7) over X70 FL (5-7): always a seven-seater beats optionally
+    one — the same tiebreak the spread uses, because it is the same sort.
+
+    The two cars were the other way round in the seed until T0.5; see the note in
+    tests/test_catalogue_spread.py."""
     out = catalogue.search(db, basis="most_seats")
 
-    assert _names(out["matches"])[0] == "Jetour X70 FL"
+    assert _names(out["matches"])[0] == "Jetour X70 FL Plus"
 
 
 # --------------------------------------------------------------------------- #
@@ -93,7 +96,7 @@ def test_ranking_composes_with_filters(db):
     (5-6 seats) must fall out of it — the filter runs first, the ranking second."""
     out = catalogue.search(db, basis="flagship", min_seats=7)
 
-    assert _names(out["matches"])[0] == "Jetour X70 FL"
+    assert _names(out["matches"])[0] == "Jetour X70 FL Plus"
     assert "Jetour G700" not in _names(out["matches"])
 
 
@@ -140,7 +143,7 @@ def test_search_without_basis_is_unchanged(db):
     # T1 i-DM, not T2 i-DM: `efficiency` is the cheapest PHEV and the T1 i-DM
     # gained a published price on 2026-07-27 (AED 129,000 vs the T2 i-DM's
     # 144,000). The SPREAD is unchanged — only which car wins one axis.
-    assert _names(out["matches"]) == ["Jetour X70 FL", "Jetour T1 i-DM", "Jetour X50"]
+    assert _names(out["matches"]) == ["Jetour X70 FL Plus", "Jetour T1 i-DM", "Jetour X50"]
     assert [m.get("basis") for m in out["matches"]] == [
         "most_seats",
         "efficiency",

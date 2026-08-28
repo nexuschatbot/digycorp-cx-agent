@@ -37,12 +37,16 @@ from app.db import Base, SessionLocal, engine
 from app.models import LocationType, Slot, SlotStatus, VehicleModel
 
 # Import models so every table is registered on Base.metadata before drop_all /
-# create_all in reset-demo — otherwise it would silently reset only a subset.
-from app import models  # noqa: F401
+# the migration runs in reset-demo — otherwise drop_all would silently reset
+# only a subset.
+from app import migrate, models  # noqa: F401
 from seed import (
+    seed_accessories,
     seed_customers,
+    seed_finance_banks,
     seed_memory_profiles,
     seed_showrooms,
+    seed_stock,
     seed_vehicle_models,
 )
 from app.services import booking as booking_service
@@ -149,10 +153,12 @@ def _drop_everything() -> None:
     arbitrary order, and Postgres then rejects the first parent it meets.
 
     So on Postgres we drop the SCHEMA with CASCADE instead. That is safe here
-    precisely because CLAUDE.md makes the database disposable (no Alembic, drop
-    and re-seed on schema change) -- and it is strictly more thorough than
-    drop_all, which only removes tables the CURRENT metadata knows about and
-    silently leaves behind anything renamed or deleted in an earlier version.
+    precisely because reset-demo is a DEMO RESET, not a migration: it is the one
+    command whose whole job is to throw the data away. Real schema evolution now
+    goes through Alembic (app/migrate.py); this is the deliberate blunt path, and
+    it is strictly more thorough than drop_all, which only removes tables the
+    CURRENT metadata knows about and silently leaves behind anything renamed or
+    deleted in an earlier version.
 
     NOTE: this is a demo/reset path only. It is never reachable from the API.
     """
@@ -162,6 +168,15 @@ def _drop_everything() -> None:
             conn.execute(text("CREATE SCHEMA public"))
     else:
         Base.metadata.drop_all(bind=engine)
+        # AND alembic's own bookkeeping table, which drop_all does NOT touch
+        # because it is not part of Base.metadata. Leaving it behind is a trap
+        # with teeth: the database would still be stamped at head while holding
+        # no tables at all, so the `upgrade head` that follows would correctly
+        # conclude there is nothing to do and reset-demo would finish with an
+        # empty schema and no error. DROP SCHEMA CASCADE already covers this on
+        # the Postgres branch above.
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
 
 
 def _sync_id_sequences() -> None:
@@ -208,19 +223,28 @@ def _cmd_reset_demo(args: argparse.Namespace) -> int:
     """
     print("Resetting the demo environment.\n")
 
-    # 1. Clean slate. drop_all + create_all rather than DELETEs: the DB is
-    #    disposable by design (no Alembic — CLAUDE.md), and a truncate-by-hand
-    #    misses whatever table was added last week.
-    print("[1/6] Dropping and recreating all tables…")
+    # 1. Clean slate. Drop everything, then MIGRATE UP rather than create_all:
+    #    reset-demo must exercise the same path production boots through, or the
+    #    one command everybody runs would be the one that never tests the
+    #    migrations. A truncate-by-hand also misses whatever table was added
+    #    last week, which is why this drops rather than deletes.
+    print("[1/6] Dropping all tables and migrating to head…")
     _drop_everything()
-    Base.metadata.create_all(bind=engine)
+    migrate.upgrade_to_head()
 
     # 2. Reference data from the REVIEWED seed fixtures. These are shipped data,
     #    never regenerated casually (CLAUDE.md working conventions) — this only
     #    re-LOADS them.
     print("[2/6] Seeding customers, vehicles, showrooms from seed/*.json…")
     seed_showrooms.main()
+    # ORDER IS AN FK ORDER, not a preference. Variants FK to models (seeded
+    # together from one fixture), and stock FKs to BOTH variants and showrooms —
+    # SQLite would insert dangling rows without complaint, so the order is the
+    # only thing enforcing it on the dev database.
     seed_vehicle_models.main()
+    seed_stock.main()
+    seed_finance_banks.main()
+    seed_accessories.main()
     seed_customers.main()
 
     # 3. Memory profiles (FR-MEM, S-07). AFTER customers — the rows carry

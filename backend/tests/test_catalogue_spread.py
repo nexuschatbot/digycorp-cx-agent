@@ -36,8 +36,13 @@ def test_unfiltered_search_returns_one_car_per_axis(db):
     out = catalogue.search(db)
     # The efficiency pick moved T2 i-DM -> T1 i-DM on 2026-07-27: that basis is
     # the CHEAPEST PHEV, and the T1 i-DM had no published price until then, so it
-    # could not win it. At AED 129,000 against the T2 i-DM's 144,000 it now does.
-    assert _codes(out["matches"]) == ["JET-X70FL", "JET-T1-IDM", "JET-X50"]
+    # could not win it. Elite's workbook re-priced both at T0.5 — 144,000 against
+    # the T2 i-DM's 159,000 — and the T1 i-DM still wins.
+    #
+    # The seats pick moved X70 FL -> X70 FL PLUS at T0.5, and that one is a
+    # CORRECTION, not a re-price: the seed had the two cars' seat ranges swapped,
+    # so this axis was answering with the wrong car.
+    assert _codes(out["matches"]) == ["JET-X70P", "JET-T1-IDM", "JET-X50"]
     assert _bases(out["matches"]) == ["most_seats", "efficiency", "lowest_price"]
 
 
@@ -57,23 +62,38 @@ def test_flagship_backfills_when_a_basis_cannot_resolve(db):
     assert "JET-X50" in _codes(out["matches"]), "cheapest petrol car must be offered"
 
 
-def test_x70_fl_wins_most_seats_over_x70_plus(db):
-    """Both reach 7. The FL is 7-7, the Plus is 5-7 — the tiebreak must prefer
+def test_x70_plus_wins_most_seats_over_x70_fl(db):
+    """Both reach 7. The PLUS is 7-7, the FL is 5-7 — the tiebreak must prefer
     the car that is ALWAYS a seven-seater over the one that optionally is.
+
+    THIS TEST ASSERTED THE OPPOSITE UNTIL T0.5, and it passed, because the seed
+    had the two cars' seat ranges exactly swapped. The tiebreak was always right;
+    the data underneath it was not. The brochure specification tables settle it:
+    the X70 FL's says `5/5+2`, the X70 FL Plus's says `7` with a removable second
+    row. Both cars' MARKETING pages say "5/7 seater", which is where the
+    confusion came from — quote the spec table.
     """
     out = catalogue.search(db)
     seats = next(m for m in out["matches"] if m.get("basis") == "most_seats")
-    assert seats["code"] == "JET-X70FL"
+    assert seats["code"] == "JET-X70P"
 
 
 def test_unpublished_price_never_wins_a_price_basis(db):
-    """The T1 i-DM has no published price. Calling it cheapest — or flagship —
-    would be a claim the data does not support (FR-CX-07).
+    """No model with a null price may be called cheapest or dearest (FR-CX-07).
+
+    RE-POINTED AT T0.5. This used to name the T1 i-DM, which had no published
+    price when it was written and now costs AED 144,000 — so it was passing
+    vacuously, which is worse than not existing. Every one of the nine MODELS is
+    priced today; the unpriced car is a VARIANT (the G700 Top Fire, coming soon),
+    and tests/test_unpriced_vehicle.py guards that path directly.
+
+    Kept as a shape assertion so the invariant survives the next unpriced model.
     """
     for kwargs in ({}, {"fuel": "phev"}, {"body_type": "suv"}):
         out = catalogue.search(db, **kwargs)
         priced = [m for m in out["matches"] if m.get("basis") in {"lowest_price", "flagship"}]
-        assert all(m["code"] != "JET-T1-IDM" for m in priced)
+        for m in priced:
+            assert m.get("price_aed_min") is not None, m["code"]
 
 
 def test_basis_values_are_enums_not_display_text(db):
@@ -146,7 +166,7 @@ def test_digest_reaches_the_audio_cars(db):
     out = catalogue.search(db, feature_query="best sound system")
     text = {d["name"]: " ".join(d["headline_features"]) for d in out["catalogue_digest"]}
     assert "Lexicon" in text["Jetour G700"]
-    assert "Sony" in text["Jetour T2"]
+    assert "Sony" in text["Jetour T2 Luxury Plus"]
     assert not any("sound" in t.lower() for t in text.values())
 
 
@@ -163,7 +183,7 @@ def test_digest_carries_no_price(db):
 def test_digest_is_scoped_by_the_structured_filters(db):
     """'a seven-seater with good audio' digests the seven-seaters, not all nine."""
     out = catalogue.search(db, min_seats=7, feature_query="good audio")
-    assert {d["name"] for d in out["catalogue_digest"]} == {"Jetour X70 Plus", "Jetour X70 FL"}
+    assert {d["name"] for d in out["catalogue_digest"]} == {"Jetour X70 FL Plus", "Jetour X70 FL"}
 
 
 def test_digest_omitted_when_nothing_matched(db):

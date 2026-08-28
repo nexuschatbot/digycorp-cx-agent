@@ -52,9 +52,10 @@ def test_a_real_seven_seater_search_returns_both_cars(db):
     out = catalogue.search(db, min_seats=7)
     names = {m["name"] for m in out["matches"]}
     assert "Jetour X70 FL" in names
-    assert "Jetour X70 Plus" in names, (
-        "min_seats filters on seats_max, so the X70 Plus (5-7) satisfies 'I need 7' "
-        "— the agent claiming a single seven-seater is a grounding error"
+    assert "Jetour X70 FL Plus" in names, (
+        "min_seats filters on seats_max, so the X70 FL (5-7) satisfies 'I need 7' "
+        "alongside the X70 FL Plus (7-7) — the agent claiming a single "
+        "seven-seater is a grounding error"
     )
 
 

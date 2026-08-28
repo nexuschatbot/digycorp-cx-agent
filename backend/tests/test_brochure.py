@@ -158,7 +158,15 @@ def test_every_seeded_model_produces_a_brochure(db):
 
 def test_the_document_carries_no_customer_details(db):
     """It is about a CAR. The link is public and unauthenticated, so anything
-    personal in here would be personal data behind no gate at all."""
+    personal in here would be personal data behind no gate at all.
+
+    THIS TEST'S REASONING CHANGED AT T0.10 even though its assertions did not.
+    It used to prove that the PDF WE GENERATED never picked up the requesting
+    customer's details. The document is now a static file of Elite's, so it
+    structurally cannot — which makes this weaker as a test and stronger as a
+    guarantee. Kept as the tripwire for the day anyone reintroduces per-customer
+    rendering, or stamps a name onto the brochure before sending it.
+    """
     cid = _customer(db)
     v = _a_vehicle(db)
     send_brochure(db, SESSION, customer_id=cid, vehicle_id=v.id)

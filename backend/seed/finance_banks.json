@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "name": "Emirates NBD",
+    "financing_type": "Conventional (reducing balance)",
+    "rate_percent": 3.49,
+    "min_down_payment_percent": 20.0,
+    "max_tenure_months": 60,
+    "islamic": false,
+    "is_sample": true,
+    "notes": "Sample dealer-panel bank; rate is indicative and promo-dependent."
+  },
+  {
+    "id": 2,
+    "name": "Mashreq Bank",
+    "financing_type": "Conventional (reducing balance)",
+    "rate_percent": 3.75,
+    "min_down_payment_percent": 20.0,
+    "max_tenure_months": 60,
+    "islamic": false,
+    "is_sample": true,
+    "notes": "Sample dealer-panel bank; rate is indicative and promo-dependent."
+  },
+  {
+    "id": 3,
+    "name": "Dubai Islamic Bank",
+    "financing_type": "Shariah-compliant (Murabaha)",
+    "rate_percent": 3.99,
+    "min_down_payment_percent": 20.0,
+    "max_tenure_months": 60,
+    "islamic": true,
+    "is_sample": true,
+    "notes": "Interest-free structure by design; same DBR/down-payment rules apply."
+  }
+]

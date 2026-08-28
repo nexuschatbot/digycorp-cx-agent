@@ -66,7 +66,7 @@ SEARCH_VEHICLES_SCHEMA = {
         "- 'no_exact_match': true means nothing fits. 'nearest_alternatives' "
         "then holds the closest real cars, each with a 'relaxed' field naming "
         "the criterion it fails. Offer these honestly and explain the "
-        "trade-off — e.g. our cheapest 7-seater is AED 73,000 when the customer "
+        "trade-off — e.g. our cheapest 7-seater is AED 79,000 when the customer "
         "asked for one under 60,000. Never present an alternative as if it met "
         "the original request.\n"
         "- price_aed_min/price_aed_max are always present: every model in the "

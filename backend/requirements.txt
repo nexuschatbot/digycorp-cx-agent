@@ -6,6 +6,12 @@ uvicorn[standard]==0.51.0
 # a dep that code imports by name belongs in this file.
 websockets==15.0.1
 sqlalchemy==2.0.51
+# Schema migrations (T0.3). Adopted because `Base.metadata.create_all` — what
+# boot used to call — creates MISSING TABLES and nothing else: it never adds a
+# column, never changes nullability, and reports no error when it skips one.
+# A PRODUCTION dependency, not a dev one: app/main.py runs the migration at boot
+# and the container must be able to import it.
+alembic==1.19.1
 anthropic==0.116.0
 python-dotenv==1.2.2
 pydantic==2.13.4

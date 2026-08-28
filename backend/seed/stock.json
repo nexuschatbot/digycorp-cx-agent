@@ -1,0 +1,2642 @@
+[
+  {
+    "variant_id": 1,
+    "showroom_id": 1,
+    "colour": "Night Black",
+    "units": 30,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 3,
+    "colour": "Night Black",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 4,
+    "colour": "Night Black",
+    "units": 50,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 6,
+    "colour": "Night Black",
+    "units": 25,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 5,
+    "colour": "Night Black",
+    "units": 25,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 15,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 15,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 30,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 1,
+    "colour": "Highway Grey",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 3,
+    "colour": "Highway Grey",
+    "units": 10,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 4,
+    "colour": "Highway Grey",
+    "units": 30,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 6,
+    "colour": "Highway Grey",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 5,
+    "colour": "Highway Grey",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 1,
+    "colour": "Sand",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 3,
+    "colour": "Sand",
+    "units": 15,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 4,
+    "colour": "Sand",
+    "units": 50,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 6,
+    "colour": "Sand",
+    "units": 15,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 5,
+    "colour": "Sand",
+    "units": 25,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 1,
+    "colour": "Dark Blue",
+    "units": 10,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 3,
+    "colour": "Dark Blue",
+    "units": 5,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 4,
+    "colour": "Dark Blue",
+    "units": 20,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 6,
+    "colour": "Dark Blue",
+    "units": 10,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 5,
+    "colour": "Dark Blue",
+    "units": 5,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 1,
+    "colour": "Matte Orange",
+    "units": 10,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 3,
+    "colour": "Matte Orange",
+    "units": 10,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 4,
+    "colour": "Matte Orange",
+    "units": 15,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 6,
+    "colour": "Matte Orange",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 1,
+    "showroom_id": 5,
+    "colour": "Matte Orange",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 1,
+    "colour": "Night Black",
+    "units": 18,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 3,
+    "colour": "Night Black",
+    "units": 12,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 4,
+    "colour": "Night Black",
+    "units": 10,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 6,
+    "colour": "Night Black",
+    "units": 8,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 5,
+    "colour": "Night Black",
+    "units": 9,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 25,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 10,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 24,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 32,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 14,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 1,
+    "colour": "Highway Grey",
+    "units": 41,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 3,
+    "colour": "Highway Grey",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 4,
+    "colour": "Highway Grey",
+    "units": 78,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 6,
+    "colour": "Highway Grey",
+    "units": 11,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 5,
+    "colour": "Highway Grey",
+    "units": 21,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 1,
+    "colour": "Sand",
+    "units": 27,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 3,
+    "colour": "Sand",
+    "units": 22,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 4,
+    "colour": "Sand",
+    "units": 52,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 6,
+    "colour": "Sand",
+    "units": 18,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 5,
+    "colour": "Sand",
+    "units": 8,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 1,
+    "colour": "Dark Blue",
+    "units": 16,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 3,
+    "colour": "Dark Blue",
+    "units": 31,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 4,
+    "colour": "Dark Blue",
+    "units": 45,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 6,
+    "colour": "Dark Blue",
+    "units": 25,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 5,
+    "colour": "Dark Blue",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 1,
+    "colour": "Matte Orange",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 3,
+    "colour": "Matte Orange",
+    "units": 25,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 4,
+    "colour": "Matte Orange",
+    "units": 46,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 6,
+    "colour": "Matte Orange",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 2,
+    "showroom_id": 5,
+    "colour": "Matte Orange",
+    "units": 18,
+    "_model_code": "JET-G700",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 1,
+    "colour": "Night Black",
+    "units": 26,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 3,
+    "colour": "Night Black",
+    "units": 34,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 4,
+    "colour": "Night Black",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 6,
+    "colour": "Night Black",
+    "units": 18,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 5,
+    "colour": "Night Black",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 35,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 22,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 38,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 12,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 31,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 1,
+    "colour": "Highway Grey",
+    "units": 44,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 3,
+    "colour": "Highway Grey",
+    "units": 13,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 4,
+    "colour": "Highway Grey",
+    "units": 54,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 6,
+    "colour": "Highway Grey",
+    "units": 25,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 5,
+    "colour": "Highway Grey",
+    "units": 54,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 1,
+    "colour": "Sand",
+    "units": 52,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 3,
+    "colour": "Sand",
+    "units": 41,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 4,
+    "colour": "Sand",
+    "units": 29,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 6,
+    "colour": "Sand",
+    "units": 32,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 5,
+    "colour": "Sand",
+    "units": 14,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 1,
+    "colour": "Dark Blue",
+    "units": 11,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 3,
+    "colour": "Dark Blue",
+    "units": 8,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 4,
+    "colour": "Dark Blue",
+    "units": 18,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 6,
+    "colour": "Dark Blue",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 5,
+    "colour": "Dark Blue",
+    "units": 41,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 1,
+    "colour": "Matte Orange",
+    "units": 5,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 3,
+    "colour": "Matte Orange",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 4,
+    "colour": "Matte Orange",
+    "units": 8,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 6,
+    "colour": "Matte Orange",
+    "units": 4,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 3,
+    "showroom_id": 5,
+    "colour": "Matte Orange",
+    "units": 0,
+    "_model_code": "JET-G700",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 1,
+    "colour": "Matte Grey",
+    "units": 35,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 3,
+    "colour": "Matte Grey",
+    "units": 8,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 4,
+    "colour": "Matte Grey",
+    "units": 45,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 6,
+    "colour": "Matte Grey",
+    "units": 22,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 5,
+    "colour": "Matte Grey",
+    "units": 12,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 1,
+    "colour": "Silver Snow",
+    "units": 55,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 3,
+    "colour": "Silver Snow",
+    "units": 16,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 4,
+    "colour": "Silver Snow",
+    "units": 25,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 6,
+    "colour": "Silver Snow",
+    "units": 18,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 5,
+    "colour": "Silver Snow",
+    "units": 9,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 1,
+    "colour": "Misty Cyan",
+    "units": 21,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 3,
+    "colour": "Misty Cyan",
+    "units": 33,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 4,
+    "colour": "Misty Cyan",
+    "units": 19,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 6,
+    "colour": "Misty Cyan",
+    "units": 8,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 5,
+    "colour": "Misty Cyan",
+    "units": 7,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 1,
+    "colour": "Night Black",
+    "units": 93,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 3,
+    "colour": "Night Black",
+    "units": 41,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 4,
+    "colour": "Night Black",
+    "units": 74,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 6,
+    "colour": "Night Black",
+    "units": 31,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 5,
+    "colour": "Night Black",
+    "units": 0,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 1,
+    "colour": "Sand",
+    "units": 23,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 3,
+    "colour": "Sand",
+    "units": 18,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 4,
+    "colour": "Sand",
+    "units": 11,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 6,
+    "colour": "Sand",
+    "units": 12,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 5,
+    "colour": "Sand",
+    "units": 5,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 80,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 25,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 45,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 15,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 5,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 20,
+    "_model_code": "JET-T2",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 1,
+    "colour": "Silver",
+    "units": 79,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 3,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 4,
+    "colour": "Silver",
+    "units": 89,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 6,
+    "colour": "Silver",
+    "units": 43,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 5,
+    "colour": "Silver",
+    "units": 10,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 60,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 31,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 25,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 10,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 11,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 0,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 9,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 15,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 10,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 6,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 5,
+    "_model_code": "JET-T2-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 48,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 12,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 51,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 19,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 2,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 32,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 15,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 19,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 10,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 1,
+    "colour": "Silver",
+    "units": 29,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 3,
+    "colour": "Silver",
+    "units": 11,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 4,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 6,
+    "colour": "Silver",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 5,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 1,
+    "colour": "Light Gold",
+    "units": 18,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 3,
+    "colour": "Light Gold",
+    "units": 5,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 4,
+    "colour": "Light Gold",
+    "units": 37,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 6,
+    "colour": "Light Gold",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 7,
+    "showroom_id": 5,
+    "colour": "Light Gold",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Comfort"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 25,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 21,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 36,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 41,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 25,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 41,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 32,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 23,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 1,
+    "colour": "Silver",
+    "units": 52,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 3,
+    "colour": "Silver",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 4,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 6,
+    "colour": "Silver",
+    "units": 19,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 5,
+    "colour": "Silver",
+    "units": 11,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 1,
+    "colour": "Light Gold",
+    "units": 41,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 3,
+    "colour": "Light Gold",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 4,
+    "colour": "Light Gold",
+    "units": 25,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 6,
+    "colour": "Light Gold",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 8,
+    "showroom_id": 5,
+    "colour": "Light Gold",
+    "units": 6,
+    "_model_code": "JET-T1",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 19,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 15,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 51,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 8,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 26,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 62,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 58,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 41,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 1,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 3,
+    "colour": "Silver",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 4,
+    "colour": "Silver",
+    "units": 32,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 6,
+    "colour": "Silver",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 5,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 1,
+    "colour": "Light Gold",
+    "units": 10,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 3,
+    "colour": "Light Gold",
+    "units": 12,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 4,
+    "colour": "Light Gold",
+    "units": 14,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 6,
+    "colour": "Light Gold",
+    "units": 8,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 9,
+    "showroom_id": 5,
+    "colour": "Light Gold",
+    "units": 9,
+    "_model_code": "JET-T1",
+    "_variant": "Flagship"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 45,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 9,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 21,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 18,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 14,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 63,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 14,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 29,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 30,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 15,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 1,
+    "colour": "Dark Grey",
+    "units": 45,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 3,
+    "colour": "Dark Grey",
+    "units": 16,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 4,
+    "colour": "Dark Grey",
+    "units": 26,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 6,
+    "colour": "Dark Grey",
+    "units": 23,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 5,
+    "colour": "Dark Grey",
+    "units": 5,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 1,
+    "colour": "Light Grey",
+    "units": 21,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 3,
+    "colour": "Light Grey",
+    "units": 11,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 4,
+    "colour": "Light Grey",
+    "units": 20,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 6,
+    "colour": "Light Grey",
+    "units": 8,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 5,
+    "colour": "Light Grey",
+    "units": 10,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 1,
+    "colour": "Light Blue",
+    "units": 70,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 3,
+    "colour": "Light Blue",
+    "units": 25,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 4,
+    "colour": "Light Blue",
+    "units": 25,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 6,
+    "colour": "Light Blue",
+    "units": 19,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 5,
+    "colour": "Light Blue",
+    "units": 14,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 1,
+    "colour": "Dark Green",
+    "units": 23,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 3,
+    "colour": "Dark Green",
+    "units": 11,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 4,
+    "colour": "Dark Green",
+    "units": 25,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 6,
+    "colour": "Dark Green",
+    "units": 20,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 11,
+    "showroom_id": 5,
+    "colour": "Dark Green",
+    "units": 10,
+    "_model_code": "JET-DASH",
+    "_variant": "1.5 Standard"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 89,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 71,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 78,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 45,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 19,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 56,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 19,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 22,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 1,
+    "colour": "Dark Grey",
+    "units": 81,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 3,
+    "colour": "Dark Grey",
+    "units": 22,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 4,
+    "colour": "Dark Grey",
+    "units": 15,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 6,
+    "colour": "Dark Grey",
+    "units": 36,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 5,
+    "colour": "Dark Grey",
+    "units": 0,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 1,
+    "colour": "Light Grey",
+    "units": 15,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 3,
+    "colour": "Light Grey",
+    "units": 10,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 4,
+    "colour": "Light Grey",
+    "units": 19,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 6,
+    "colour": "Light Grey",
+    "units": 25,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 5,
+    "colour": "Light Grey",
+    "units": 14,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 1,
+    "colour": "Light Blue",
+    "units": 11,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 3,
+    "colour": "Light Blue",
+    "units": 9,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 4,
+    "colour": "Light Blue",
+    "units": 58,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 6,
+    "colour": "Light Blue",
+    "units": 19,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 5,
+    "colour": "Light Blue",
+    "units": 14,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 1,
+    "colour": "Dark Green",
+    "units": 16,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 3,
+    "colour": "Dark Green",
+    "units": 10,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 4,
+    "colour": "Dark Green",
+    "units": 18,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 6,
+    "colour": "Dark Green",
+    "units": 19,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 12,
+    "showroom_id": 5,
+    "colour": "Dark Green",
+    "units": 10,
+    "_model_code": "JET-DASH",
+    "_variant": "1.6 Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 45,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 12,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 32,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 23,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 12,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 76,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 33,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 74,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 12,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 14,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-X70FL",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 52,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 21,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 54,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 19,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 18,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 85,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 41,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 74,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 41,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 1,
+    "colour": "Dark Grey",
+    "units": 24,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 3,
+    "colour": "Dark Grey",
+    "units": 5,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 4,
+    "colour": "Dark Grey",
+    "units": 13,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 6,
+    "colour": "Dark Grey",
+    "units": 16,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 13,
+    "showroom_id": 5,
+    "colour": "Dark Grey",
+    "units": 12,
+    "_model_code": "JET-X70P",
+    "_variant": "Luxury"
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 45,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 0,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 45,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 26,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 15,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 95,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 85,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 43,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 21,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 1,
+    "colour": "Dark Grey",
+    "units": 31,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 3,
+    "colour": "Dark Grey",
+    "units": 11,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 4,
+    "colour": "Dark Grey",
+    "units": 52,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 6,
+    "colour": "Dark Grey",
+    "units": 13,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 5,
+    "colour": "Dark Grey",
+    "units": 15,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 1,
+    "colour": "Light Blue",
+    "units": 51,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 3,
+    "colour": "Light Blue",
+    "units": 36,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 4,
+    "colour": "Light Blue",
+    "units": 63,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 6,
+    "colour": "Light Blue",
+    "units": 20,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 5,
+    "colour": "Light Blue",
+    "units": 10,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 1,
+    "colour": "Silver",
+    "units": 49,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 3,
+    "colour": "Silver",
+    "units": 16,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 4,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 6,
+    "colour": "Silver",
+    "units": 14,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 15,
+    "showroom_id": 5,
+    "colour": "Silver",
+    "units": 7,
+    "_model_code": "JET-X50",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 1,
+    "colour": "Silver",
+    "units": 21,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 3,
+    "colour": "Silver",
+    "units": 0,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 4,
+    "colour": "Silver",
+    "units": 26,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 6,
+    "colour": "Silver",
+    "units": 10,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 5,
+    "colour": "Silver",
+    "units": 5,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 1,
+    "colour": "Gold",
+    "units": 9,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 3,
+    "colour": "Gold",
+    "units": 0,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 4,
+    "colour": "Gold",
+    "units": 8,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 6,
+    "colour": "Gold",
+    "units": 7,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 5,
+    "colour": "Gold",
+    "units": 6,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 1,
+    "colour": "Green",
+    "units": 4,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 3,
+    "colour": "Green",
+    "units": 1,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 4,
+    "colour": "Green",
+    "units": 5,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 6,
+    "colour": "Green",
+    "units": 6,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 5,
+    "colour": "Green",
+    "units": 0,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 1,
+    "colour": "White",
+    "units": 11,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 3,
+    "colour": "White",
+    "units": 2,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 4,
+    "colour": "White",
+    "units": 9,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 6,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 5,
+    "colour": "White",
+    "units": 0,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 1,
+    "colour": "Black",
+    "units": 30,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 3,
+    "colour": "Black",
+    "units": 6,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 4,
+    "colour": "Black",
+    "units": 25,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 6,
+    "colour": "Black",
+    "units": 14,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  },
+  {
+    "variant_id": 10,
+    "showroom_id": 5,
+    "colour": "Black",
+    "units": 10,
+    "_model_code": "JET-T1-IDM",
+    "_variant": null
+  }
+]

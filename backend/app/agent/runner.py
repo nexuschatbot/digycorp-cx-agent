@@ -323,7 +323,7 @@ def run_turn(
                 previous_agent = (snapshot.values or {}).get("agent")
                 prior_facts = (snapshot.values or {}).get("session_facts") or {}
             except Exception:
-                _log.warning("could not read prior agent from checkpoint", exc_info=True)
+                log.warning("could not read prior agent from checkpoint", exc_info=True)
 
             if not (kickoff or voice_failed):
                 _routed_at = time.perf_counter()

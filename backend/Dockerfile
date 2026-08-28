@@ -27,6 +27,21 @@ COPY app ./app
 #    simply there, which is why neither showed up until first deploy.
 COPY seed ./seed
 
+# 4) Migrations. NOT optional, for exactly the reason seed/ above is not: main.py
+#    runs `migrate.upgrade_to_head()` at startup, and alembic resolves its
+#    script_location on disk. Without these the container imports fine, boots,
+#    and dies in lifespan on a missing migration directory — a failure that
+#    cannot happen in local dev, where the repo is simply there. Same class of
+#    bug as the two documented above, caught before first deploy this time.
+# The brochure PDFs, the brochure MD and the knowledge files. WITHOUT THIS the
+# container boots fine and then 404s every brochure request while local dev
+# works perfectly — the same shape as the missing `alembic` directory below,
+# which is why both are pinned by tests in tests/test_migrations.py and
+# tests/test_brochure_files.py.
+COPY content ./content
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
+
 # Run as a non-root user (create after install so pip runs as root).
 RUN useradd --create-home --uid 1000 appuser \
     && chown -R appuser:appuser /app

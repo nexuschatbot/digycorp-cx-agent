@@ -1,0 +1,62 @@
+
+model: claude-sonnet-4-6   cap: $0.55   conversations: 3
+
+[1m--- showroom [0m[90mBranch questions — get_showrooms, no markdown lists[0m
+  [36m[user][0m What showrooms do you have in Dubai?
+  [32m[aisha][0m Hi there! I'm Aisha, Elite Group's assistant. We have two Jetour showrooms in Dubai.
+
+The first is Jetour Al Quoz, located at 4th Street, Al Quoz Industrial Area 3. The second is Jetour Deira, on 109 …
+    [33m[tools][0m get_showrooms
+    [90m[cost][0m 2 calls · $0.0205 · 9887ms · running $0.020
+  [36m[user][0m Which one is closest to Al Quoz?
+  [32m[aisha][0m Could you share a nearby landmark, mall, or metro station so I can pinpoint your closest showroom?
+    [33m[tools][0m nearest_showroom
+    [90m[cost][0m 2 calls · $0.0204 · 4410ms · running $0.041
+  [36m[user][0m Great, thank you.
+  [32m[aisha][0m You're welcome! If you ever need help finding a showroom, booking a test drive, or exploring our Jetour lineup, just give me a shout. Have a wonderful day!
+    [33m[tools][0m close_conversation
+    [90m[cost][0m 1 calls · $0.0102 · 2983ms · running $0.051
+
+[1m--- doorstep [0m[90mDoorstep drive — FR-SL-07 address + explicit consent[0m
+  [36m[user][0m Can you bring a car to me instead of me coming in?
+  [32m[aisha][0m We do offer doorstep test drives, yes! That brings the car right to you, in the evenings, across Dubai.
+
+To get you set up with the right car and slot, do you have a particular model in mind, or would…
+    [90m[cost][0m 1 calls · $0.0114 · 3137ms · running $0.062
+  [36m[user][0m Yes please, I'd prefer that.
+  [32m[aisha][0m I'd love to help you find the right car! Tell me a little about what you're looking for - the kind of driving you do, how many seats you need, your budget, anything that matters to you - and I'll poin…
+    [90m[cost][0m 1 calls · $0.0099 · 2946ms · running $0.072
+  [36m[user][0m Actually, let me think about it first.
+  [32m[aisha][0m Of course, take your time! Whenever you're ready, just come back and I'll help you find the perfect car and get a doorstep drive arranged. Have a great day!
+    [90m[cost][0m 1 calls · $0.0097 · 2939ms · running $0.082
+
+[1m--- close [0m[90mRule 19 — a clean close, exactly once[0m
+  [36m[user][0m Hi, just wanted to know your opening hours.
+  [32m[aisha][0m I'm Aisha, Elite Group's assistant. Welcome!
+
+All our showrooms share the same hours: Monday through Saturday, 9 AM to 9 PM. On Sundays we open a little later, from 12 PM to 9 PM. We have branches in …
+    [33m[tools][0m get_showrooms
+    [90m[cost][0m 2 calls · $0.0276 · 6416ms · running $0.110
+  [36m[user][0m That's all I needed, thanks. Goodbye!
+  [32m[aisha][0m You're welcome, and thanks for reaching out! Feel free to come back anytime. Goodbye!
+    [33m[tools][0m close_conversation
+    [90m[cost][0m 1 calls · $0.0106 · 2638ms · running $0.120
+
+
+========================================================================
+  BASELINE CAPTURED
+========================================================================
+  conversations   3
+  turns           8
+  model calls     11
+  latency         p50 3137ms   p95 9887ms   max 9887ms
+  tokens in       uncached 27  cache_write 2,237  cache_read 319,114
+  tokens out      734
+
+  [1mSPENT  $0.120[0m   of $0.55 cap
+
+  written to  evals/baseline_out/baseline-20260828-165342.json
+
+  Pricing is the assumption stated at the top of this file, not a
+  reading from the account. Check the console before quoting the total.
+

@@ -329,7 +329,9 @@ class VehicleModel(Base):
     # loosely, so search matches this case-insensitively as a substring rather
     # than against a taxonomy we would have to invent (FR-BK-09).
     body_type: Mapped[str | None] = mapped_column(String(64))
-    # Seats are a RANGE, not a value: the X70 Plus is 5-7, the G700 is 5-6.
+    # Seats are a RANGE, not a value: the X70 FL is 5-7, the G700 is 5-6.
+    # (This named the X70 PLUS until T0.5. It is the 7-7 car; the FL is the
+    # one with the occasional 5+2 third row. The seed had them swapped.)
     # Discovery filters seats_max >= min_seats (FR-BK-09/10) — comparing on a
     # single value would silently hide the main family SUV from every
     # "I need a 7-seater" conversation. For a fixed-seat model min == max.
@@ -338,21 +340,27 @@ class VehicleModel(Base):
     # Numeric bracket bounds so discovery can filter on max_price_aed
     # (FR-BK-09/10).
     #
-    # REQUIRED SINCE 2026-07-27. These were nullable, and null MEANT something:
-    # "price not published", a valid state the agent had to admit honestly under
-    # FR-CX-07 rather than invent a number. That state is gone by product
-    # decision — every Jetour model in the catalogue now carries a published AED
-    # range — so the concept it supported (the price_unknown bucket, the
-    # price_published flag, the null guards in the ranking bases) came out with
-    # it rather than being left as branches no data can reach.
+    # NULLABLE AGAIN SINCE 2026-08-28 (T0.7), and the note above it explains
+    # exactly what that costs. Verbatim, it said: "If a future model genuinely
+    # has no published price, this is a REAL DECISION TO REOPEN and not a column
+    # to quietly re-null: restoring the column alone would let an unpriced car
+    # sort as free in lowest_price and vanish from every budget query."
     #
-    # If a future model genuinely has no published price, this is a real
-    # decision to reopen and not a column to quietly re-null: restoring the
-    # column alone would let an unpriced car sort as free in lowest_price and
-    # vanish from every budget query. The DB is disposable (no Alembic), so drop
-    # and re-seed on the change.
-    price_aed_min: Mapped[int] = mapped_column(Integer, nullable=False)
-    price_aed_max: Mapped[int] = mapped_column(Integer, nullable=False)
+    # That future model has arrived — the G700 Top Fire, coming soon, with no
+    # price and no stock. So this is that decision, taken deliberately and with
+    # the two consequences the old note named both handled:
+    #
+    #   1. NULL GUARDS ARE RESTORED in all four catalogue._ranked_for bases, so
+    #      an unpriced car can never sort as free or top a "cheapest" answer.
+    #      They are covered by tests, not just written back in.
+    #   2. THE DB IS NO LONGER DISPOSABLE. The old note's advice — "drop and
+    #      re-seed on the change" — assumed there was no Alembic. There is now
+    #      (T0.3), so this change ships as a migration and existing rows survive.
+    #
+    # Null still MEANS "price not published", and the agent must say so rather
+    # than invent a number (FR-CX-07).
+    price_aed_min: Mapped[int | None] = mapped_column(Integer)
+    price_aed_max: Mapped[int | None] = mapped_column(Integer)
     fuel_type: Mapped[FuelType] = mapped_column(SAEnum(FuelType), index=True)
     headline_features: Mapped[list] = mapped_column(JSON, default=list)
     # Arabic counterpart, same order and same length as headline_features.
@@ -372,10 +380,220 @@ class VehicleModel(Base):
     # cost first (`agent usage` logs prompt_total).
     headline_features_ar: Mapped[list] = mapped_column(JSON, default=list)
     showroom_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # Interior colour palette as Elite lists it ("Black & Orange", "Ivory /
+    # Blue"). JSON for the same reason showroom_ids and images are: a short
+    # per-model list nothing filters or sorts on numerically.
+    #
+    # THREE THINGS IT IS NOT, all of which a reader will assume otherwise:
+    #
+    #   1. NOT PAIRED WITH THE EXTERIOR COLOUR. Elite's Models sheet runs the
+    #      exterior and interior lists down the same block of rows, and they are
+    #      different lengths — the G700 Comfort has six exteriors against two
+    #      interiors. They are independent palettes, not a mapping. Aisha may say
+    #      "the T1 comes in three interiors"; she may NOT say "the black one with
+    #      ivory is available".
+    #   2. NOT STOCKED. Stock's grain is (variant, showroom, EXTERIOR colour),
+    #      because that is the grain Elite's unit counts are at. So this column
+    #      answers what EXISTS, never what is available where.
+    #   3. NOT PER-VARIANT. The sheet lists one palette per model, spanning its
+    #      trims — unlike seats and price, which genuinely differ per trim.
+    #
+    # Exterior colours have no column of their own on purpose: they ARE the
+    # Stock key, so they are already queryable per branch.
+    interior_colours: Mapped[list] = mapped_column(JSON, default=list)
     # Free-text source/traceability note for the row's data.
     data_provenance: Mapped[str | None] = mapped_column(Text)
     # Relative paths (from the backend repo root) to the model's image files.
     images: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class VehicleVariant(Base):
+    """One purchasable TRIM of a VehicleModel (T0.7).
+
+    WHY THIS TABLE EXISTS. Until now a "car" was a model row with a price RANGE
+    — the G700 was 169,000-240,450 and nothing knew that 169,000 buys a Comfort
+    and 240,450 buys a Flagship. Every commercial fact Elite supplied is
+    per-trim, not per-model: on-road price, insurance, stock by colour and
+    branch, and fuel economy. Without this table none of it has anywhere to live.
+
+    THE MODEL ROW KEEPS ITS RANGE, DELIBERATELY. catalogue.search() still returns
+    MODEL cards showing a price band (see T0.9), because a customer asking "what
+    SUVs do you have" wants nine cars, not fifteen trims. The variant is what
+    they narrow TO, not what they browse.
+
+    TRIM NAMES DO NOT IMPLY RANK, and the T1 proves it: its Luxury is the
+    four-wheel-drive range-topper and its Flagship is specified close to Comfort,
+    which is why Luxury is priced ABOVE Flagship. Never sort trims by name, and
+    never assume "Flagship" is the top of a ladder — sort by price.
+
+    `name` IS NULLABLE because several models have exactly one unnamed trim
+    (T2 Luxury Plus, T2 i-DM, T1 i-DM). A null name means "the only version",
+    not "unknown".
+
+    THIS LIST NAMED THE X50 UNTIL T0.5, on the workbook's authority — the
+    workbook leaves its Variant cell blank. Its BROCHURE names the trim outright
+    ("Trim | Premium") in the specification table, so it is seeded as "Premium".
+    The workbook stays authoritative for commercial data; a name beats a blank.
+    """
+
+    __tablename__ = "vehicle_variants"
+    __table_args__ = (
+        UniqueConstraint("model_id", "name", name="uq_variant_model_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("vehicle_models.id"), index=True
+    )
+    # "Comfort", "Luxury", "Flagship", "1.5 Standard". NULL = the only trim.
+    name: Mapped[str | None] = mapped_column(String(64))
+
+    # NULLABLE FOR THE SAME REASON VehicleModel's price is: the G700 Top Fire is
+    # coming soon and has no price. Null means "not published", never zero.
+    price_aed: Mapped[int | None] = mapped_column(Integer)
+    insurance_aed: Mapped[int | None] = mapped_column(Integer)
+    registration_aed: Mapped[int | None] = mapped_column(Integer)
+
+    # Per-trim, because they genuinely differ: the T1's Luxury is 4WD and
+    # heavier, so it is thirstier than its own Comfort and Flagship.
+    #
+    # STORED AS km/L, which is Elite's authoritative column (their decision).
+    # A RANGE, not a value — most figures are quoted as one, and collapsing
+    # "12 to 14" to a single number would either overstate or understate it.
+    km_per_l_min: Mapped[float | None] = mapped_column(Float)
+    km_per_l_max: Mapped[float | None] = mapped_column(Float)
+
+    # Seats are per-TRIM, not per-model, and the G700 is why: its Comfort is a
+    # 5-seater (2+3) and its Luxury and Flagship are 6 (2+2+2). Storing this on
+    # the model alone would make one of those answers wrong.
+    seats_min: Mapped[int | None] = mapped_column(Integer)
+    seats_max: Mapped[int | None] = mapped_column(Integer)
+
+    # Not orderable yet. Distinct from "no stock": a sold-out trim can still be
+    # ordered, a coming-soon one cannot. The agent must say so rather than
+    # quote a price or a date it does not have.
+    coming_soon: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    model: Mapped["VehicleModel"] = relationship()
+
+    @property
+    def on_road_aed(self) -> int | None:
+        """Price + insurance + registration, or None if any part is unpublished.
+
+        NOT a sum with nulls treated as zero — that would quote an on-road price
+        BELOW the list price and look like a discount. All three or nothing.
+        """
+        parts = (self.price_aed, self.insurance_aed, self.registration_aed)
+        return sum(parts) if all(p is not None for p in parts) else None
+
+
+class Stock(Base):
+    """Units on the ground, per variant x colour x showroom (T0.7).
+
+    THE GRAIN IS THE POINT. Elite's sheet is 66 rows across 14 variants and 5
+    branches, which makes "is the G700 Flagship in Matte Orange at Deira?"
+    answerable — a question the old model-level catalogue could not touch.
+
+    A SNAPSHOT, NOT A LEDGER. Nothing in this system decrements `units` when a
+    car sells; the numbers are only as fresh as the last import. That is why the
+    agent answers AVAILABILITY (yes/no) and never a count — a stale "twelve at
+    Deira" is a promise we cannot keep, while a stale "yes, we have it" degrades
+    to a conversation at the showroom.
+    """
+
+    __tablename__ = "stock"
+    __table_args__ = (
+        UniqueConstraint(
+            "variant_id", "showroom_id", "colour", name="uq_stock_variant_showroom_colour"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    variant_id: Mapped[int] = mapped_column(
+        ForeignKey("vehicle_variants.id"), index=True
+    )
+    showroom_id: Mapped[int] = mapped_column(
+        ForeignKey("showrooms.id"), index=True
+    )
+    # Exterior colour as Elite writes it ("Matte Orange", "Highway Grey").
+    # Free text, not an enum: the palette differs per model and a taxonomy we
+    # invented would fight the next import.
+    colour: Mapped[str] = mapped_column(String(64), index=True)
+    units: Mapped[int] = mapped_column(Integer, default=0)
+
+    variant: Mapped["VehicleVariant"] = relationship()
+    showroom: Mapped["Showroom"] = relationship()
+
+
+class Accessory(Base):
+    """A priced accessory (T0.7).
+
+    IN THE DATABASE RATHER THAN A KNOWLEDGE MD, because it carries prices and
+    prices live in exactly one place. Two price sources is how a customer is
+    quoted one number in chat and another on the invoice.
+
+    `model_id` IS NULLABLE: some accessories fit one model, some fit anything.
+    """
+
+    __tablename__ = "accessories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Elite's SKU ("ACC-003"). NEVER SPOKEN — no customer says a part code and
+    # the agent must not read one out. It exists as a stable join key: matching
+    # a re-import on the name string ("Paint Protection Film (PPF)", parentheses
+    # and all) is fragile in a way matching on ACC-004 is not.
+    part_code: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    name_en: Mapped[str] = mapped_column(String(128))
+    name_ar: Mapped[str | None] = mapped_column(String(128))
+    # WHAT THE THING ACTUALLY IS, and the reason this column was added rather
+    # than left in the fixture. Three of the five names mean nothing on their
+    # own: "Ceramic Coating - AED 1,800" tells a customer neither what it is nor
+    # why it costs that, and "Paint Protection Film - AED 2,200" reads as absurd
+    # beside tinting at 900 until you know it covers the bumper, hood and
+    # mirrors and self-heals.
+    #
+    # The agent speaks only from tool results, so without this she cannot
+    # describe an accessory at all — inventing a description would be exactly
+    # the grounding failure the guardrails exist to prevent, and "I don't have
+    # that" about a product Elite is selling is the alternative.
+    #
+    # ENGLISH ONLY: Elite supplied no Arabic for accessories, so `name_ar` is
+    # null on every row and there is no description_ar to be null. An Arabic
+    # conversation gets a price and an English sentence. That is a DATA gap to
+    # take back to Elite, not one a column can close.
+    description_en: Mapped[str | None] = mapped_column(Text)
+    price_aed: Mapped[int | None] = mapped_column(Integer)
+    model_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicle_models.id"), index=True
+    )
+
+    model: Mapped["VehicleModel"] = relationship()
+
+
+class FinanceBank(Base):
+    """A financing option (T0.7).
+
+    EVERY RATE ELITE SUPPLIED IS MARKED "Sample". Nothing here may be presented
+    as a quotation: services/finance computes an INDICATIVE instalment and the
+    agent must say so, then hand a real quote to a human (rule 13). The columns
+    exist to make the arithmetic honest, not to make the number binding.
+    """
+
+    __tablename__ = "finance_banks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    # Annual reducing-balance rate, e.g. 3.99. Nullable because a "Sample" row
+    # may carry a band rather than a figure.
+    rate_percent: Mapped[float | None] = mapped_column(Float)
+    min_down_payment_percent: Mapped[float | None] = mapped_column(Float)
+    max_tenure_months: Mapped[int | None] = mapped_column(Integer)
+    # Sharia-compliant product. A real filter — customers ask for it by name.
+    islamic: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Elite marked every supplied rate "Sample". Kept as a column so the agent's
+    # caveat is driven by data rather than by a hardcoded assumption that all
+    # rates are indicative forever.
+    is_sample: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Showroom(Base):
