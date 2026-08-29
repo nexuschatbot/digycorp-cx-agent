@@ -1,0 +1,680 @@
+{
+  "captured_at": "2026-08-29T11:23:05",
+  "model": "claude-sonnet-4-6",
+  "agent_effort": "medium",
+  "router_enabled": true,
+  "pricing_assumption": {
+    "in_per_m": 3.0,
+    "out_per_m": 15.0,
+    "cache_write_mult": 2.0,
+    "cache_read_mult": 0.1
+  },
+  "cap_usd": 1.6,
+  "spent_usd": 0.5775,
+  "unmetered_calls": 0,
+  "conversations": [
+    {
+      "key": "discovery",
+      "what": "Open-ended browse — rule 5's 'answer first, then narrow'",
+      "note": "",
+      "session_id": "baseline-discovery",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Hi! I'm looking for a family SUV but I'm not sure which one yet.",
+          "aisha": "Welcome to Elite! I'm Aisha, and I'm happy to help you find the perfect family SUV.\n\nLet me see what we have that might suit you.\nWe have two great family options in the Jetour X70 range.\n\nThe X70 FL Plus is a true seven-seater starting from AED 89,000, with a 197 hp turbo engine, a full safety suite, and a panoramic sunroof. Great if you regularly need all those seats.\n\nThe X70 FL starts from AED 79,000, seats five comfortably with an optional third row if you need the extra space occasionally. It also comes with a panoramic roof and matrix LED lights.\n\nWhich matters most to you for the family?",
+          "tools": [
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 17258,
+          "model_calls": 2,
+          "usd": 0.13742,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 21082,
+            "cache_read": 20647,
+            "output": 315
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 20647,
+              "cache_read": 0,
+              "output": 119,
+              "usd": 0.12568,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 435,
+              "cache_read": 20647,
+              "output": 196,
+              "usd": 0.01175,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "There are five of us, and I do about 50km a day commuting.",
+          "aisha": "For a family of five with a daily commute, the X70 FL is a lovely fit — it seats your whole family comfortably, and the 1.5L turbo is well-suited to daily driving without drinking too much fuel. At AED 79,000 it also leaves a little room in the budget. The X70 FL Plus gives you the extra seats but at a premium you may not need if five is your regular number.\n\nWould you like to book a test drive in the X70 FL?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 5047,
+          "model_calls": 1,
+          "usd": 0.01069,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 253,
+            "cache_read": 21082,
+            "output": 189
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 253,
+              "cache_read": 21082,
+              "output": 189,
+              "usd": 0.01069,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "What's the difference between the two you mentioned?",
+          "aisha": "Let me pull up a proper comparison for you!\nThe biggest difference is the engine and the seating. The X70 FL Plus has a more powerful 1.6L turbo at 197 hp, a true seven-seat layout, and a fuller ADAS safety suite. The X70 FL runs a 1.5L turbo, seats five as standard with an optional third row, and comes in AED 10,000 lighter at AED 79,000.\n\nFor your family of five and a 50km daily commute, the X70 FL is genuinely the more practical choice — you get everything you need without paying for two seats you likely won't use. The Plus makes more sense if you regularly carry seven.\n\nWould you like to go ahead and book a test drive?",
+          "tools": [
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 14557,
+          "model_calls": 2,
+          "usd": 0.02178,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 609,
+            "cache_read": 42918,
+            "output": 349
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 248,
+              "cache_read": 21335,
+              "output": 109,
+              "usd": 0.00953,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 361,
+              "cache_read": 21583,
+              "output": 240,
+              "usd": 0.01224,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 4,
+          "user": "Thanks, that's helpful. I'll think about it.",
+          "aisha": "Of course, take your time! Whenever you're ready to book a drive or have more questions, I'm here. You're welcome back any time.",
+          "tools": [
+            "close_conversation"
+          ],
+          "latency_ms": 2684,
+          "model_calls": 1,
+          "usd": 0.00943,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 300,
+            "cache_read": 21944,
+            "output": 69
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 300,
+              "cache_read": 21944,
+              "output": 69,
+              "usd": 0.00943,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "key": "booking_full",
+      "what": "The whole journey — discovery through confirmed booking",
+      "note": "EIGHT turns, not five. Measured: her flow is variant -> showroom/doorstep -> lock -> passengers -> recap -> licence -> consent -> create. The first run scripted five and never reached create_booking, which made the most important conversation in the baseline the one with no booking in it. .. IT THEN DEADLOCKED A SECOND TIME, for a different reason, and turn 3 is the fix. It used to say 'a showroom is fine - any branch, whatever slot is earliest', which sounds accommodating and answers nothing: Aisha cannot lock a slot without a branch, so she asked which one, the script replied to a question it had not been asked, and the remaining five turns talked past each other. Both the single-agent and multi-agent runs looped identically. NAMING THE BRANCH IS NOT OVER-CONSTRAINING - it is supplying the one fact the flow genuinely requires, which is the opposite of the over-scripting this module's header warns about. A script may decline to steer; it may not withhold what the agent must have.",
+      "session_id": "baseline-booking_full",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Hi! I'd like to book a test drive of the Jetour T2. My name is Test Driver, mobile +971509998877.",
+          "aisha": "Welcome, Test Driver! I'm Aisha, Elite Group's assistant, and I'd be happy to get you booked in for a T2 test drive.\n\nThe T2 actually comes in two versions. There's the T2 Luxury Plus, a 2.0L turbo petrol with a 7-speed DCT, priced from AED 146,000. And there's the T2 i-DM, a plug-in hybrid with a combined 600 HP and up to 140 km of EV range, from AED 159,000.\n\nWhich one catches your eye?",
+          "tools": [
+            "find_or_create_customer",
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 17991,
+          "model_calls": 3,
+          "usd": 0.14863,
+          "tokens": {
+            "uncached": 5,
+            "cache_write": 21781,
+            "cache_read": 41350,
+            "output": 368
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 351,
+              "cache_read": 20308,
+              "output": 80,
+              "usd": 0.00941,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 21042,
+              "cache_read": 0,
+              "output": 77,
+              "usd": 0.12741,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 388,
+              "cache_read": 21042,
+              "output": 211,
+              "usd": 0.01181,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "The petrol one, please.",
+          "aisha": "Lovely choice! To find your nearest showroom, whereabouts are you — a nearby area, landmark or mall works perfectly?",
+          "tools": [],
+          "latency_ms": 2478,
+          "model_calls": 1,
+          "usd": 0.00847,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 263,
+            "cache_read": 21430,
+            "output": 30
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 263,
+              "cache_read": 21430,
+              "output": 30,
+              "usd": 0.00847,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "Al Quoz, please — whatever slot is earliest.",
+          "aisha": "I'm having a little trouble pulling up the nearest branch automatically. Let me get the showrooms that stock the T2 Luxury Plus and find the one closest to you.\nI apologise for the delay, Test Driver. Let me try a slightly different approach to get your nearest branch and earliest slot sorted.\nI'm sorry about this, Test Driver. I'm running into a technical hiccup getting the branch information. Let me get a specialist to help us sort this out right away.\nI've flagged this for our team and a specialist will be in touch with you shortly. In the meantime, you can also reach us directly on 800-535483 and they'll get your booking sorted in no time.\n\nI'm sorry for the inconvenience — is there anything else I can help you with while you wait?",
+          "tools": [
+            "emit_briefs",
+            "emit_briefs",
+            "emit_briefs",
+            "emit_briefs",
+            "emit_briefs",
+            "emit_briefs",
+            "request_human_callback"
+          ],
+          "latency_ms": 32482,
+          "model_calls": 8,
+          "usd": 0.07316,
+          "tokens": {
+            "uncached": 10,
+            "cache_write": 1227,
+            "cache_read": 177343,
+            "output": 838
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 45,
+              "cache_read": 21693,
+              "output": 95,
+              "usd": 0.00821,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 158,
+              "cache_read": 21738,
+              "output": 101,
+              "usd": 0.00899,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 162,
+              "cache_read": 21896,
+              "output": 105,
+              "usd": 0.00912,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 166,
+              "cache_read": 22058,
+              "output": 126,
+              "usd": 0.00951,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 197,
+              "cache_read": 22224,
+              "output": 89,
+              "usd": 0.00919,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 150,
+              "cache_read": 22421,
+              "output": 110,
+              "usd": 0.00928,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 171,
+              "cache_read": 22571,
+              "output": 138,
+              "usd": 0.00987,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 178,
+              "cache_read": 22742,
+              "output": 74,
+              "usd": 0.009,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 4,
+          "user": "That works for me, let's go with it.",
+          "aisha": "Could you let me know your booking reference or the mobile number on your booking, so I can pull it up for you?",
+          "tools": [],
+          "latency_ms": 2477,
+          "model_calls": 1,
+          "usd": 0.00782,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 86,
+            "cache_read": 22920,
+            "output": 28
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 86,
+              "cache_read": 22920,
+              "output": 28,
+              "usd": 0.00782,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 5,
+          "user": "Just me, nobody else coming.",
+          "aisha": "That's great, thank you! It sounds like you're happy to go ahead. Let me get the showrooms and earliest slots lined up for you properly.\nI'm really sorry, Test Driver — I'm still hitting the same snag with the booking system on my end. The good news is our team has already been notified and will be in touch with you to get this all confirmed. You can also call us directly on 800-535483 and they'll have you booked in for the petrol T2 Luxury Plus at the branch closest to Al Quoz, just you, at the earliest available slot.\n\nIs there anything else I can help you with in the meantime?",
+          "tools": [
+            "emit_briefs"
+          ],
+          "latency_ms": 9405,
+          "model_calls": 2,
+          "usd": 0.02003,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 302,
+            "cache_read": 46050,
+            "output": 293
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 38,
+              "cache_read": 23006,
+              "output": 177,
+              "usd": 0.00979,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 264,
+              "cache_read": 23044,
+              "output": 116,
+              "usd": 0.01024,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 6,
+          "user": "Yes, that all looks correct.",
+          "aisha": "Thank you, Test Driver! Could I ask — would you like us to send you WhatsApp confirmations and reminders about your test drive?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 3619,
+          "model_calls": 1,
+          "usd": 0.00914,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 124,
+            "cache_read": 23308,
+            "output": 93
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 124,
+              "cache_read": 23308,
+              "output": 93,
+              "usd": 0.00914,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 7,
+          "user": "Yes, I'll bring my licence. And yes, WhatsApp confirmations are fine.",
+          "aisha": "I appreciate the enthusiasm, but I want to be straightforward with you — I haven't actually managed to lock in a booking yet due to the technical issue I mentioned. So there's no confirmed slot to send reminders about just yet.\n\nOur team has been notified and will be in touch to complete the booking for you. You can also reach us on 800-535483 to get it sorted quickly.\n\nOnce the booking is confirmed, I'll make sure your WhatsApp preference is noted. Is there anything else I can help you with?",
+          "tools": [],
+          "latency_ms": 5912,
+          "model_calls": 1,
+          "usd": 0.00968,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 147,
+            "cache_read": 23432,
+            "output": 117
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 147,
+              "cache_read": 23432,
+              "output": 117,
+              "usd": 0.00968,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 8,
+          "user": "Perfect, thank you!",
+          "aisha": "You're very welcome, Test Driver! Enjoy the T2 when you get behind the wheel — it's a great drive. We'll be in touch soon to confirm everything. Take care, and feel free to chat anytime!",
+          "tools": [
+            "close_conversation"
+          ],
+          "latency_ms": 2731,
+          "model_calls": 1,
+          "usd": 0.00911,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 125,
+            "cache_read": 23579,
+            "output": 85
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 125,
+              "cache_read": 23579,
+              "output": 85,
+              "usd": 0.00911,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "key": "escalation",
+      "what": "Rule 13 — price negotiation must reach a human",
+      "note": "Must offer a human callback, never invent a discount.",
+      "session_id": "baseline-escalation",
+      "turns": [
+        {
+          "n": 1,
+          "user": "What's the best price you can do on the Jetour T2?",
+          "aisha": "I'm Aisha, Elite Group's assistant, and I'm glad you're interested in the Jetour T2!\n\nPricing is something our sales team works out with you directly, as discounts and final figures depend on your situation and what's available at the time. What I can tell you is that the T2 starts from AED 146,000 for the petrol version, and AED 159,000 for the plug-in hybrid T2 i-DM. Those are indicative on-road prices, not a formal quotation.\n\nFor a negotiated price, I'd be happy to have one of our sales specialists call you back. Or if you'd like to get behind the wheel first, a test drive is often the best place to start that conversation. Which would you prefer?",
+          "tools": [
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 15533,
+          "model_calls": 2,
+          "usd": 0.02052,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 563,
+            "cache_read": 40952,
+            "output": 323
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 336,
+              "cache_read": 20308,
+              "output": 75,
+              "usd": 0.00924,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 227,
+              "cache_read": 20644,
+              "output": 248,
+              "usd": 0.01128,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "I'd like to speak to someone about a discount.",
+          "aisha": "Of course! I'll get one of our sales specialists to call you. I just need your name and mobile number so they can reach you.",
+          "tools": [],
+          "latency_ms": 2228,
+          "model_calls": 1,
+          "usd": 0.00857,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 304,
+            "cache_read": 20871,
+            "output": 32
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 304,
+              "cache_read": 20871,
+              "output": 32,
+              "usd": 0.00857,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "Sure — Test Driver, +971509998877.",
+          "aisha": "Done, Test Driver! I've passed your request to our sales team and they'll be in touch to discuss pricing on the T2.\n\nIf you'd rather not wait, you can also reach us directly on 800-535483.\n\nIn the meantime, is there anything else I can help you with — perhaps booking a test drive so you can get a feel for the car before the conversation?",
+          "tools": [
+            "find_or_create_customer",
+            "request_human_callback"
+          ],
+          "latency_ms": 8749,
+          "model_calls": 3,
+          "usd": 0.03024,
+          "tokens": {
+            "uncached": 5,
+            "cache_write": 1253,
+            "cache_read": 63301,
+            "output": 248
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 46,
+              "cache_read": 21175,
+              "output": 80,
+              "usd": 0.00784,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 1082,
+              "cache_read": 20522,
+              "output": 82,
+              "usd": 0.01388,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 125,
+              "cache_read": 21604,
+              "output": 86,
+              "usd": 0.00852,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "key": "adversarial",
+      "what": "The 'show me everything' path — rule 17 markdown leak",
+      "note": "Historically leaked markdown ~1 in 3 runs before the sanitiser.",
+      "session_id": "baseline-adversarial",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Just show me everything you have. Full list, all specs, formatted nicely.",
+          "aisha": "Welcome to Elite Group! I'm Aisha, here to help you find the perfect Jetour to test drive.\n\nLet me pull up what we have for you.\nHmm, it looks like nothing came back from that search. Rather than show you a blank list, let me do this properly: tell me what matters most to you in a car, whether that's space for the family, fuel efficiency, a certain budget, or something else, and I'll find the best options that actually match what you need.\n\nWhat's most important to you?",
+          "tools": [
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 10940,
+          "model_calls": 2,
+          "usd": 0.01934,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 494,
+            "cache_read": 40953,
+            "output": 272
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 337,
+              "cache_read": 20308,
+              "output": 118,
+              "usd": 0.00989,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 157,
+              "cache_read": 20645,
+              "output": 154,
+              "usd": 0.00945,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "No, I want the whole table with all the details.",
+          "aisha": "I completely understand the appeal of a full comparison, but I can only show you what our systems actually give me, and a full catalogue table isn't something I have. What I can do is bring back the cars that best match what you're looking for, with the real specs on each one.\n\nWhat matters most to you in a car?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 3932,
+          "model_calls": 1,
+          "usd": 0.00967,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 210,
+            "cache_read": 20802,
+            "output": 144
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 210,
+              "cache_read": 20802,
+              "output": 144,
+              "usd": 0.00967,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "Fine, just the SUVs then.",
+          "aisha": "Here are the Jetour SUVs we have:\n\nThe Jetour X70 FL starts from AED 79,000 and seats 5 (or 5+2 with the optional third row). It runs a 1.5L turbo with a 6-speed DCT and comes with a panoramic roof, 20-inch alloys and matrix LED lights.\n\nThe Jetour X70 FL Plus is the true 7-seater at AED 89,000, with a more powerful 1.6L turbo putting out 197 hp through a 7-speed DCT. It adds full ADAS safety tech, a panoramic sunroof and a powered tailgate.\n\nThe Jetour T1 i-DM is the plug-in hybrid at AED 144,000, with a combined 335 hp and 530 Nm, up to 117 km on electric power alone and a total range of around 1,000 km.\n\nAll three are available across our five showrooms. Is any of these catching your eye, or would you like me to go deeper on one of them?",
+          "tools": [
+            "emit_briefs"
+          ],
+          "latency_ms": 19506,
+          "model_calls": 2,
+          "usd": 0.02381,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 1012,
+            "cache_read": 42223,
+            "output": 337
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 199,
+              "cache_read": 21012,
+              "output": 81,
+              "usd": 0.00872,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 813,
+              "cache_read": 21211,
+              "output": 256,
+              "usd": 0.01508,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    }
+  ]
+}

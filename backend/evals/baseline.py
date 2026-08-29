@@ -53,7 +53,14 @@ from sqlalchemy.orm import Session
 from app import config
 from app.agent import build_config, build_graph, new_sqlite_checkpointer
 from app.db import Base
-from app.models import FuelType, Showroom, VehicleModel
+from app.models import (
+    FinanceBank,
+    FuelType,
+    Showroom,
+    Stock,
+    VehicleModel,
+    VehicleVariant,
+)
 from app.services import slots as slots_service
 
 SEED = Path(__file__).resolve().parent.parent / "seed"
@@ -335,6 +342,26 @@ CONVERSATIONS: list[Conversation] = [
 # Fixtures — ported from scripts/scripted_booking._seed_db
 # --------------------------------------------------------------------------- #
 def _seed_db() -> Session:
+    """The fixture database, seeded to the CURRENT schema.
+
+    IT USED TO SEED MODELS AND SHOWROOMS ONLY, and that quietly invalidated
+    every multi-agent measurement taken against it (found 2026-08-29). This was
+    ported from scripts/scripted_booking._seed_db, written before Phase 0 made
+    the catalogue variant-level — so VehicleVariant, Stock and FinanceBank were
+    all empty. The SINGLE agent never noticed: its tools are model-level, and a
+    model-level browse works perfectly against models alone.
+
+    The sub-agents are not. get_variants returned `[]`, get_on_road_price and
+    get_finance_estimate returned variant_not_found, check_stock found nothing —
+    so Sales could not name a trim, Finance could not price one, and TestDrive
+    could not reach a slot. Aisha did exactly the right thing with that: she
+    retried, then apologised, then escalated to a human. The transcript reads
+    like a broken agent and was a broken FIXTURE.
+
+    THE LESSON IS ABOUT SHARED FIXTURES, not about this file: a seed that serves
+    one code path and starves another produces a measurement that looks valid.
+    Seeded from the same JSON as tests/conftest.py, so the two cannot drift.
+    """
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     db = Session(engine)
@@ -347,9 +374,32 @@ def _seed_db() -> Session:
             id=r["id"], model_code=r["model_code"], brand=r["brand"], name=r["name"],
             body_type=r["body_type"], seats_min=r["seats_min"], seats_max=r["seats_max"],
             price_aed_min=r["price_aed_min"], price_aed_max=r["price_aed_max"],
-            fuel_type=FuelType(r["fuel_type"]), headline_features=r["headline_features"],
+            fuel_type=FuelType(r["fuel_type"]),
+            headline_features=r["headline_features"],
+            headline_features_ar=r["headline_features_ar"],
+            interior_colours=r["interior_colours"],
             showroom_ids=r["showroom_ids"], data_provenance=r["data_provenance"],
             images=r["images"]))
+        # Variants ride in with their model, from the same fixture, so a model's
+        # price range and its trims can never disagree.
+        for v in r["variants"]:
+            db.add(VehicleVariant(
+                id=v["id"], model_id=r["id"], name=v["name"],
+                price_aed=v["price_aed"], insurance_aed=v["insurance_aed"],
+                registration_aed=v["registration_aed"],
+                km_per_l_min=v["km_per_l_min"], km_per_l_max=v["km_per_l_max"],
+                seats_min=v["seats_min"], seats_max=v["seats_max"],
+                coming_soon=v["coming_soon"]))
+    # Stock LAST of the catalogue tables: it FKs to variants AND showrooms.
+    for r in json.loads((SEED / "stock.json").read_text()):
+        db.add(Stock(variant_id=r["variant_id"], showroom_id=r["showroom_id"],
+                     colour=r["colour"], units=r["units"]))
+    for r in json.loads((SEED / "finance_banks.json").read_text()):
+        db.add(FinanceBank(
+            id=r["id"], name=r["name"], rate_percent=r["rate_percent"],
+            min_down_payment_percent=r["min_down_payment_percent"],
+            max_tenure_months=r["max_tenure_months"],
+            islamic=r["islamic"], is_sample=r["is_sample"]))
     db.commit()
     slots_service.generate(db, days=14, prebooked=0.0,
                            start_day=date.today() + timedelta(days=1))
