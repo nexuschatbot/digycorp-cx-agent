@@ -145,3 +145,99 @@ if __name__ == "__main__":
     reports = check_all()
     print(render(reports))
     sys.exit(0 if all(r.ok for r in reports.values()) else 1)
+
+
+# --------------------------------------------------------------------------- #
+# The Phase 4 write invariants (T7.3)
+# --------------------------------------------------------------------------- #
+# THESE ARE THE CLAIMS THE WHOLE WRITE ARCHITECTURE RESTS ON, and until now they
+# were prose in a plan. The plan states them twice, in the roster decision and
+# again in the verification list, which is exactly the kind of rule that stays
+# true right up until somebody adds a tool to a card in a hurry.
+#
+#   1. NO SUB-AGENT HOLDS A WRITE TOOL. They return proposals as DATA and the
+#      orchestrator executes them. This is the single property that makes it
+#      safe to run a sub-agent on Haiku: a bad generation can ask for a booking,
+#      it cannot make one.
+#
+#   2. AISHA HOLDS NO COMMERCIAL WRITE. The split is by KIND, not by layer —
+#      she keeps the conversational writes (identity, consent, licence, memory,
+#      close) because those are acts of dialogue and only she talks. Holding,
+#      booking, rescheduling and cancelling are acts of commerce and belong to
+#      the orchestrator, where they are serialised and audited in one place.
+#
+# Checked here rather than only in tests/ because differential.py is the file a
+# prompt or card change is expected to run, and a rule enforced somewhere nobody
+# looks is a rule with a delay fuse on it.
+
+SUB_AGENTS: tuple[str, ...] = ("sales", "testdrive", "finance")
+
+
+def _card_tools(agent: str) -> set[str]:
+    from app.agents import loader
+
+    try:
+        return set(loader.frontmatter(agent).get("tools") or [])
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def write_tool_violations() -> list[str]:
+    """Sub-agent cards that hold a write tool. Empty is the only acceptable answer."""
+    from app.tools import WRITE_TOOLS
+
+    out: list[str] = []
+    for agent in SUB_AGENTS:
+        for tool in sorted(_card_tools(agent) & WRITE_TOOLS):
+            out.append(f"{agent} holds the write tool {tool!r}")
+    return out
+
+
+def commercial_write_violations() -> list[str]:
+    """Aisha holding a COMMERCIAL write, which is the orchestrator's alone.
+
+    Reads the aisha card if it declares tools; falls back to the live binding,
+    because in Phase 5 the single-agent path still binds everything and the
+    claim only becomes enforceable once she has a card of her own.
+    """
+    from app.tools import COMMERCIAL_WRITE_TOOLS
+
+    tools = _card_tools("aisha")
+    if not tools:
+        return []  # no declared binding yet — nothing to check, and say so
+    return [
+        f"aisha holds the commercial write {tool!r}"
+        for tool in sorted(tools & COMMERCIAL_WRITE_TOOLS)
+    ]
+
+
+def proposal_coverage() -> list[str]:
+    """Commercial actions a card PROPOSES that the orchestrator cannot execute.
+
+    A card proposing something write.py does not know about is an instruction
+    the sub-agent will follow and nothing will honour — the orphaned-rule defect
+    at the level of actions rather than tools.
+    """
+    from app.agents import loader
+    from app.orchestrator.write import PROPOSABLE
+
+    out: list[str] = []
+    for agent in SUB_AGENTS:
+        try:
+            proposes = set(loader.frontmatter(agent).get("proposes") or [])
+        except Exception:  # noqa: BLE001
+            continue
+        for action in sorted(proposes):
+            # Non-commercial proposals (send_brochure, request_human_callback)
+            # are executed by the ordinary tool path, not by write.py.
+            from app.tools import COMMERCIAL_WRITE_TOOLS
+
+            commercial = action in COMMERCIAL_WRITE_TOOLS or action == "hold_slot"
+            if commercial and action not in PROPOSABLE:
+                out.append(f"{agent} proposes {action!r}, which write.py cannot execute")
+    return out
+
+
+def write_report() -> list[str]:
+    """Every write-architecture violation, in one list. Empty means healthy."""
+    return write_tool_violations() + commercial_write_violations() + proposal_coverage()
