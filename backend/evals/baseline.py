@@ -224,7 +224,8 @@ CONVERSATIONS: list[Conversation] = [
         [
             f"Hi! I'd like to book a test drive of the Jetour T2. My name is Test Driver, mobile {MOBILE}.",
             "The petrol one, please.",
-            "Al Quoz, please — whatever slot is earliest.",
+            "I'd rather not share my location — could you just list your branches?",
+            "Al Quoz, please. Whatever slot is earliest.",
             "That works for me, let's go with it.",
             "Just me, nobody else coming.",
             "Yes, that all looks correct.",
@@ -232,21 +233,36 @@ CONVERSATIONS: list[Conversation] = [
             "Perfect, thank you!",
         ],
         note=(
-            "EIGHT turns, not five. Measured: her flow is variant -> showroom/doorstep "
-            "-> lock -> passengers -> recap -> licence -> consent -> create. The first "
-            "run scripted five and never reached create_booking, which made the most "
+            "NINE turns, not five. Measured: her flow is variant -> branch -> lock -> "
+            "passengers -> recap -> licence -> consent -> create. The first run "
+            "scripted five and never reached create_booking, which made the most "
             "important conversation in the baseline the one with no booking in it. "
             ".. "
-            "IT THEN DEADLOCKED A SECOND TIME, for a different reason, and turn 3 is "
-            "the fix. It used to say 'a showroom is fine - any branch, whatever slot "
-            "is earliest', which sounds accommodating and answers nothing: Aisha "
-            "cannot lock a slot without a branch, so she asked which one, the script "
-            "replied to a question it had not been asked, and the remaining five turns "
-            "talked past each other. Both the single-agent and multi-agent runs looped "
-            "identically. NAMING THE BRANCH IS NOT OVER-CONSTRAINING - it is supplying "
-            "the one fact the flow genuinely requires, which is the opposite of the "
-            "over-scripting this module's header warns about. A script may decline to "
-            "steer; it may not withhold what the agent must have."
+            "IT THEN DEADLOCKED TWICE MORE, and the second reason is the "
+            "interesting one. 'A showroom is fine - any branch' names no branch, so "
+            "Aisha asked which; naming 'Al Quoz' was no better, because that reads "
+            "as a PLACE THE CUSTOMER IS, which sends her to nearest_showroom. "
+            ".. "
+            "nearest_showroom CANNOT RESOLVE IN THIS ENVIRONMENT, for any input. "
+            "There is no Google Maps key and outbound calls are blocked, so "
+            "maps.geocode returns None and every location - landmarks included - "
+            "comes back could_not_locate + ask_for_landmark. She then asks for a "
+            "landmark that can never work, and the conversation loops until the "
+            "script runs out. This was silently true of EVERY baseline ever run, "
+            "single-agent included, which is why booking_full has never once "
+            "reached create_booking. "
+            ".. "
+            "So turn 3 now DECLINES to give a location, which is the branch of her "
+            "own NEAREST_BRANCH anchor that works offline: 'only list the branches "
+            "with get_showrooms if they would rather not say where they are'. "
+            "Verified against the fixture before being written here - get_showrooms "
+            "lists five branches, get_available_slots returns slot 2 at Al Quoz, "
+            "and lock_slot takes it. "
+            ".. "
+            "NINE turns now, because declining and then choosing is two exchanges "
+            "rather than one. A script may decline to steer; it may not withhold "
+            "what the agent must have, and it may not send her down a path this "
+            "environment cannot complete."
         ),
     ),
     Conversation(
