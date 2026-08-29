@@ -297,3 +297,48 @@ def test_every_proposed_action_is_something_write_can_perform():
         declared = set(loader.frontmatter(agent).get("proposes") or [])
         unknown = declared - PROPOSABLE - set(REGISTRY)
         assert unknown == set(), f"{agent} proposes {unknown}, which nothing can perform"
+
+
+# --------------------------------------------------------------------------- #
+# The DELEGATING section — multi-agent only
+# --------------------------------------------------------------------------- #
+def test_delegating_never_reaches_the_live_single_agent_prompt():
+    """It is absent from SINGLE_AGENT_ORDER on purpose. If it ever leaks in, the
+    live prompt changes, the S5 fixture breaks, and the ~14.8k cached prefix
+    takes a cold write for every customer."""
+    from app.agents import loader
+
+    assert "HOW THE WORK GETS DONE NOW" not in loader.single_agent_body()
+
+
+def test_the_fan_out_aisha_is_told_she_no_longer_books():
+    """Her ported prose says 'call lock_slot' and 'call create_booking'. Without
+    this section she did exactly that — and until the binding was enforced at
+    dispatch, it ran."""
+    from app.agents import loader
+
+    body = loader.body_for("aisha")
+    assert "HOW THE WORK GETS DONE NOW" in body
+    for tool in ("lock_slot", "create_booking", "reschedule_booking", "cancel_booking"):
+        assert tool in body
+    assert "You no longer call" in body
+
+
+def test_she_is_told_only_executed_actions_are_real():
+    """The difference between a confirmation and a lie."""
+    from app.agents import loader
+
+    body = loader.body_for("aisha")
+    assert "'executed'" in body or "executed" in body
+    assert "asked for" in body.lower()
+
+
+def test_the_ported_booking_sequence_is_untouched():
+    """Rule zero: port, don't re-author. DELEGATING says who performs the steps;
+    it must not have edited the steps themselves."""
+    from app.agents import loader
+
+    sections = loader.sections("aisha")
+    seq = sections["BOOKING_SEQUENCE"]
+    assert "A booking becomes real only when you call create_booking" in seq
+    assert "rule 9" in seq

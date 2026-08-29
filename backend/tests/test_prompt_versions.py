@@ -86,7 +86,13 @@ def test_every_block_in_the_order_exists_and_is_used_exactly_once():
 
     available = {
         ("base", n) for n in loader.sections("base")
-    } | {("aisha", n) for n in loader.sections("aisha")}
+    } | {
+        ("aisha", n) for n in loader.sections("aisha")
+        # Fan-out only, by name and on purpose — see loader.MULTI_AGENT_ONLY.
+        # Everything else must be composed exactly once, which is what catches a
+        # renamed heading silently shortening the prompt.
+        if n not in loader.MULTI_AGENT_ONLY
+    }
     ordered = set(loader.SINGLE_AGENT_ORDER)
     assert ordered - available == set(), "the order names a section that does not exist"
     assert available - ordered == set(), "a section exists but is never composed"
@@ -95,8 +101,23 @@ def test_every_block_in_the_order_exists_and_is_used_exactly_once():
 def test_a_journey_body_is_a_strict_subset_of_the_single_agent_body():
     full = loader.single_agent_body()
     for agent in ("aisha",):
-        for text in loader.sections(agent).values():
+        for name, text in loader.sections(agent).items():
+            if name in loader.MULTI_AGENT_ONLY:
+                # Written for the fan-out, where she does not book. The single
+                # agent still does, so it must NOT carry this — asserted the
+                # other way round below.
+                continue
             assert text in full
+
+
+def test_multi_agent_only_sections_stay_out_of_the_shipped_body():
+    """The other half of the exception above, so it cannot silently widen."""
+    full = loader.single_agent_body()
+    sections = loader.sections("aisha")
+    assert loader.MULTI_AGENT_ONLY, "if this empties, delete the exception"
+    for name in loader.MULTI_AGENT_ONLY:
+        assert sections[name] not in full, name
+        assert name not in loader.SINGLE_AGENT_ORDER, name
 
 
 def test_each_journey_carries_every_base_block():
@@ -272,7 +293,10 @@ def test_the_journey_split_survives_the_merge():
     """testdrive and bookingmanagement merged into one aisha file, but tool
     bindings are still per journey. Losing this would make a bookingmanagement
     block naming a testdrive-only tool invisible to the differential check."""
-    origins = loader.origins("aisha")
+    origins = {
+        k: v for k, v in loader.origins("aisha").items()
+        if k not in loader.MULTI_AGENT_ONLY
+    }
     assert set(origins.values()) == {"testdrive", "bookingmanagement"}
     assert origins["RESCHEDULING"] == "bookingmanagement"
     assert origins["BROCHURE"] == "testdrive"
@@ -362,6 +386,8 @@ def test_the_journey_bodies_do_not_leak_into_each_other():
     bm = loader.legacy_journey_body("bookingmanagement")
     origins = loader.origins("aisha")
     for name, text in loader.sections("aisha").items():
+        if name in loader.MULTI_AGENT_ONLY:
+            continue
         if origins[name] == "testdrive":
             assert text in td and text not in bm, name
         else:

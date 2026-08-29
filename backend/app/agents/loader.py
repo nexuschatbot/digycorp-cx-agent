@@ -52,6 +52,19 @@ ACTIVE_PATH = AGENTS_DIR / "active.json"
 
 DEFAULT_VERSION = "v1"
 
+# Sections that belong to the FAN-OUT Aisha and must never reach the single
+# agent. The exception is named here rather than left implicit, because the
+# invariant it breaks — "every aisha section appears in the single-agent body" —
+# is a real guard: it is what stops ported prose being silently orphaned by a
+# typo'd heading. An unnamed exception would disarm that guard for everything.
+#
+# DELEGATING is the only one, and the only re-authored prose in the card. It
+# tells her that lock_slot and create_booking are no longer hers to call. The
+# single agent still calls them, so it must not see it — and the S5 fixture,
+# which has guarded the shipped body byte-for-byte since the split, is what
+# would catch it if it ever did.
+MULTI_AGENT_ONLY: frozenset[str] = frozenset({"DELEGATING"})
+
 # The order the blocks appear in the body that ships. EXTRACTED MECHANICALLY from
 # prompts/compose.py::SINGLE_AGENT_ORDER — tests/test_prompt_split.py asserts
 # the reassembly is still byte-identical to the fixture that shipped, so a
