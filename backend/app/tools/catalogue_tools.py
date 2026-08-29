@@ -376,3 +376,73 @@ def get_showrooms(
     **_ignored: object,
 ) -> dict:
     return catalogue.list_showrooms(db, emirate=emirate, vehicle_id=vehicle_id)
+
+
+# --------------------------------------------------------------------------- #
+# get_variants — the trims of one model (SUB-AGENT ONLY)
+# --------------------------------------------------------------------------- #
+# NOT IN REGISTRY, deliberately: it is bound through SUBAGENT_REGISTRY so
+# TOOL_SCHEMAS — and the single agent's ~14.8k cached prefix (graph.py:431) —
+# stays byte-stable while the single-agent path is still live. It sits in this
+# file rather than a new one because it wraps services/catalogue like its
+# neighbours; the registry, not the filename, decides who can call it.
+GET_VARIANTS_SCHEMA = {
+    "name": "get_variants",
+    "description": (
+        "Every trim of one model, priced and specified, cheapest first. Use it "
+        "once the customer has settled on a model and the question moves to "
+        "which version — 'what versions does it come in', 'what's the "
+        "difference between them', 'how much is the top one'.\n\n"
+        "THIS IS HOW YOU PRODUCE A variant_id, and the finance and stock tools "
+        "cannot work without one. A model id alone reaches neither an on-road "
+        "price nor a colour. Call this first whenever the request is heading "
+        "towards cost or availability of a specific version.\n\n"
+        "Do NOT use it to find a model — search_vehicles and "
+        "get_vehicle_details do that. This answers 'which one of that car', "
+        "never 'which car'.\n\n"
+        "Read the response:\n"
+        "- 'variants' is ordered BY PRICE, not by name, so the first is the "
+        "most affordable and the last the dearest. Trim names do not encode a "
+        "ladder — the T1 Luxury outranks its Flagship — so never infer rank "
+        "from a name.\n"
+        "- Each carries price_aed, insurance_aed, registration_aed, "
+        "on_road_aed and a km_per_l_min/max range. A null price with "
+        "'coming_soon': true is a car with no published price; it sorts last "
+        "and is never the cheapest.\n"
+        "- 'on_road_aed' is null unless price, insurance and registration are "
+        "all known. Never add up the parts yourself.\n"
+        "- 'interior_colours' is model-level and identical across trims. It is "
+        "NOT stocked and NOT paired with an exterior colour — check_stock "
+        "answers availability, this does not.\n"
+        "- 'single_unnamed_variant': true means the model has one version and "
+        "no trim name; report the model name alone, never the word None."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "vehicle_id": {
+                "type": "integer",
+                "description": (
+                    "The model's id, from search_vehicles or "
+                    "get_vehicle_details. A model id, not a variant id."
+                ),
+            }
+        },
+        "required": ["vehicle_id"],
+    },
+}
+
+
+def get_variants(db: Session, session_id: str, *, vehicle_id=None, **_) -> dict:
+    """Every trim of one model, priced. Never raises."""
+    if vehicle_id is None:
+        return {
+            "error": "missing_vehicle_id",
+            "detail": "Pass the model's vehicle_id.",
+        }
+    try:
+        vid = int(vehicle_id)
+    except (TypeError, ValueError):
+        return {"error": "invalid_vehicle_id", "vehicle_id": vehicle_id}
+
+    return catalogue.get_variants(db, vid)

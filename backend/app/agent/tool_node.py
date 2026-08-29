@@ -209,13 +209,22 @@ def _dispatch(
     customer_id,
     correlation_id: str,
     device_token: str | None = None,
+    fns: dict | None = None,
 ) -> dict:
     """Run one tool with trusted context injected; return its result as DATA.
 
     Never raises: unknown tools, unidentified writes, and tool exceptions all
     come back as error envelopes the agent can recover from conversationally.
+
+    `fns` overrides the lookup table for callers whose tool surface is not the
+    single agent's. Sub-agents pass SUBAGENT_TOOL_FNS, which is TOOL_FNS plus
+    the five reads their cards declare — see app/tools/__init__.py for why those
+    cannot simply join REGISTRY while the single-agent path is live. The DEFAULT
+    is unchanged, so every injection, guard and audit rule below applies
+    identically whoever is calling: this widens what can be looked up, never
+    what may be done.
     """
-    fn = TOOL_FNS.get(name)
+    fn = (fns if fns is not None else TOOL_FNS).get(name)
     if fn is None:
         return {"error": "unknown_tool", "tool": name}
 

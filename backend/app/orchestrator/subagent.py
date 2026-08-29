@@ -67,7 +67,7 @@ def _client():
 def _schemas_for(agent: str) -> list[dict]:
     """The agent's card tools, filtered to reads. Never returns a write."""
     from app.agents import loader
-    from app.tools import REGISTRY, WRITE_TOOLS
+    from app.tools import SUBAGENT_REGISTRY, WRITE_TOOLS
 
     declared = list(loader.frontmatter(agent).get("tools") or [])
     out = []
@@ -77,10 +77,20 @@ def _schemas_for(agent: str) -> list[dict]:
             # this is the last gate before a cheap model gets a write.
             log.error("refusing to bind write tool %r to sub-agent %s", name, agent)
             continue
-        entry = REGISTRY.get(name)
+        entry = SUBAGENT_REGISTRY.get(name)
         if entry is None:
-            # A card may name a tool that is written but not yet registered
-            # (search_knowledge until Phase 2 binds it). Not an error.
+            # A CARD NAMING A TOOL THAT DOES NOT EXIST IS A BUILD ERROR, not a
+            # thing to skip. This used to `continue` silently, and it cost the
+            # finance agent every one of its three tools: it ran with an empty
+            # `tools` list, could call nothing, and reported "blocked" as though
+            # the dependency ordering had stopped it. Nothing failed, nothing
+            # logged, and the smoke test read as a pass.
+            # tests/test_subagent_tools.py fails the build on this now; the
+            # error here is the runtime half of the same guard.
+            log.error(
+                "card for %s declares unknown tool %r — the agent will run "
+                "without it", agent, name,
+            )
             continue
         out.append(entry["schema"])
     return out
@@ -178,6 +188,7 @@ def run_step(
     from app import config
     from app.agent import tool_node
     from app.agents import loader
+    from app.tools import SUBAGENT_TOOL_FNS
 
     started = time.monotonic()
     model = model or config.CLAUDE_MODEL
@@ -237,6 +248,9 @@ def run_step(
             result = tool_node._dispatch(
                 db, session_id, use.name, dict(use.input or {}),
                 customer_id, correlation_id,
+                # The sub-agent surface: TOOL_FNS plus the five card reads.
+                # Passed explicitly so the single agent's dispatch is untouched.
+                fns=SUBAGENT_TOOL_FNS,
             )
             # FORWARDED, OR THE CARDS VANISH. runner._card_anchor builds the
             # vehicle and slot cards from these; a sub-agent that emits them

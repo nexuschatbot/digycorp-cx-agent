@@ -62,11 +62,27 @@ from app.tools.booking_tools import (
 )
 from app.tools.catalogue_tools import (
     GET_SHOWROOMS_SCHEMA,
+    GET_VARIANTS_SCHEMA,
     GET_VEHICLE_DETAILS_SCHEMA,
     SEARCH_VEHICLES_SCHEMA,
     get_showrooms,
+    get_variants,
     get_vehicle_details,
     search_vehicles,
+)
+from app.tools.finance_tools import (
+    GET_FINANCE_ESTIMATE_SCHEMA,
+    GET_ON_ROAD_PRICE_SCHEMA,
+    get_finance_estimate,
+    get_on_road_price,
+)
+from app.tools.knowledge_tools import (
+    SEARCH_KNOWLEDGE_SCHEMA,
+    search_knowledge,
+)
+from app.tools.stock_tools import (
+    CHECK_STOCK_SCHEMA,
+    check_stock,
 )
 from app.tools.compare_tools import (
     COMPARE_VEHICLES_SCHEMA,
@@ -252,6 +268,58 @@ COMMERCIAL_WRITE_TOOLS: frozenset[str] = frozenset({
 
 READ_TOOLS: frozenset[str] = frozenset(REGISTRY) - WRITE_TOOLS
 
+
+# --------------------------------------------------------------------------- #
+# The sub-agent registry (Phase 5 wiring)
+# --------------------------------------------------------------------------- #
+# WHY THERE ARE TWO REGISTRIES AND NOT ONE. `REGISTRY` is the SINGLE AGENT's
+# surface: graph.py:1143 hands the whole of TOOL_SCHEMAS to the unrouted agent,
+# and _system_blocks says that list must stay byte-stable or the ~14.8k cached
+# prefix — 46% of the bill — silently stops hitting, with no error and no
+# detector but `cache_read=0` in the log. The single-agent path is still the
+# live one, so adding a tool to REGISTRY today would change what customers meet
+# before the T0.1 baseline has been re-measured against the new stack.
+#
+# So the five reads the sub-agent CARDS declare live here instead. Sub-agents
+# resolve their tools from this registry (orchestrator/subagent._schemas_for);
+# nothing else does, and TOOL_SCHEMAS is untouched.
+#
+# THE COST OF THE SPLIT is that a tool can now be reachable by a sub-agent and
+# invisible to Aisha, which is a real asymmetry rather than a temporary one:
+# these tools have no prompt prose in base/ or aisha/ telling her when to call
+# them. PROMOTING one into REGISTRY means writing that prose and accepting one
+# cold cache write — do both together or not at all.
+#
+# READS ONLY, and it is asserted below: a write reaching a sub-agent would undo
+# the single property that makes running them on Haiku safe.
+SUBAGENT_ONLY: dict[str, dict] = {
+    # T1.5, written at Phase 1 and never bound — see knowledge_tools.py's own
+    # docstring, which deferred exactly this line to "Phase 2".
+    "search_knowledge": {"schema": SEARCH_KNOWLEDGE_SCHEMA, "fn": search_knowledge},
+    # The trim ladder, and the ONLY producer of a variant_id. Finance and stock
+    # are unreachable without it, which is why sales declares it.
+    "get_variants": {"schema": GET_VARIANTS_SCHEMA, "fn": get_variants},
+    "check_stock": {"schema": CHECK_STOCK_SCHEMA, "fn": check_stock},
+    "get_on_road_price": {"schema": GET_ON_ROAD_PRICE_SCHEMA, "fn": get_on_road_price},
+    "get_finance_estimate": {
+        "schema": GET_FINANCE_ESTIMATE_SCHEMA,
+        "fn": get_finance_estimate,
+    },
+}
+
+# What a sub-agent may reach: everything Aisha can read, plus the five above.
+SUBAGENT_REGISTRY: dict[str, dict] = {**REGISTRY, **SUBAGENT_ONLY}
+SUBAGENT_TOOL_FNS = {name: entry["fn"] for name, entry in SUBAGENT_REGISTRY.items()}
+
+# The invariant, enforced at import: nothing added here may be a write, and
+# nothing here may shadow a registered tool with a different implementation.
+assert not (set(SUBAGENT_ONLY) & set(REGISTRY)), (
+    "SUBAGENT_ONLY must not redefine a registered tool"
+)
+assert not (set(SUBAGENT_ONLY) & WRITE_TOOLS), (
+    "a sub-agent tool must never be a write"
+)
+
 __all__ = [
     "REGISTRY",
     "TOOL_SCHEMAS",
@@ -259,4 +327,7 @@ __all__ = [
     "WRITE_TOOLS",
     "COMMERCIAL_WRITE_TOOLS",
     "READ_TOOLS",
+    "SUBAGENT_ONLY",
+    "SUBAGENT_REGISTRY",
+    "SUBAGENT_TOOL_FNS",
 ]
