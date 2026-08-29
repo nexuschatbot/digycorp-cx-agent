@@ -55,6 +55,12 @@ class StepResult:
     score: float | None = None
     margin: float | None = None
     detail: str = ""
+    # What this step ASKED to have done. Requests, never results — the
+    # orchestrator decides whether any of them happen, and the booking state
+    # machine decides whether they are allowed yet. Lifted off `findings` so a
+    # proposal can never reach Aisha's compose payload looking like a fact she
+    # may report to the customer.
+    proposals: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -166,12 +172,21 @@ def execute(
                 detail = f"{type(exc).__name__}: {exc}"
                 log.exception("step %s failed", step.agent)
 
+            proposals = findings.pop("_proposals", []) if isinstance(findings, dict) else []
+            if proposals and status != "ok":
+                # A step that failed asked for nothing: its request rests on
+                # facts it never established.
+                log.warning("discarding %d proposal(s) from failed %s step",
+                            len(proposals), step.agent)
+                proposals = []
+
             result.steps.append(
                 StepResult(
                     brief=step.brief,
                     agent=step.agent,
                     status=status,
                     findings=findings,
+                    proposals=proposals,
                     latency_ms=int((time.monotonic() - started) * 1000),
                     layer=getattr(sel, "layer", None),
                     score=getattr(sel, "score", None),

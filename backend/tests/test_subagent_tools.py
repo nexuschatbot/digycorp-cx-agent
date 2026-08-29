@@ -231,3 +231,69 @@ def test_the_anchor_is_todays_date_not_a_frozen_one(monkeypatch):
         {}, db=None, session_id="t", timeout=5.0, max_iterations=1,
     )
     assert tomorrow.isoformat() in sent["system"]
+
+
+# --------------------------------------------------------------------------- #
+# Proposals — the card is the allowlist (T4.2)
+# --------------------------------------------------------------------------- #
+def test_only_testdrive_may_propose_commercial_actions():
+    """The vocabulary is not offered to an agent that cannot use it: a model
+    shown a booking verb it may not use will eventually reach for it, and every
+    attempt is a refusal the customer waits through."""
+    from app.orchestrator import subagent as sub
+
+    assert set(sub._proposes("testdrive")) == {
+        "hold_slot", "create_booking", "reschedule_booking", "cancel_booking",
+    }
+    assert sub._proposals_clause("sales") == ""
+    assert sub._proposals_clause("finance") == ""
+    assert "hold_slot" in sub._proposals_clause("testdrive")
+
+
+def test_an_invented_action_is_dropped_before_write_sees_it():
+    from app.orchestrator import subagent as sub
+
+    kept = sub._validate_proposals("testdrive", [
+        {"action": "create_booking", "args": {"slot_id": 5}},
+        {"action": "refund_deposit", "args": {}},        # invented
+        {"action": "send_brochure", "args": {}},         # sales', not testdrive's
+    ])
+    assert [p["action"] for p in kept] == ["create_booking"]
+    assert kept[0]["agent"] == "testdrive"
+
+
+def test_a_sales_proposal_of_a_booking_is_dropped():
+    """Borrowing another agent's vocabulary is the realistic failure, not
+    inventing a verb from nothing."""
+    from app.orchestrator import subagent as sub
+
+    assert sub._validate_proposals("sales", [{"action": "create_booking"}]) == []
+
+
+def test_proposals_are_parsed_off_the_reply():
+    from app.orchestrator import subagent as sub
+
+    parsed = sub._parse_findings(
+        '{"findings": {"slot_id": 12}, '
+        '"proposals": [{"action": "hold_slot", "args": {"slot_id": 12}}], '
+        '"note": "asked for the 1pm"}'
+    )
+    assert parsed["slot_id"] == 12
+    assert parsed["_proposals"] == [{"action": "hold_slot", "args": {"slot_id": 12}}]
+
+
+def test_no_proposals_key_when_none_were_made():
+    from app.orchestrator import subagent as sub
+
+    assert "_proposals" not in sub._parse_findings('{"findings": {"a": 1}}')
+
+
+def test_every_proposed_action_is_something_write_can_perform():
+    """A card asking for what write.py cannot execute is a build error."""
+    from app.agents import loader
+    from app.orchestrator.write import PROPOSABLE
+
+    for agent in ALL_CARDS:
+        declared = set(loader.frontmatter(agent).get("proposes") or [])
+        unknown = declared - PROPOSABLE - set(REGISTRY)
+        assert unknown == set(), f"{agent} proposes {unknown}, which nothing can perform"

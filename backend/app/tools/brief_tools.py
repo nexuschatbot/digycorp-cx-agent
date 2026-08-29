@@ -66,7 +66,18 @@ EMIT_BRIEFS_SCHEMA = {
         "'unavailable' naming any that did not, with the reason. Answer from "
         "the findings, and be honest about the gaps — 'partial': true means "
         "some of what you asked for is missing, and the customer must hear "
-        "which part rather than be given a confident half-answer."
+        "which part rather than be given a confident half-answer.\n\n"
+        "'actions' IS WHAT ACTUALLY HAPPENED, and it is the only thing you may "
+        "treat as done. A specialist can ASK for a slot to be held or a booking "
+        "to be made; whether it happened is decided afterwards, and the answer "
+        "is here. Each entry has a 'status': 'executed' means it is real and "
+        "you may confirm it — quote the booking_ref if there is one. 'refused' "
+        "means it did NOT happen and the 'detail' says why; tell the customer "
+        "plainly and do the step it names. 'failed' means it broke; apologise "
+        "and offer to try again. NEVER confirm a booking, a hold or a "
+        "cancellation that is not listed here as 'executed', however confidently "
+        "a specialist's note is worded — their notes describe what they asked "
+        "for, not what was done."
     ),
     "input_schema": {
         "type": "object",

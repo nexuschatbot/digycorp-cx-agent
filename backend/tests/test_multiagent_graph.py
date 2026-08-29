@@ -306,3 +306,143 @@ def test_a_wrong_language_opening_aborts_before_the_cascade(monkeypatch):
     streamed = "".join(e["text"] for e in emitted if e.get("type") == "token")
     assert streamed == "Let me check."
     assert len(client.calls) == 2
+
+
+# --------------------------------------------------------------------------- #
+# The write path (T4.2)
+# --------------------------------------------------------------------------- #
+# SUB-AGENTS PROPOSE; THE ORCHESTRATOR EXECUTES. Before this was wired,
+# write.py had no caller anywhere in app/ — Aisha correctly held no commercial
+# write, no sub-agent held one, and the component that was meant to own them was
+# connected to nothing. With the flag on, no booking could be created at all.
+from app.orchestrator import run as _run  # noqa: E402
+
+
+def _step_with(proposals, status="ok", agent="testdrive"):
+    return _run.StepResult(brief="b", agent=agent, status=status,
+                           findings={}, proposals=proposals)
+
+
+class _FakeState:
+    def __init__(self, allowed):
+        self.allowed = allowed
+        self.stage = "create"
+
+
+def _patch_state(monkeypatch, allowed):
+    from app.orchestrator import booking_state
+    monkeypatch.setattr(booking_state, "read",
+                        lambda db, sid, customer_id=None: _FakeState(allowed))
+
+
+def test_no_proposals_means_no_writes():
+    assert graph._execute_proposals(_run.TurnResult(steps=[_step_with([])]), {}, {}) == []
+
+
+def test_a_proposal_reaches_write_execute_all(monkeypatch):
+    from app.orchestrator import write
+
+    seen = {}
+
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None):
+        seen["proposals"] = proposals
+        seen["allow"] = allow
+        return [write.WriteResult(action="create_booking", status="executed",
+                                  result={"booking_ref": "TD-2026-0001"})]
+
+    monkeypatch.setattr(write, "execute_all", _fake)
+    _patch_state(monkeypatch, {"create_booking"})
+    monkeypatch.setattr(graph, "_safe_writer", lambda: None)
+
+    result = _run.TurnResult(steps=[
+        _step_with([{"action": "create_booking", "args": {"slot_id": 5}, "agent": "testdrive"}])
+    ])
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    out = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
+
+    assert seen["allow"] == {"create_booking"}
+    assert seen["proposals"][0].action == "create_booking"
+    assert out == [{"action": "create_booking", "status": "executed",
+                    "detail": "", "booking_ref": "TD-2026-0001"}]
+
+
+def test_the_state_machine_gate_is_passed_through(monkeypatch):
+    """write.execute refuses an action the machine does not allow RIGHT NOW."""
+    _patch_state(monkeypatch, {"hold_slot", "lock_slot"})
+    monkeypatch.setattr(graph, "_safe_writer", lambda: None)
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    result = _run.TurnResult(steps=[_step_with([{"action": "create_booking", "args": {}}])])
+    out = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
+    assert out[0]["status"] == "refused"
+    assert "not valid at this point" in out[0]["detail"]
+
+
+def test_an_executed_write_commits_and_a_refused_one_does_not(monkeypatch):
+    from app.orchestrator import write
+
+    calls = []
+    db = SimpleNamespace(commit=lambda: calls.append("commit"),
+                         rollback=lambda: calls.append("rollback"))
+    monkeypatch.setattr(graph, "_safe_writer", lambda: None)
+    _patch_state(monkeypatch, {"create_booking"})
+
+    monkeypatch.setattr(write, "execute_all", lambda *a, **k: [
+        write.WriteResult(action="create_booking", status="executed", result={})])
+    graph._execute_proposals(
+        _run.TurnResult(steps=[_step_with([{"action": "create_booking"}])]),
+        {}, {"db": db, "session_id": "s1"})
+    assert calls == ["commit"]
+
+    calls.clear()
+    monkeypatch.setattr(write, "execute_all", lambda *a, **k: [
+        write.WriteResult(action="create_booking", status="refused", detail="no licence")])
+    graph._execute_proposals(
+        _run.TurnResult(steps=[_step_with([{"action": "create_booking"}])]),
+        {}, {"db": db, "session_id": "s1"})
+    assert calls == ["rollback"]
+
+
+def test_an_unreadable_booking_state_refuses_rather_than_guesses(monkeypatch):
+    from app.orchestrator import booking_state
+
+    def _boom(*a, **k):
+        raise RuntimeError("db gone")
+
+    monkeypatch.setattr(booking_state, "read", _boom)
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    out = graph._execute_proposals(
+        _run.TurnResult(steps=[_step_with([{"action": "create_booking"}])]),
+        {}, {"db": db, "session_id": "s1"})
+    assert out[0]["status"] == "refused"
+
+
+def test_proposals_from_a_failed_step_are_discarded():
+    """A step that failed established no facts, so its request rests on nothing."""
+    def _runner(step, ctx, **kw):
+        raise RuntimeError("boom")
+
+    out = _run.execute([{"brief": "book it"}], _runner,
+                       judge=lambda *a, **k: "testdrive")
+    assert all(not s.proposals for s in out.steps)
+
+
+def test_actions_reach_aisha_in_the_compose_payload(monkeypatch):
+    """She may only confirm what is listed as executed — so it must be there."""
+    from app.orchestrator import turn, write
+
+    monkeypatch.setattr(turn, "execute", lambda *a, **k: _run.TurnResult(
+        steps=[_step_with([{"action": "create_booking", "args": {}, "agent": "testdrive"}])]))
+    monkeypatch.setattr(write, "execute_all", lambda *a, **k: [
+        write.WriteResult(action="create_booking", status="executed",
+                          result={"booking_ref": "TD-2026-0042"})])
+    _patch_state(monkeypatch, {"create_booking"})
+    monkeypatch.setattr(graph, "_safe_writer", lambda: None)
+
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    state = {"messages": [_assistant(_briefs("book it", tid="b"))], "session_facts": {}}
+    body = _result_for(
+        graph._orchestrator_node(state, {"configurable": {"db": db, "session_id": "s1",
+                                                          "deadline_monotonic": None}}),
+        "b")
+    assert body["actions"] == [{"action": "create_booking", "status": "executed",
+                                "detail": "", "booking_ref": "TD-2026-0042"}]

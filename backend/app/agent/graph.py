@@ -1242,6 +1242,88 @@ def _known_entities(state: AgentState) -> set[str]:
     return {k for k in producible if facts.get(k) is not None}
 
 
+def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
+    """Perform what the sub-agents ASKED for, or say why not (T4.2).
+
+    THE ONLY PLACE A COMMERCIAL WRITE HAPPENS on this path. Sub-agents hold no
+    write tool at all — that is what makes running them on a cheap model safe —
+    so holding a slot or creating a booking arrives here as a REQUEST and leaves
+    as a decision. Three gates, none of them redundant:
+
+        the CARD    says which actions this agent may ask for  (subagent.py)
+        the MACHINE says which are valid right now             (booking_state)
+        the SERVICE says whether it is actually permitted      (unchanged)
+
+    The third is the one that was load-bearing before any of this existed and
+    still is: create_booking refuses without the licence acknowledgement whoever
+    calls it, and this module never relaxes that.
+
+    IT COMMITS. write.execute deliberately does not — an audit row must live or
+    die with the write it describes — so the transaction is closed here, once,
+    after every proposal in the turn has been decided.
+    """
+    from app.orchestrator import booking_state, write
+
+    proposals = [
+        write.Proposal(action=p["action"], args=p.get("args") or {}, agent=p.get("agent"))
+        for step in result.steps for p in (step.proposals or [])
+    ]
+    if not proposals:
+        return []
+
+    db = cfg.get("db")
+    session_id = cfg.get("session_id", "?")
+    customer_id = state.get("customer_id")
+    if db is None:
+        log.error("proposals with no db — refusing all (session=%s)", session_id)
+        return [{"action": p.action, "status": "refused",
+                 "detail": "no database session"} for p in proposals]
+
+    try:
+        machine = booking_state.read(db, session_id, customer_id=customer_id)
+        allowed = machine.allowed
+    except Exception:  # noqa: BLE001 — an unreadable state refuses, never guesses
+        log.exception("could not read booking state — refusing writes (session=%s)", session_id)
+        return [{"action": p.action, "status": "refused",
+                 "detail": "could not establish where this booking had got to"}
+                for p in proposals]
+
+    results = write.execute_all(
+        db, session_id, proposals, customer_id=customer_id, allow=allowed,
+    )
+
+    if any(r.ok for r in results):
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001
+            log.exception("commit failed — rolling back (session=%s)", session_id)
+            db.rollback()
+            return [{"action": r.action, "status": "failed",
+                     "detail": "the change could not be saved"} for r in results]
+    else:
+        # Nothing was written, but a refused proposal may still have left the
+        # session dirty (a service that flushed before its guard said no).
+        db.rollback()
+
+    out = []
+    for r in results:
+        row = {"action": r.action, "status": r.status, "detail": r.detail}
+        # WHAT AISHA MAY SAY. The reference and the slot she needs to read a
+        # confirmation back, and nothing else from the write's internals.
+        for key in ("booking_ref", "slot_id", "starts_at", "showroom_name"):
+            if r.result.get(key) is not None:
+                row[key] = r.result[key]
+        out.append(row)
+        # The booking event the UI draws its card from, same as tool_node emits.
+        if r.ok and r.result.get("booking_ref"):
+            writer = _safe_writer()
+            if writer:
+                writer({"type": "booking", "booking_ref": r.result["booking_ref"]})
+    log.info("orchestrator writes — session=%s %s", session_id,
+             [(r.action, r.status) for r in results])
+    return out
+
+
 def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     """Answer an emit_briefs call by running the cascade (T5.1-T5.6).
 
@@ -1307,6 +1389,7 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                 parent_writer=_stream_sink(_safe_writer()),
             )
             payload = _turn.compose_input(result)
+            payload["actions"] = _execute_proposals(result, state, cfg)
             log.info(
                 "orchestrator — session=%s briefs=%d ok=%d partial=%s",
                 session_id, len(briefs),

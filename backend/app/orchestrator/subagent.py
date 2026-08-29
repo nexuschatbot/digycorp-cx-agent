@@ -58,6 +58,35 @@ Do not greet, do not apologise, do not write to the customer, and do not format 
 anything. One JSON object.
 """
 
+# Appended ONLY for an agent whose card declares `proposes`. A sub-agent that
+# cannot propose anything must not be told the vocabulary exists — an agent
+# offered a booking verb it may not use will eventually reach for it, and every
+# such attempt is a refusal the customer waits through.
+#
+# PROPOSING IS NOT DOING, and the wording has to carry that or the model reports
+# success. It asks; orchestrator/write.py decides; the service guards beneath
+# still refuse independently. A sub-agent that said "I've booked it" in its note
+# would put a lie in front of Aisha with nothing to catch it.
+PROPOSALS_INSTRUCTION = """\
+
+ASKING FOR SOMETHING TO BE DONE. You cannot change anything yourself — you have \
+no tools that write. What you CAN do is ASK, by adding a `proposals` list beside \
+your findings:
+
+{"findings": {...}, "proposals": [{"action": "hold_slot", "args": {"slot_id": 12}}], "note": "..."}
+
+The actions you may ask for are: %s
+
+An entry is a REQUEST, not a result. It may be refused — because the step before \
+it has not happened, because the slot went, because a rule says not yet. So never \
+write in your note that something HAS been done, booked, held or cancelled. Say \
+what you asked for. Somebody else decides, and the customer is told by somebody \
+else.
+
+Only propose what the request actually asked for, and leave `proposals` out \
+entirely when it asked for nothing.
+"""
+
 
 def _client():
     from app.agent.graph import _build_client
@@ -94,6 +123,55 @@ def _schemas_for(agent: str) -> list[dict]:
             )
             continue
         out.append(entry["schema"])
+    return out
+
+
+def _proposes(agent: str) -> list[str]:
+    """What this agent's card says it may ASK for. Empty for most agents."""
+    from app.agents import loader
+    from app.orchestrator.write import PROPOSABLE
+
+    declared = list(loader.frontmatter(agent).get("proposes") or [])
+    out = []
+    for name in declared:
+        if name not in PROPOSABLE:
+            # A card asking for something write.py cannot perform. Reported
+            # rather than skipped: differential.py fails the build on it, and
+            # this is the runtime half of the same guard.
+            log.error("card for %s proposes unknown action %r", agent, name)
+            continue
+        out.append(name)
+    return out
+
+
+def _proposals_clause(agent: str) -> str:
+    actions = _proposes(agent)
+    if not actions:
+        return ""
+    return PROPOSALS_INSTRUCTION % ", ".join(actions)
+
+
+def _validate_proposals(agent: str, raw: list[dict]) -> list[dict]:
+    """Keep only what this agent's card actually permits it to ask for.
+
+    THE CARD IS THE ALLOWLIST, not the prompt. A model that invents an action —
+    or borrows one from another agent's vocabulary — has its request dropped
+    here, before write.py ever sees it. write.py refuses it again; neither gate
+    is redundant, because this one names the AGENT and that one names the STATE.
+    """
+    allowed = set(_proposes(agent))
+    out = []
+    for item in raw or []:
+        action = str(item.get("action") or "").strip()
+        if action not in allowed:
+            log.warning("dropping %r proposed by %s (not on its card)", action, agent)
+            continue
+        args = item.get("args")
+        out.append({
+            "action": action,
+            "args": dict(args) if isinstance(args, dict) else {},
+            "agent": agent,
+        })
     return out
 
 
@@ -165,6 +243,12 @@ def _parse_findings(text: str) -> dict:
     out = dict(findings) if isinstance(findings, dict) else {}
     if parsed.get("note"):
         out["_note"] = str(parsed["note"])
+    # Carried under a reserved key so it rides the existing runner contract
+    # rather than widening it; run.py lifts it off into StepResult.proposals so
+    # it never reaches Aisha's compose payload as if it were a fact.
+    proposals = parsed.get("proposals")
+    if isinstance(proposals, list) and proposals:
+        out["_proposals"] = [p for p in proposals if isinstance(p, dict)]
     return out
 
 
@@ -214,6 +298,7 @@ def run_step(
         + _DATE_ANCHOR.format(**_relative_dates(date.today()))
         + "\n\n"
         + FINDINGS_INSTRUCTION
+        + _proposals_clause(step.agent)
     )
     schemas = _schemas_for(step.agent)
 
@@ -260,6 +345,12 @@ def run_step(
             harvested = _harvest_entities(step.agent, seen_results)
             for key, value in harvested.items():
                 findings.setdefault(key, value)
+            if "_proposals" in findings:
+                kept = _validate_proposals(step.agent, findings["_proposals"])
+                if kept:
+                    findings["_proposals"] = kept
+                else:
+                    findings.pop("_proposals")
             return findings
 
         messages.append({"role": "assistant", "content": blocks})
