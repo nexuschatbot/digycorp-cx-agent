@@ -22,6 +22,13 @@ other run together; a brief that needs a predecessor waits for it. That mapping
 comes from order.independent_groups, so this module never decides ordering
 itself.
 
+"TOGETHER" MEANT "IN WAVE ORDER" UNTIL 2026-08-29, and the difference cost
+whole seconds. The waves were right and a nested for-loop walked them one step
+at a time anyway — a promise in this docstring that nothing enforced. It now
+runs a wave concurrently, but ONLY for a runner that advertises `thread_safe`,
+because the thing that made it serial was never the ordering: it was the shared
+database session. See make_runner in subagent.py.
+
 NOTHING HERE CALLS AN API BY ITSELF. Agents are injected — `runner(step, ctx)` —
 so the caller decides what running an agent means. Tests pass a stub and exercise
 the whole cascade offline; Phase 5 passes the real Haiku sub-graphs.
@@ -31,6 +38,8 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass, field
 
 from app.orchestrator import order as _order
@@ -61,6 +70,11 @@ class StepResult:
     # proposal can never reach Aisha's compose payload looking like a fact she
     # may report to the customer.
     proposals: list[dict] = field(default_factory=list)
+    # WHAT THE TOOLS RETURNED, VERBATIM — see _EVIDENCE below. Lifted off
+    # `findings` for the same reason `proposals` is: it is not something the
+    # sub-agent WROTE, and mixing the two would let a model-authored string sit
+    # in a field Aisha is told to treat as fact from the tools.
+    evidence: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -131,6 +145,8 @@ def execute(
     known: set[str] | None = None,
     judge=None,
     step_timeout: float = DEFAULT_STEP_TIMEOUT,
+    max_workers: int = 1,
+    on_tick=None,
 ) -> TurnResult:
     """Run every brief through its agent. Never raises.
 
@@ -156,51 +172,125 @@ def execute(
             )
         )
 
-    for wave in _order.independent_groups(plan):
-        for step in wave:
-            started = time.monotonic()
-            sel = getattr(step, "selection", None)
-            try:
-                findings = runner(step, dict(result.entities)) or {}
-                status, detail = "ok", ""
-            except TimeoutError:
-                findings, status = {}, "failed"
-                detail = f"timed out after {step_timeout:g}s"
-                log.warning("step %s timed out", step.agent)
-            except Exception as exc:  # noqa: BLE001 — one step, not the turn
-                findings, status = {}, "failed"
-                detail = f"{type(exc).__name__}: {exc}"
-                log.exception("step %s failed", step.agent)
+    def _run_one(step, entities: dict) -> StepResult:
+        """One step, start to finish. Never raises — a failure is a StepResult.
 
-            proposals = findings.pop("_proposals", []) if isinstance(findings, dict) else []
-            if proposals and status != "ok":
-                # A step that failed asked for nothing: its request rests on
-                # facts it never established.
-                log.warning("discarding %d proposal(s) from failed %s step",
-                            len(proposals), step.agent)
-                proposals = []
+        Runs on a worker thread when the wave is widened, so it touches nothing
+        outside its arguments: `entities` is a per-wave snapshot, and the
+        StepResult is folded back by the caller on the orchestrating thread.
+        """
+        started = time.monotonic()
+        sel = getattr(step, "selection", None)
+        try:
+            findings = runner(step, entities) or {}
+            status, detail = "ok", ""
+        except TimeoutError:
+            findings, status = {}, "failed"
+            detail = f"timed out after {step_timeout:g}s"
+            log.warning("step %s timed out", step.agent)
+        except Exception as exc:  # noqa: BLE001 — one step, not the turn
+            findings, status = {}, "failed"
+            detail = f"{type(exc).__name__}: {exc}"
+            log.exception("step %s failed", step.agent)
 
-            result.steps.append(
-                StepResult(
-                    brief=step.brief,
-                    agent=step.agent,
-                    status=status,
-                    findings=findings,
-                    proposals=proposals,
-                    latency_ms=int((time.monotonic() - started) * 1000),
-                    layer=getattr(sel, "layer", None),
-                    score=getattr(sel, "score", None),
-                    margin=getattr(sel, "margin", None),
-                    detail=detail,
-                )
-            )
-            # Only a SUCCESSFUL step contributes entities. A failed Sales step
-            # must not leave a vehicle_id behind for TestDrive to trust.
-            if status == "ok":
-                for key in _order.produces(step.agent):
-                    if key in findings:
-                        result.entities[key] = findings[key]
+        evidence = findings.pop("_evidence", []) if isinstance(findings, dict) else []
+        proposals = findings.pop("_proposals", []) if isinstance(findings, dict) else []
+        if proposals and status != "ok":
+            # A step that failed asked for nothing: its request rests on
+            # facts it never established.
+            log.warning("discarding %d proposal(s) from failed %s step",
+                        len(proposals), step.agent)
+            proposals = []
 
+        latency_ms = int((time.monotonic() - started) * 1000)
+        # NO BRIEF TEXT — same rule as trace_steps: the brief carries the
+        # customer's profile. What is logged is the DECISION and the cost.
+        log.info(
+            "step %s %s in %dms (layer=%s entities=%s proposals=%d)%s",
+            step.agent, status, latency_ms,
+            getattr(sel, "layer", None),
+            sorted(k for k in findings if not k.startswith("_")) if isinstance(findings, dict) else [],
+            len(proposals), f" — {detail}" if detail else "",
+        )
+
+        return StepResult(
+            brief=step.brief,
+            agent=step.agent,
+            status=status,
+            findings=findings,
+            proposals=proposals,
+            evidence=evidence,
+            latency_ms=latency_ms,
+            layer=getattr(sel, "layer", None),
+            score=getattr(sel, "score", None),
+            margin=getattr(sel, "margin", None),
+            detail=detail,
+        )
+
+    waves = _order.independent_groups(plan)
+    cascade_started = time.monotonic()
+
+    # HOW WIDE A WAVE MAY GO. A wave is by definition steps that need nothing
+    # from each other, so running them together is what the ordering was FOR —
+    # but only a runner that says it is thread-safe gets it. subagent.make_runner
+    # sets that flag when it was given a session factory, and without one the
+    # steps would share a SQLAlchemy Session across threads, which does not
+    # raise reliably: it interleaves queries on one connection and returns
+    # wrong rows. So the default here is 1, and every caller that has not
+    # thought about sessions keeps exactly the behaviour it had.
+    width = max(1, int(max_workers))
+    if width > 1 and not getattr(runner, "thread_safe", False):
+        log.info("runner is not thread-safe — running waves one step at a time")
+        width = 1
+
+    log.info("cascade start: %d step(s) in %d wave(s) — widths=%s, max_parallel=%d",
+             sum(len(w) for w in waves), len(waves), [len(w) for w in waves], width)
+
+    for wave in waves:
+        # ONE SNAPSHOT PER WAVE, not per step. Steps inside a wave are
+        # independent, so none of them may read another's entities — taking the
+        # snapshot here makes that explicit instead of leaving it to the order
+        # they happen to run in, and it is what lets them run at once.
+        snapshot = dict(result.entities)
+        n = min(len(wave), width)
+
+        if n <= 1:
+            done = [_run_one(step, snapshot) for step in wave]
+        else:
+            log.info("wave of %d running %d at a time", len(wave), n)
+            with ThreadPoolExecutor(max_workers=n, thread_name_prefix="cascade") as pool:
+                futures = [pool.submit(_run_one, step, snapshot) for step in wave]
+                # PUMPED FROM THIS THREAD, and that is the point. Sub-agent
+                # tool_events draw the customer's cards; the parent stream
+                # writer is not documented to be thread-safe, so workers queue
+                # their events and this loop is what hands them over — one
+                # thread, in order, while the wave is still running.
+                pending = set(futures)
+                while pending:
+                    _, pending = futures_wait(pending, timeout=0.05)
+                    if on_tick is not None:
+                        on_tick()
+                # Wave order, NOT completion order: the transcript and every
+                # test that reads result.steps must not depend on which
+                # specialist happened to answer first.
+                done = [f.result() for f in futures]
+
+        if on_tick is not None:
+            on_tick()
+
+        result.steps.extend(done)
+        # Only a SUCCESSFUL step contributes entities. A failed Sales step
+        # must not leave a vehicle_id behind for TestDrive to trust.
+        for produced in done:
+            if produced.ok:
+                for key in _order.produces(produced.agent):
+                    if key in produced.findings:
+                        result.entities[key] = produced.findings[key]
+
+    log.info("cascade done in %dms — %d ok, %d not",
+             int((time.monotonic() - cascade_started) * 1000),
+             sum(1 for s_ in result.steps if s_.ok),
+             sum(1 for s_ in result.steps if not s_.ok))
     return result
 
 

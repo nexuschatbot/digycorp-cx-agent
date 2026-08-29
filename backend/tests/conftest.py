@@ -406,3 +406,20 @@ def doorstep_slot(slots) -> Slot:
         .where(Slot.status == SlotStatus.open, Slot.location_type == LocationType.doorstep)
         .order_by(Slot.start, Slot.id)
     ).first()
+
+
+def wire_text(value) -> str:
+    """A captured system prompt or message content as one string.
+
+    Sub-agent requests block-wrap both their system prompt and their last
+    message to carry cache_control breakpoints (subagent.run_step), so a test
+    that captured either now gets a list of blocks where it used to get a
+    string. What those tests actually assert is CONTENT — that the card body is
+    in the prompt, that today's date is, that a mobile number is not — and none
+    of it should have to know about the caching shape.
+    """
+    if isinstance(value, str):
+        return value
+    return "".join(
+        b.get("text", "") for b in (value or []) if isinstance(b, dict)
+    )

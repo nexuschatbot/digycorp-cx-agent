@@ -19,6 +19,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.conftest import wire_text
+
 from app.agents import loader
 from app.orchestrator import subagent
 from app.tools import (
@@ -187,7 +189,7 @@ def test_every_subagent_prompt_carries_todays_date(monkeypatch):
             order.Step(brief="when are you open on Saturday", agent=agent),
             {}, db=None, session_id="t", timeout=5.0, max_iterations=1,
         )
-        system = sent["system"]
+        system = wire_text(sent["system"])
         today = date.today()
         assert str(today.year) in system, f"{agent} has no idea what year it is"
         assert today.isoformat() in system, f"{agent} was not given today's date"
@@ -230,7 +232,7 @@ def test_the_anchor_is_todays_date_not_a_frozen_one(monkeypatch):
         order.Step(brief="x", agent="testdrive"),
         {}, db=None, session_id="t", timeout=5.0, max_iterations=1,
     )
-    assert tomorrow.isoformat() in sent["system"]
+    assert tomorrow.isoformat() in wire_text(sent["system"])
 
 
 # --------------------------------------------------------------------------- #
@@ -342,3 +344,49 @@ def test_the_ported_booking_sequence_is_untouched():
     seq = sections["BOOKING_SEQUENCE"]
     assert "A booking becomes real only when you call create_booking" in seq
     assert "rule 9" in seq
+
+
+# --------------------------------------------------------------------------- #
+# An unwrapped reply is still findings (2026-08-29)
+#
+# Live: a Sales step wrote 1158 chars of valid JSON with the results at the TOP
+# level and no `findings` wrapper. Every byte was discarded — six seconds of
+# generation for two ids that _harvest_entities read out of the tool results
+# anyway. Second sighting of the same shape; the first is in that docstring.
+# --------------------------------------------------------------------------- #
+def test_findings_at_the_top_level_are_read_not_discarded():
+    from app.orchestrator import subagent as sub
+
+    out = sub._parse_findings('{"vehicle_id": 8, "price": "AED 79,000"}')
+    assert out == {"vehicle_id": 8, "price": "AED 79,000"}
+
+
+def test_the_wrapper_still_wins_when_it_is_there():
+    from app.orchestrator import subagent as sub
+
+    out = sub._parse_findings(
+        '{"findings": {"vehicle_id": 8}, "note": "found one", "extra": "ignored"}'
+    )
+    assert out == {"vehicle_id": 8, "_note": "found one"}
+
+
+def test_an_unwrapped_reply_cannot_smuggle_a_proposal():
+    """The reserved keys stay reserved. Otherwise omitting the wrapper would be
+    a way to put `proposals` into findings unvalidated — and proposals are the
+    one thing that moves inventory."""
+    from app.orchestrator import subagent as sub
+
+    out = sub._parse_findings(
+        '{"vehicle_id": 8, "proposals": [{"action": "create_booking"}]}'
+    )
+    assert out["vehicle_id"] == 8
+    # It is lifted to the reserved key by the normal path, never left inline.
+    assert "proposals" not in out
+    assert out.get("_proposals") == [{"action": "create_booking"}]
+
+
+def test_a_reply_that_is_not_json_still_yields_nothing():
+    """Tolerant, but never inventing — the existing contract."""
+    from app.orchestrator import subagent as sub
+
+    assert sub._parse_findings("I looked but found nothing useful") == {}

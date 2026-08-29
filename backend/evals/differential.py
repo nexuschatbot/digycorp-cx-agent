@@ -228,12 +228,14 @@ def proposal_coverage() -> list[str]:
         except Exception:  # noqa: BLE001
             continue
         for action in sorted(proposes):
-            # Non-commercial proposals (send_brochure, request_human_callback)
-            # are executed by the ordinary tool path, not by write.py.
-            from app.tools import COMMERCIAL_WRITE_TOOLS
-
-            commercial = action in COMMERCIAL_WRITE_TOOLS or action == "hold_slot"
-            if commercial and action not in PROPOSABLE:
+            # EVERY proposal is checked, not just the commercial ones. This
+            # carve-out used to exempt non-commercial actions on the grounds
+            # that "the ordinary tool path" executed them — it does not, and
+            # never did: subagent._proposes drops anything outside PROPOSABLE
+            # before the sub-agent is even told the verb exists. `sales`
+            # proposed send_brochure for a whole phase behind that exemption,
+            # logging an ERROR on every cascade and executing nothing.
+            if action not in PROPOSABLE:
                 out.append(f"{agent} proposes {action!r}, which write.py cannot execute")
     return out
 

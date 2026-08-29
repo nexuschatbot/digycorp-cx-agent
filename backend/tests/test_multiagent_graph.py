@@ -608,3 +608,163 @@ def test_a_routed_agent_is_held_to_its_journey(monkeypatch):
     bound = tool_node._bound_tools({"agent": "bookingmanagement"}, {})
     assert bound == frozenset(tool_binding.tools_for("bookingmanagement"))
     assert "create_booking" not in bound
+
+
+# --------------------------------------------------------------------------- #
+# The DELEGATING section reaches the LIVE prompt (2026-08-29)
+#
+# It is deliberately outside SINGLE_AGENT_ORDER so the shipped body stays
+# byte-identical to prompt_body_original.txt. The trap: multi-agent Aisha reads
+# that same body, so "absent from the single-agent body" was mistaken for
+# "present on the multi-agent path". It was present in body_for("aisha") — the
+# SUB-AGENT loader, which Aisha never goes through — and nowhere she could read
+# it. Three live turns ran on ported prose telling her to call tools she no
+# longer holds. These assert the live path, not the loader.
+# --------------------------------------------------------------------------- #
+_DELEGATION_RULES = (
+    "WHAT IS NOT YOURS ANY MORE",     # she no longer books
+    "ASK FOR EVERYTHING IN ONE GO",   # one call, not three round trips
+    "ALWAYS SAY SOMETHING FIRST",     # never delegate in silence
+    "ONLY THAT IS TRUE",              # confirm nothing that is not executed
+)
+
+
+def test_the_multi_agent_prompt_carries_the_delegation_rules():
+    from app.agent.prompt import system_prompt
+
+    live = system_prompt(multi_agent=True)
+    for rule in _DELEGATION_RULES:
+        assert rule in live, f"multi-agent Aisha cannot read {rule!r}"
+
+
+def test_the_single_agent_prompt_is_untouched_by_any_of_it():
+    """The other half, and the reason the section sits outside the order: with
+    the flag off the prompt must stay byte-identical, or the cached prefix dies
+    and the ported-prompt fixture fails."""
+    from app.agent.prompt import system_prompt
+
+    shipped = system_prompt()
+    for rule in _DELEGATION_RULES:
+        assert rule not in shipped
+
+
+def test_the_agent_node_asks_for_the_multi_agent_prompt_when_the_flag_is_on():
+    """The prose existing is not the same as it being requested. This asserts
+    the CALL — the defect was a correct section nothing ever passed the flag
+    for."""
+    import inspect
+
+    from app.agent import graph
+
+    src = inspect.getsource(graph._agent_node)
+    assert "multi_agent=_multi_agent(cfg)" in src, (
+        "the agent node must pass the flag through to system_prompt, or the "
+        "delegation rules are unreachable again"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The same card is never drawn twice in one turn (2026-08-29)
+#
+# Live: a sales sub-agent called search_vehicles twice on ONE brief — two
+# different queries, the same two cars back — and the customer saw the X70 FL
+# Plus and X70 FL rendered twice, one pair directly under the other. A sub-agent
+# is freer to repeat a tool than Aisha ever was, because its loop is its own.
+# --------------------------------------------------------------------------- #
+def _two_cars():
+    return {"matches": [
+        {"vehicle_id": 7, "name": "X70 FL Plus"},
+        {"vehicle_id": 8, "name": "X70 FL"},
+    ]}
+
+
+def test_two_searches_that_find_the_same_cars_draw_one_card():
+    from app.agent.runner import _card_anchor
+
+    a = _card_anchor("search_vehicles", _two_cars())
+    b = _card_anchor("search_vehicles", _two_cars())
+    assert a == b, "identical results must produce an identical anchor to dedupe on"
+
+
+def test_a_search_that_finds_different_cars_still_draws_its_own_card():
+    """The dedupe keys on WHAT IS DRAWN, not on the tool name — otherwise a
+    second, genuinely different search would be silently swallowed."""
+    from app.agent.runner import _card_anchor
+
+    a = _card_anchor("search_vehicles", _two_cars())
+    b = _card_anchor("search_vehicles", {"matches": [{"vehicle_id": 1, "name": "G700"}]})
+    assert a != b
+
+
+def test_a_non_card_tool_is_never_deduped():
+    """Slot chips, option chips and the working label all ride on tool_events
+    with no anchor, and a repeat there is meaningful — a new slot offer must
+    replace the old one, not be dropped as a duplicate."""
+    from app.agent.runner import _card_anchor
+
+    assert _card_anchor("get_available_slots", {"slots": [{"slot_id": 1}]}) is None
+    assert _card_anchor("offer_options", {"options": ["a", "b"]}) is None
+
+
+def test_the_runner_suppresses_the_repeat_rather_than_only_the_row():
+    """Row and event must agree. Suppressing only the persisted row would leave
+    the duplicate on screen and remove it on reload; suppressing only the event
+    would do the reverse."""
+    import inspect
+
+    from app.agent import runner
+
+    src = inspect.getsource(runner.run_turn if hasattr(runner, "run_turn") else runner)
+    assert "drawn_anchors" in src
+    # The `continue` is what skips on_event as well as the row.
+    assert "if key in drawn_anchors:" in src and "continue" in src
+
+
+# --------------------------------------------------------------------------- #
+# The cascade reaches turn_trace.steps (2026-08-29)
+#
+# `steps` was NULL on all 24 rows ever written. run.trace_steps has built the
+# structure since T3.5 and turn_trace.record has accepted a `steps=` argument
+# the whole time — nothing ever carried it out of the orchestrator node. The
+# routing view showed `routed_to='testdrive'` for turns sales handled end to
+# end, because that column is the legacy journey router, not the cascade.
+# --------------------------------------------------------------------------- #
+def test_the_orchestrator_emits_its_routing_on_the_stream():
+    import inspect
+
+    from app.agent import graph
+
+    src = inspect.getsource(graph._orchestrator_node)
+    assert '"type": "cascade"' in src
+    assert "trace_steps(result)" in src
+
+
+def test_the_runner_collects_the_cascade_and_records_it():
+    import inspect
+
+    from app.agent import runner
+
+    src = inspect.getsource(runner)
+    assert 'kind == "cascade"' in src
+    assert "cascade_steps.extend" in src
+    assert "steps=cascade_steps or None" in src, (
+        "collected but not passed to record() is the defect this replaces"
+    )
+
+
+def test_trace_steps_carries_the_decision_and_never_the_brief():
+    """The brief holds the customer's profile — family size, area, budget — and
+    this column is written on every turn."""
+    from app.orchestrator.run import StepResult, TurnResult, trace_steps
+
+    result = TurnResult(steps=[StepResult(
+        brief="a seven-seater for a family in Deira under 130k",
+        agent="sales", status="ok", layer="embedding", score=0.81,
+        margin=0.2, latency_ms=4176,
+    )])
+    rows = trace_steps(result)
+    assert rows[0]["agent"] == "sales"
+    assert rows[0]["latency_ms"] == 4176
+    blob = repr(rows)
+    for leaked in ("seven-seater", "Deira", "130k"):
+        assert leaked not in blob

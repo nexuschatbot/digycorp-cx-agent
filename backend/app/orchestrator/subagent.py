@@ -54,6 +54,12 @@ Put the ids the next step will need in `findings` (vehicle_id, variant_id, \
 slot_id and so on) alongside the facts. If you could not find something, say so \
 in `note` and leave it out of `findings` rather than guessing it.
 
+KEEP `findings` SHORT. Everything your tools returned is passed on in full \
+already — you do not need to copy prices, specifications, tables or lists out \
+of a tool result, and re-typing them wastes the customer's time and risks \
+changing a number. Put the ids, anything you WORKED OUT that is not already in \
+the results, and nothing else.
+
 Do not greet, do not apologise, do not write to the customer, and do not format \
 anything. One JSON object.
 """
@@ -240,7 +246,25 @@ def _parse_findings(text: str) -> dict:
     if not isinstance(parsed, dict):
         return {}
     findings = parsed.get("findings")
-    out = dict(findings) if isinstance(findings, dict) else {}
+    if isinstance(findings, dict):
+        out = dict(findings)
+    else:
+        # THE WRAPPER IS OPTIONAL, BECAUSE THE MODEL TREATS IT AS OPTIONAL.
+        # Measured live 2026-08-29: a Sales step wrote 1158 chars of valid JSON
+        # with the results at the TOP level — no `findings` wrapper — and every
+        # byte was discarded here, six seconds of generation for nothing. The
+        # same shape is in _harvest_entities' docstring from an earlier run, so
+        # this is the second time it has cost something.
+        #
+        # ASKING HARDER IS THE WRONG FIX (agent/sanitise.py, rule 17, and the
+        # findings instruction has already been sharpened once). The reply IS
+        # the findings when it is not wrapped in one — reading it that way is
+        # deterministic, and the reserved keys stay reserved so a model cannot
+        # smuggle a proposal in by omitting the wrapper.
+        out = {
+            k: v for k, v in parsed.items()
+            if k not in ("note", "proposals", "findings")
+        }
     if parsed.get("note"):
         out["_note"] = str(parsed["note"])
     # Carried under a reserved key so it rides the existing runner contract
@@ -271,6 +295,7 @@ def run_step(
     in where the stub was.
     """
     from app import config
+    from app.agent import graph as _graph
     from app.agent import tool_node
     from app.agent.prompt import _DATE_ANCHOR, _relative_dates
     from app.agents import loader
@@ -314,6 +339,32 @@ def run_step(
         parts.append(f"What the customer has said they want: {json.dumps(profile)}")
     messages: list[dict] = [{"role": "user", "content": "\n".join(parts)}]
     seen_results: list[dict] = []
+    # WHAT THE TOOLS RETURNED, kept whole. seen_results above is the bare list
+    # _harvest_entities reads ids out of; this one keeps the tool NAME with the
+    # result, because Aisha cannot use `{"rows": [...]}` without knowing it came
+    # from compare_vehicles. See _EVIDENCE in run.py for why she gets it at all.
+    evidence: list[dict] = []
+    # WHAT THE STEP ACTUALLY DID, for the line logged on the way out. Without
+    # it a slow cascade is opaque from Aisha's side: her log shows only that
+    # the orchestrator ran, never which specialist called what, how many times,
+    # or where the seconds went. Every duplicate card on screen is one of these
+    # calls, so the tool sequence IS the explanation for a repeated card.
+    called: list[str] = []
+    rounds = 0
+    # Summed across the step's rounds. `cache_read` is the number that says
+    # whether the caching above is working at all: it is 0 on the first round
+    # of the day and should dominate every round after.
+    usage = {"uncached": 0, "cache_write": 0, "cache_read": 0, "output": 0}
+    # WHERE THE OUTPUT TOKENS WENT. A step costs ~1s + 17.5ms per token it
+    # writes, so this is the whole latency story — and the `entities=` line in
+    # run.py cannot tell it, because that lists only the SURVIVING keys. A long
+    # `note` (underscored, so filtered out of that list) or prose wrapped around
+    # the JSON (discarded by _parse_findings) is billed in full and shows up
+    # nowhere. One step wrote 483 tokens and yielded two keys; these three
+    # numbers are what say which of those it was.
+    args_chars = 0
+    reply_chars = 0
+    json_chars = 0
 
     client = _client()
 
@@ -321,13 +372,37 @@ def run_step(
         if time.monotonic() - started > timeout:
             raise TimeoutError(f"{step.agent} exceeded {timeout:.0f}s")
 
+        rounds += 1
         response = client.messages.create(
             model=model,
             max_tokens=1024,
-            system=system,
+            # CACHED, AND IT WAS NOT (found live, 2026-08-29). A card body is
+            # 7-10k tokens and this loop re-sent every one of them, uncached,
+            # on every round — while the single agent had cached its prefix
+            # since day one. One compare turn spent ~84k input tokens re-reading
+            # the same sales card nine times. The two breakpoints are the same
+            # pair graph.py uses and are documented there: `tools -> system` is
+            # the fixed render order, so marking the end of `system` caches the
+            # schemas with it, and the 1h TTL is right for the same reason it is
+            # right for Aisha — the next customer, not the next round, is who
+            # re-reads it.
+            #
+            # WHAT KEEPS IT HITTING: _schemas_for(agent) must stay byte-stable,
+            # which it is (card frontmatter order, no per-session assembly), and
+            # `system` is the card body plus a DATE-granular anchor — so it rolls
+            # once at midnight and not per request. A cache_read of 0 in the
+            # `settled` line below is the only detector if that ever changes.
+            system=_graph._system_blocks(system),
             tools=schemas,
-            messages=messages,
+            messages=_graph._cached_messages(messages),
         )
+
+        u = getattr(response, "usage", None)
+        if u is not None:
+            usage["uncached"] += getattr(u, "input_tokens", 0) or 0
+            usage["cache_write"] += getattr(u, "cache_creation_input_tokens", 0) or 0
+            usage["cache_read"] += getattr(u, "cache_read_input_tokens", 0) or 0
+            usage["output"] += getattr(u, "output_tokens", 0) or 0
 
         blocks = list(response.content or [])
         tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
@@ -337,6 +412,9 @@ def run_step(
                 getattr(b, "text", "") for b in blocks
                 if getattr(b, "type", None) == "text"
             )
+            reply_chars = len(text)
+            _s, _e = text.find("{"), text.rfind("}")
+            json_chars = (_e - _s + 1) if (_s != -1 and _e > _s) else 0
             findings = _parse_findings(text)
             # THE DECLARED ENTITIES COME FROM THE TOOL RESULTS, NOT THE MODEL.
             # Whatever it wrote is kept as context; the ids the next step needs
@@ -351,11 +429,33 @@ def run_step(
                     findings["_proposals"] = kept
                 else:
                     findings.pop("_proposals")
+            # Lifted off findings by run.execute, like _proposals. Underscored
+            # so it can never be mistaken for something the model wrote.
+            if evidence:
+                findings["_evidence"] = evidence
+            log.info(
+                "%s settled in %d round(s), %dms — tools=[%s] "
+                "(uncached=%d cache_write=%d cache_read=%d output=%d)",
+                step.agent, rounds, int((time.monotonic() - started) * 1000),
+                ", ".join(called) or "none",
+                usage["uncached"], usage["cache_write"],
+                usage["cache_read"], usage["output"],
+            )
+            log.info(
+                "%s wrote: %d chars of tool args, %d chars of reply "
+                "(%d json, %d discarded prose), note %d chars, %d finding key(s)",
+                step.agent, args_chars, reply_chars, json_chars,
+                reply_chars - json_chars,
+                len(findings.get("_note") or ""),
+                len([k for k in findings if not k.startswith("_")]),
+            )
             return findings
 
         messages.append({"role": "assistant", "content": blocks})
         results = []
         for use in tool_uses:
+            called.append(use.name)
+            args_chars += len(json.dumps(dict(use.input or {}), default=str))
             result = tool_node._dispatch(
                 db, session_id, use.name, dict(use.input or {}),
                 customer_id, correlation_id,
@@ -370,6 +470,7 @@ def run_step(
                 emit("tool_event", {"tool": use.name, "input": dict(use.input or {}),
                                     "output": result})
             seen_results.append(result)
+            evidence.append({"tool": use.name, "result": result})
             results.append({
                 "type": "tool_result",
                 "tool_use_id": use.id,
@@ -380,20 +481,58 @@ def run_step(
     # ITERATIONS EXHAUSTED IS A FAILED STEP, not a silent empty one. A sub-agent
     # still looping after six rounds on one brief is lost, and the honest outcome
     # is a step the customer hears about.
+    log.error("%s did not settle in %d rounds, %dms — tools=[%s]",
+              step.agent, max_iterations, int((time.monotonic() - started) * 1000),
+              ", ".join(called) or "none")
     raise RuntimeError(f"{step.agent} did not settle in {max_iterations} rounds")
 
 
-def make_runner(db, session_id: str, *, customer_id=None, profile: dict | None = None):
+def make_runner(
+    db,
+    session_id: str,
+    *,
+    customer_id=None,
+    profile: dict | None = None,
+    session_factory=None,
+):
     """Bind the trusted context once and hand back the runner turn.execute wants.
 
     The context is closed over rather than passed through the step, so nothing a
     model produced can reach it.
+
+    `session_factory` IS WHAT MAKES A PARALLEL WAVE LEGAL. A SQLAlchemy Session
+    is not thread-safe, so two steps running at once on the shared `db` would
+    interleave queries on one connection — which does not raise reliably, it
+    corrupts results. Given a factory, each step opens and closes its own
+    session and touches nothing the caller owns. Omit it and the runner behaves
+    exactly as before, on the caller's session, single-threaded: run.execute
+    will not widen a wave it cannot give sessions to.
+
+    SAFE BECAUSE SUB-AGENTS ONLY READ. Their cards bind read-only tools and
+    _dispatch never commits here — the write path is _execute_proposals, which
+    runs afterwards on the caller's session, in one thread, as it always did.
     """
     def _runner(step, context, *, emit=None, timeout=20.0, max_iterations=6):
-        return run_step(
-            step, context, db=db, session_id=session_id, customer_id=customer_id,
-            emit=emit, timeout=timeout, max_iterations=max_iterations,
-            profile=profile,
-        )
+        if session_factory is None:
+            return run_step(
+                step, context, db=db, session_id=session_id,
+                customer_id=customer_id, emit=emit, timeout=timeout,
+                max_iterations=max_iterations, profile=profile,
+            )
 
+        own = session_factory()
+        try:
+            return run_step(
+                step, context, db=own, session_id=session_id,
+                customer_id=customer_id, emit=emit, timeout=timeout,
+                max_iterations=max_iterations, profile=profile,
+            )
+        finally:
+            # Never commits: whatever a read left pending is discarded with the
+            # session, so a sub-agent cannot persist anything by accident.
+            own.rollback()
+            own.close()
+
+    # run.execute reads this to decide whether a wave may be widened.
+    _runner.thread_safe = session_factory is not None  # type: ignore[attr-defined]
     return _runner

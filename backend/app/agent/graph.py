@@ -594,7 +594,14 @@ def prewarm_cache() -> None:
         )
 
 
-def _log_usage(final: Any, *, session_id: str, streamed: int) -> None:
+def _log_usage(
+    final: Any,
+    *,
+    session_id: str,
+    streamed: int,
+    elapsed_ms: int | None = None,
+    ttft_ms: int | None = None,
+) -> None:
     """Record what one model CALL actually cost. Never raises.
 
     Per CALL, not per turn, and that distinction is the point: every call
@@ -627,9 +634,14 @@ def _log_usage(final: Any, *, session_id: str, streamed: int) -> None:
         uncached = _count("input_tokens")
         cache_write = _count("cache_creation_input_tokens")
         cache_read = _count("cache_read_input_tokens")
+        timing = ""
+        if elapsed_ms is not None:
+            timing = f" {elapsed_ms}ms" + (
+                f" (ttft {ttft_ms}ms)" if ttft_ms is not None else " (no text)"
+            )
         log.info(
             "agent usage session=%s prompt_total=%d (uncached=%d cache_write=%d "
-            "cache_read=%d) output=%d streamed=%d stop=%s",
+            "cache_read=%d) output=%d streamed=%d stop=%s%s",
             session_id,
             # The full prompt is the SUM of the three input counters, not
             # `input_tokens` alone — that field is only the uncached remainder.
@@ -642,6 +654,7 @@ def _log_usage(final: Any, *, session_id: str, streamed: int) -> None:
             _count("output_tokens"),
             streamed,
             getattr(final, "stop_reason", "?"),
+            timing,
         )
     except Exception:  # noqa: BLE001 — telemetry must never break a live turn
         log.debug("usage logging failed — session=%s", session_id, exc_info=True)
@@ -837,6 +850,16 @@ def _stream_once(
     if "haiku" in model:
         effort = ""
     extra: dict = {"output_config": {"effort": effort}} if effort else {}
+
+    # WHERE THE SECONDS GO, and until 2026-08-29 nothing recorded it. The usage
+    # line below says what a call COST but never how long it took, so a slow
+    # turn could only be attributed by subtracting the sub-agent timings from a
+    # stopwatch. Two numbers, because they have different cures: `ttft` is the
+    # prefill on a ~23k prompt and is what the customer experiences as dead
+    # air, while the remainder is generation and scales with output tokens.
+    _call_started = time.monotonic()
+    _first_token_at: list[float] = []
+
     with _client.messages.stream(
         model=model,
         max_tokens=MAX_TOKENS,
@@ -855,6 +878,13 @@ def _stream_once(
         # Text deltas are still forwarded the moment they arrive, so AD-A's
         # literal streaming is untouched — this only adds an earlier signal.
         for event in stream:
+            # FIRST BYTE OF ANYTHING, not first token forwarded to the customer.
+            # A generation whose text is all sealed away before a tool call
+            # still had to prefill, and that prefill is the wait — attributing
+            # it to "no text" would hide the very turns that feel slowest.
+            if not _first_token_at:
+                _first_token_at.append(time.monotonic())
+
             if cancel is not None and cancel.is_set():
                 # AD-E: client gone. Exiting the `with` closes the HTTP stream, so
                 # the model stops generating server-side too — no wasted tokens.
@@ -965,7 +995,14 @@ def _stream_once(
             "language guard: retry also opened in the wrong language; streamed as-is — session=%s",
             session_id,
         )
-    _log_usage(final, session_id=session_id, streamed=n_tokens)
+    _elapsed_ms = int((time.monotonic() - _call_started) * 1000)
+    _ttft_ms = (
+        int((_first_token_at[0] - _call_started) * 1000) if _first_token_at else None
+    )
+    _log_usage(
+        final, session_id=session_id, streamed=n_tokens,
+        elapsed_ms=_elapsed_ms, ttft_ms=_ttft_ms,
+    )
     return {"role": "assistant", "content": [_normalise_block(b) for b in final.content]}
 
 
@@ -1125,6 +1162,10 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
         model=model_for_turn,
         system=system_prompt(
             agent=active_agent,
+            # Without this Aisha reads the SINGLE-agent body on the multi-agent
+            # path — the ported prose that tells her to call lock_slot and
+            # compare_vehicles, with nothing saying she no longer holds them.
+            multi_agent=_multi_agent(cfg),
             session_facts=state.get("session_facts"),
             current_lang=state.get("turn_lang"),
             live_bookings=live_bookings,
@@ -1388,6 +1429,8 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     import json as _json
 
     from app.agent import profile as _profile
+    from app.db import SessionLocal
+    from app.orchestrator import run as _turn_run
     from app.orchestrator import subagent, turn as _turn
     from app.orchestrator.judge import judge as _judge
 
@@ -1429,6 +1472,11 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                     cfg["db"], session_id,
                     customer_id=state.get("customer_id"),
                     profile=as_dict or None,
+                    # A SESSION PER STEP, which is what lets a wave of briefs
+                    # run at once — see make_runner. cfg["db"] is still the
+                    # session the WRITES use (_execute_proposals, below); the
+                    # read-only sub-agents get their own and never commit.
+                    session_factory=SessionLocal,
                 ),
                 known=_known_entities(state),
                 judge=_judge,
@@ -1438,6 +1486,21 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
             payload = _turn.compose_input(result)
             payload["actions"] = _execute_proposals(result, state, cfg)
             facts = _fold_cascade_facts(state, result)
+
+            # THE CASCADE'S OWN ROUTING, on its way to turn_trace.steps — which
+            # was null on every row ever written because nothing carried it out
+            # of this node. run.trace_steps has built the structure since T3.5;
+            # runner.record() has accepted a `steps=` argument the whole time;
+            # the two were never introduced. It rides the custom stream because
+            # that is the only channel out of a graph node that runner already
+            # reads, and it carries NO BRIEF TEXT (see trace_steps) — the
+            # decision and its cost, never the customer's words.
+            try:
+                _w = _safe_writer()
+                if _w:
+                    _w({"type": "cascade", "steps": _turn_run.trace_steps(result)})
+            except Exception:  # noqa: BLE001 — telemetry never breaks a turn
+                log.debug("could not forward cascade trace", exc_info=True)
             log.info(
                 "orchestrator — session=%s briefs=%d ok=%d partial=%s",
                 session_id, len(briefs),

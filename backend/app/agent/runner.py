@@ -23,6 +23,7 @@ turn's partial transcript is rolled back, not persisted.
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import threading
 import time
@@ -299,6 +300,10 @@ def run_turn(
     # Accumulated beside the text and written onto the same agent turn below,
     # so the reload redraws them in the same places.
     card_rows: list[dict] = []
+    # Anchors already drawn this turn — see the tool_event branch below.
+    drawn_anchors: set[str] = set()
+    # Cascade routing for turn_trace.steps — see the "cascade" branch below.
+    cascade_steps: list[dict] = []
     turn_closed = False
     user_lang = lang_service.detect(message)
     # What the MODEL reads. Identical to the transcript except on a failed
@@ -428,7 +433,33 @@ def run_turn(
                 on_event("token", {"text": chunk["text"]})
             elif kind == "tool_event":
                 anchor = _card_anchor(chunk["tool"], chunk["output"])
-                if anchor:
+                # THE SAME CARD IS NEVER DRAWN TWICE IN ONE TURN (found live,
+                # 2026-08-29: a sales sub-agent called search_vehicles twice on
+                # one brief — two different queries, the same two cars back —
+                # and the customer got the X70 FL Plus and X70 FL rendered
+                # twice, one pair directly under the other).
+                #
+                # KEYED ON THE ANCHOR, NOT THE TOOL OR ITS INPUT, because the
+                # anchor IS what gets drawn: two different searches that land on
+                # the same vehicles produce one card, and one search that finds
+                # different vehicles produces two. Suppressing the event as well
+                # as the row is deliberate — the row governs what a RELOAD
+                # rebuilds, the event governs what is on screen now, and letting
+                # those two disagree is what makes a duplicate card survive a
+                # refresh in only one of them.
+                #
+                # Non-card tools (`anchor is None`) are untouched: they drive
+                # slot chips, option chips and the working label, where a repeat
+                # is meaningful.
+                if anchor is not None:
+                    key = _json.dumps(anchor, sort_keys=True)
+                    if key in drawn_anchors:
+                        log.info(
+                            "suppressing duplicate %s card — session=%s",
+                            chunk["tool"], session_id,
+                        )
+                        continue
+                    drawn_anchors.add(key)
                     card_rows.append(anchor)
                 event = {
                     "tool": chunk["tool"], "input": chunk["input"], "output": chunk["output"],
@@ -440,6 +471,12 @@ def run_turn(
                 if chunk.get("agent"):
                     event["agent"] = chunk["agent"]
                 on_event("tool_event", event)
+            elif kind == "cascade":
+                # Which specialist took which brief, how it was chosen, how long
+                # it took and whether it worked. Appended rather than assigned:
+                # a turn can run more than one cascade, and the routing view
+                # should show every hop, not the last one.
+                cascade_steps.extend(chunk.get("steps") or [])
             elif kind == "booking":
                 on_event("booking", {"booking_ref": chunk["booking_ref"]})
             elif kind == "text_break":
@@ -514,6 +551,13 @@ def run_turn(
             detected_lang=user_lang,
             customer_id=(prior_facts or {}).get("customer_id"),
             tool_calls=[row.get("tool") for row in card_rows if row.get("tool")],
+            # THE CASCADE, which `routed_to` cannot show. That column carries
+            # the LEGACY journey router (prefilter/classifier/sticky) and says
+            # "testdrive" for a turn sales handled end to end — true of every
+            # row written before today. These are the specialists that actually
+            # ran. None when the turn never delegated, so single-agent rows are
+            # unchanged.
+            steps=cascade_steps or None,
             agent_response=reply,
             router_latency_ms=router_ms,
             latency_ms=int((time.perf_counter() - turn_started) * 1000),

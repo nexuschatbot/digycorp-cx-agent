@@ -34,6 +34,8 @@ the remainder is divided among the steps.
 from __future__ import annotations
 
 import logging
+import math
+import queue as _queue
 import time
 from dataclasses import dataclass, field
 
@@ -51,6 +53,13 @@ COMPOSE_RESERVE_SECONDS = 8.0
 # means it is lost, and the honest outcome is a failed step the customer is told
 # about rather than a turn that never ends.
 SUBAGENT_MAX_ITERATIONS = 6
+
+# HOW MANY SPECIALISTS MAY WORK AT ONCE. Briefs in one wave need nothing from
+# each other, so the only reason to run them in sequence was that they shared a
+# database session; run.execute widens a wave only for a runner that brought its
+# own. Four is above the widest brief list Aisha realistically sends and below
+# anything that would matter to the connection pool.
+MAX_PARALLEL_STEPS = 4
 
 
 @dataclass
@@ -80,17 +89,25 @@ def enabled(*, voice_call: bool = False) -> bool:
     return True
 
 
-def budget_for(steps: int, deadline_seconds: float) -> float:
+def budget_for(steps: int, deadline_seconds: float, *, parallel: int = 1) -> float:
     """Seconds each step may take, after reserving Aisha's composition time.
 
     Never returns less than a second: a budget so small that every step times
     out produces a turn that gathered nothing and says so, which is strictly
     worse than a slow answer.
+
+    DIVIDE BY WHAT ACTUALLY RUNS IN SEQUENCE. When steps run one after another
+    that is the step count, and it is why this used to divide by it. Running
+    `parallel` of them at once means only ceil(steps / parallel) of them are
+    sequential, so dividing by the step count would hand each one a third of the
+    clock it is actually free to use — and would make asking three questions in
+    one call WORSE than asking them in three, which is the opposite of the point.
     """
     if steps <= 0:
         return 0.0
-    usable = max(deadline_seconds - COMPOSE_RESERVE_SECONDS, steps * 1.0)
-    return max(usable / steps, 1.0)
+    sequential = max(1, math.ceil(steps / max(1, parallel)))
+    usable = max(deadline_seconds - COMPOSE_RESERVE_SECONDS, sequential * 1.0)
+    return max(usable / sequential, 1.0)
 
 
 def forward_events(parent_writer, agent: str):
@@ -149,10 +166,33 @@ def execute(
     judge=None,
     deadline_seconds: float = 60.0,
     parent_writer=None,
+    max_workers: int = MAX_PARALLEL_STEPS,
 ) -> run.TurnResult:
     """Run the briefs, forwarding every sub-agent event to the parent stream."""
-    per_step = budget_for(len(briefs), deadline_seconds)
+    per_step = budget_for(len(briefs), deadline_seconds, parallel=max_workers)
     started = time.monotonic()
+
+    # EVENTS CROSS A THREAD BOUNDARY HERE, so they cross it on a queue. A wave
+    # may run several specialists at once, and every one of them emits the
+    # tool_events the customer's cards are built from — but `parent_writer` is
+    # LangGraph's custom-stream writer and nothing documents it as thread-safe.
+    # Workers put; run.execute's on_tick drains, on the one thread that owns the
+    # stream. Unbounded on purpose: dropping an event here silently deletes a
+    # card, which is the failure forward_events exists to prevent.
+    events: _queue.Queue = _queue.Queue()
+
+    def _drain() -> None:
+        while True:
+            try:
+                kind, payload, agent = events.get_nowait()
+            except _queue.Empty:
+                return
+            forward_events(parent_writer, agent)(kind, payload)
+
+    def _queue_emit(agent: str):
+        def _emit(kind: str, payload: dict) -> None:
+            events.put((kind, dict(payload or {}), agent))
+        return _emit
 
     def _runner(step, ctx):
         # A step that starts after the budget is already gone is failed rather
@@ -163,12 +203,82 @@ def execute(
             raise TimeoutError("no time left before composition")
         return runner_fn(
             step, ctx,
-            emit=forward_events(parent_writer, step.agent),
+            emit=_queue_emit(step.agent),
             timeout=min(per_step, remaining),
             max_iterations=SUBAGENT_MAX_ITERATIONS,
         )
 
-    return run.execute(briefs, _runner, known=known, judge=judge, step_timeout=per_step)
+    # `thread_safe` belongs to the runner run.execute actually calls, so the
+    # wrapper has to carry the flag the wrapped runner set. Without this the
+    # wave is never widened and the queue above is pure overhead.
+    _runner.thread_safe = getattr(runner_fn, "thread_safe", False)  # type: ignore[attr-defined]
+
+    try:
+        return run.execute(
+            briefs, _runner, known=known, judge=judge, step_timeout=per_step,
+            max_workers=max_workers, on_tick=_drain,
+        )
+    finally:
+        # Whatever a failed or timed-out step already emitted still drew cards
+        # on screen; losing it here would leave the transcript disagreeing with
+        # what the customer saw.
+        _drain()
+
+
+# HOW MUCH RAW TOOL OUTPUT REACHES AISHA, in characters across the whole turn.
+#
+# WHY SHE GETS IT AT ALL (measured live, 2026-08-29). She used to receive only
+# `findings` — a small JSON blob the sub-agent WROTE about what the tools said.
+# For "compare both" that came back as price_left/price_right/seats_left/
+# seats_right and one sentence, which is not enough to answer with, so she went
+# back and asked twice more: 40 seconds and two identical comparison tables for
+# a question one cascade had already answered.
+#
+# The arithmetic is the argument. compare_vehicles returns ~257 tokens. We were
+# spending 4.6s of Haiku OUTPUT compressing that into something thinner, then
+# 18s of extra cascades recovering what the compression threw away. Input
+# tokens are ~5x cheaper than output, they cache, and they cost no generation
+# time at all. The single agent never had this problem because it called the
+# tool itself and saw the whole result — the cascade LOST information, and this
+# gives it back.
+#
+# THE BUDGET IS NOT OPTIONAL. _orchestrator_node truncates the composed payload
+# at 16000 chars with a plain slice, which would cut a JSON string in half. This
+# ceiling keeps the evidence well inside that, and the largest realistic single
+# result (search_vehicles, ~3.1k chars) fits with room for several more.
+EVIDENCE_BUDGET_CHARS = 6000
+
+
+def _evidence_for(steps) -> list[dict]:
+    """Raw tool results for the composer, oldest first, inside the budget.
+
+    ORDER MATTERS WHEN IT DOES NOT ALL FIT. The earliest results are the ones
+    later steps were built on, so they are the ones a dependent answer needs;
+    dropping from the end degrades the tail of a long cascade rather than the
+    foundation of it. What is dropped is REPORTED rather than silently missing,
+    because an answer composed from partial evidence must be able to say so.
+    """
+    import json as _json
+
+    out: list[dict] = []
+    spent = 0
+    dropped = 0
+    for step in steps:
+        for item in step.evidence or []:
+            body = _json.dumps(item.get("result"), default=str)
+            if spent + len(body) > EVIDENCE_BUDGET_CHARS:
+                dropped += 1
+                continue
+            spent += len(body)
+            out.append({
+                "agent": step.agent,
+                "tool": item.get("tool"),
+                "result": item.get("result"),
+            })
+    if dropped:
+        log.info("evidence: %d result(s) over the %d-char budget were dropped",
+                 dropped, EVIDENCE_BUDGET_CHARS)
+    return out
 
 
 def compose_input(result: run.TurnResult) -> dict:
@@ -178,8 +288,12 @@ def compose_input(result: run.TurnResult) -> dict:
     worked, name what didn't" is impossible if the composer only sees what
     worked — it would report a half-answer as a whole one, which is worse than
     admitting the gap.
+
+    EVIDENCE is the third part: what the tools actually returned, verbatim. See
+    EVIDENCE_BUDGET_CHARS for why it is there and what it cost not to have it.
     """
     return {
+        "evidence": _evidence_for([s for s in result.steps if s.ok]),
         "findings": [
             {"agent": s.agent, "data": s.findings}
             for s in result.steps if s.ok and s.findings

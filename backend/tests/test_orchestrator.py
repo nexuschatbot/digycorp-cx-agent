@@ -365,3 +365,237 @@ def test_the_judge_prompt_encodes_the_three_traps():
 def test_the_judge_returns_none_on_an_empty_brief_without_calling_out():
     assert judge_mod.judge("", ["sales"]) is None
     assert judge_mod.judge("   ", ["sales"]) is None
+
+
+# --------------------------------------------------------------------------- #
+# Parallel waves (2026-08-29)
+#
+# The module docstring promised "two briefs that need nothing from each other
+# run together" and a plain nested for-loop delivered the opposite for the whole
+# of Phase 3-5. Measured live, a three-question turn spent 34 seconds walking
+# them one at a time. These pin the promise down.
+# --------------------------------------------------------------------------- #
+_PARALLEL_BRIEFS = [
+    {"brief": "I need a 7 seater for the family"},
+    {"brief": "what would the monthly payment be"},
+]
+_PARALLEL_JUDGE = _judge({
+    "I need a 7 seater for the family": "sales",
+    "what would the monthly payment be": "finance",
+})
+# Finance's card requires a variant_id, so these two are only independent once
+# that entity is already known — which is exactly the live case: the customer
+# named a trim last turn and now asks two things about it at once.
+_PARALLEL_KNOWN = {"variant_id", "vehicle_id"}
+
+
+def _blocking_runner(gate, *, thread_safe: bool):
+    """A runner whose steps can only all finish if they all start first."""
+    import threading
+
+    started = threading.Barrier(2, timeout=5)
+
+    def runner(step, ctx):
+        if gate:
+            started.wait()          # deadlocks unless something else is running
+        return {"agent": step.agent}
+
+    runner.thread_safe = thread_safe
+    return runner
+
+
+@needs_model
+def test_a_wave_actually_runs_its_steps_at_the_same_time():
+    """The barrier is the assertion: it releases only when BOTH steps have
+    reached it, so this cannot pass on a runner that walks them in sequence."""
+    result = run.execute(
+        _PARALLEL_BRIEFS,
+        _blocking_runner(True, thread_safe=True),
+        judge=_PARALLEL_JUDGE, known=set(_PARALLEL_KNOWN),
+        max_workers=2,
+    )
+    assert [s.status for s in result.steps] == ["ok", "ok"]
+
+
+@needs_model
+def test_a_runner_that_is_not_thread_safe_is_never_widened():
+    """The flag is the whole safety interlock: without it two steps would share
+    one SQLAlchemy Session, which does not raise — it returns wrong rows."""
+    import threading
+
+    live = []
+    peak = []
+    lock = threading.Lock()
+
+    def runner(step, ctx):
+        with lock:
+            live.append(step.agent)
+            peak.append(len(live))
+        try:
+            return {"agent": step.agent}
+        finally:
+            with lock:
+                live.remove(step.agent)
+
+    runner.thread_safe = False
+    result = run.execute(
+        _PARALLEL_BRIEFS, runner, judge=_PARALLEL_JUDGE, known=set(_PARALLEL_KNOWN), max_workers=4,
+    )
+    assert [s.status for s in result.steps] == ["ok", "ok"]
+    assert max(peak) == 1, "a runner without its own session must stay serial"
+
+
+@needs_model
+def test_results_come_back_in_wave_order_not_completion_order():
+    """The transcript, the trace and every reader of result.steps must not
+    depend on which specialist happened to answer first."""
+    import time as _t
+
+    def runner(step, ctx):
+        # Sales dawdles, so completion order is the reverse of wave order.
+        if step.agent == "sales":
+            _t.sleep(0.15)
+        return {"agent": step.agent}
+
+    runner.thread_safe = True
+    result = run.execute(
+        _PARALLEL_BRIEFS, runner, judge=_PARALLEL_JUDGE, known=set(_PARALLEL_KNOWN), max_workers=2,
+    )
+    assert [s.agent for s in result.steps] == ["sales", "finance"]
+
+
+@needs_model
+def test_a_dependent_brief_still_waits_for_the_one_it_needs():
+    """Widening a wave must not widen ACROSS waves — depends_on is the whole
+    reason results thread forward."""
+    seen = {}
+
+    def runner(step, ctx):
+        seen[step.agent] = dict(ctx)
+        return {"vehicle_id": 8} if step.agent == "sales" else {"slot_id": 41}
+
+    runner.thread_safe = True
+    result = run.execute(BRIEFS, runner, judge=JUDGE, max_workers=4)
+    assert [s.status for s in result.steps] == ["ok", "ok"]
+    assert seen["testdrive"]["vehicle_id"] == 8
+
+
+@needs_model
+def test_every_sub_agent_event_reaches_the_parent_even_from_a_worker_thread():
+    """A tool_event that never arrives is a card that never draws, and it does
+    not error — the exact failure forward_events exists to prevent."""
+    from app.orchestrator import turn as turn_mod
+
+    seen = []
+
+    def runner_fn(step, ctx, *, emit=None, timeout=20.0, max_iterations=6):
+        for i in range(5):
+            emit("tool_event", {"tool": f"{step.agent}_{i}", "input": {}, "output": {}})
+        return {"agent": step.agent}
+
+    runner_fn.thread_safe = True
+    turn_mod.execute(
+        _PARALLEL_BRIEFS, runner_fn,
+        judge=_PARALLEL_JUDGE, known=set(_PARALLEL_KNOWN),
+        parent_writer=lambda kind, payload: seen.append(payload["tool"]),
+        max_workers=2,
+    )
+    assert len(seen) == 10
+    assert {s.split("_")[0] for s in seen} == {"sales", "finance"}
+
+
+def test_the_budget_divides_by_what_runs_in_sequence_not_by_step_count():
+    """Batching three questions into one call must not give each a third of the
+    clock — that would make asking together worse than asking separately, which
+    is the opposite of why batching exists."""
+    from app.orchestrator import turn as turn_mod
+
+    serial = turn_mod.budget_for(3, 60.0, parallel=1)
+    together = turn_mod.budget_for(3, 60.0, parallel=4)
+    assert together > serial
+    # All three in one wave: the whole usable window, not a third of it.
+    assert together == pytest.approx(60.0 - turn_mod.COMPOSE_RESERVE_SECONDS)
+
+
+# --------------------------------------------------------------------------- #
+# Evidence: the tool results reach the composer (2026-08-29)
+#
+# Aisha used to receive only `findings` — the sub-agent's own summary. Live,
+# "compare both" came back as four numbers and a sentence, which is not enough
+# to answer with, so she asked twice more: 40 seconds and two identical tables.
+# The tool output that would have answered it first time was collected, used for
+# entity harvesting, and thrown away.
+# --------------------------------------------------------------------------- #
+def _step_with_evidence(agent="sales", n=1, size=10):
+    from app.orchestrator.run import StepResult
+
+    return StepResult(
+        brief="b", agent=agent, status="ok", findings={"vehicle_id": 8},
+        evidence=[
+            {"tool": "compare_vehicles", "result": {"rows": ["x" * size]}}
+            for _ in range(n)
+        ],
+    )
+
+
+def test_the_composer_receives_what_the_tools_returned():
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+
+    result = run_mod.TurnResult(steps=[_step_with_evidence()])
+    payload = turn_mod.compose_input(result)
+
+    assert payload["evidence"], "the composer must see the raw tool output"
+    assert payload["evidence"][0]["tool"] == "compare_vehicles"
+    assert payload["evidence"][0]["agent"] == "sales"
+    assert payload["evidence"][0]["result"] == {"rows": ["x" * 10]}
+
+
+def test_evidence_is_lifted_off_findings_not_left_in_them():
+    """`_evidence` travels on findings only as far as run.execute. Leaving it
+    there would put tool output in a field Aisha reads as the specialist's own
+    words — and would double it in the payload."""
+    from app.orchestrator import run as run_mod
+
+    def runner(step, ctx):
+        return {"vehicle_id": 8, "_evidence": [{"tool": "t", "result": {"a": 1}}]}
+
+    runner.thread_safe = False
+    out = run_mod.execute(
+        [{"brief": "I need a 7 seater for the family"}],
+        runner,
+        judge=_judge({"I need a 7 seater for the family": "sales"}),
+    )
+    step = out.steps[0]
+    assert step.evidence == [{"tool": "t", "result": {"a": 1}}]
+    assert "_evidence" not in step.findings
+    assert step.findings == {"vehicle_id": 8}
+
+
+def test_evidence_stays_inside_its_budget():
+    """_orchestrator_node truncates the composed payload with a plain slice, so
+    unbounded evidence would cut a JSON string in half and hand the model
+    something unparseable."""
+    import json
+
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+
+    huge = _step_with_evidence(n=40, size=1000)   # ~40k chars offered
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[huge]))
+
+    body = json.dumps(payload["evidence"], default=str)
+    assert len(body) <= turn_mod.EVIDENCE_BUDGET_CHARS * 1.5
+    assert payload["evidence"], "the budget must trim, not empty, the evidence"
+
+
+def test_a_failed_step_contributes_no_evidence():
+    """Same rule as entities: a step that failed established nothing, and its
+    partial tool output must not be quoted to a customer as fact."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+
+    bad = _step_with_evidence()
+    bad.status = "failed"
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[bad]))
+    assert payload["evidence"] == []

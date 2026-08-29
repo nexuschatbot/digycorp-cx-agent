@@ -455,7 +455,7 @@ def _relative_dates(today: date) -> dict[str, str]:
     }
 
 
-def _resolved_body(agent: str | None = None) -> str:
+def _resolved_body(agent: str | None = None, *, multi_agent: bool = False) -> str:
     """The prompt body with the helpline token substituted from config.
 
     Read at call time (not frozen at import) so an env override of ELITE_HELPLINE
@@ -470,7 +470,28 @@ def _resolved_body(agent: str | None = None) -> str:
     # aisha/v1.md and differ from the sub-agent bodies — see
     # loader.legacy_journey_body.
     body = _loader.legacy_journey_body(agent) if agent else _PROMPT_BODY
+    if multi_agent:
+        body = body + "\n\n" + _delegating_body()
     return body.replace(_HELPLINE_TOKEN, config.ELITE_HELPLINE)
+
+
+def _delegating_body() -> str:
+    """Aisha's DELEGATING section, appended only on the multi-agent path.
+
+    IT LIVES OUTSIDE SINGLE_AGENT_ORDER AND THAT IS WHY IT NEEDS THIS. The
+    section is deliberately absent from the shipped single-agent body so the
+    ported prompt stays byte-identical to prompt_body_original.txt — but the
+    multi-agent Aisha reads that SAME body, so leaving it there and nowhere else
+    meant she never saw a word of it (found live, 2026-08-29: three turns of the
+    ported journey prose telling her to call lock_slot and compare_vehicles,
+    neither of which she still holds, with nothing anywhere explaining why).
+    `body_for("aisha")` does carry it — but that is the SUB-AGENT loader, and
+    Aisha is not a sub-agent, so checking it proved nothing about the live path.
+
+    Appended LAST, after the journey prose it amends, because that is the order
+    it reads in: the sequences say what happens, this says who now performs it.
+    """
+    return _loader.sections("aisha").get("DELEGATING", "")
 
 
 def system_prompt(
@@ -482,6 +503,7 @@ def system_prompt(
     voice_call: bool = False,
     returning: dict | None = None,
     agent: str | None = None,
+    multi_agent: bool = False,
 ) -> str:
     """The Stage-1 system prompt with today's date, the resolved relative dates, and
     (when present) the confirmed facts of the current conversation.
@@ -507,7 +529,8 @@ def system_prompt(
     from session_facts["booked_refs"], so no new parameter is threaded here.
     """
     today = today or date.today()
-    prompt = _resolved_body(agent) + _DATE_ANCHOR.format(**_relative_dates(today))
+    prompt = (_resolved_body(agent, multi_agent=multi_agent)
+              + _DATE_ANCHOR.format(**_relative_dates(today)))
     facts = _render_facts(session_facts or {})
     if facts:
         prompt += _FACTS_ANCHOR.format(facts=facts)

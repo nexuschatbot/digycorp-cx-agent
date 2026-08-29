@@ -13,6 +13,7 @@ import types
 
 import pytest
 
+from tests.conftest import wire_text
 from app.orchestrator import subagent
 from app.orchestrator.order import Step
 
@@ -134,7 +135,7 @@ def test_earlier_results_are_handed_to_the_next_step(patched):
         Step(brief="book it", agent="testdrive", index=1),
         {"vehicle_id": 8}, db=None, session_id="s1",
     )
-    sent = client.calls[0]["messages"][0]["content"]
+    sent = wire_text(client.calls[0]["messages"][0]["content"])
     assert "vehicle_id" in sent and "8" in sent
 
 
@@ -146,7 +147,7 @@ def test_the_brief_carries_constraints_and_never_the_person(patched):
         STEP, {}, db=None, session_id="s1",
         profile={"seats_needed": 7, "area": "Deira"},
     )
-    sent = client.calls[0]["messages"][0]["content"]
+    sent = wire_text(client.calls[0]["messages"][0]["content"])
     assert "Deira" in sent
     for banned in ("mobile", "+971", "booking_ref", "name"):
         assert banned not in sent
@@ -174,7 +175,7 @@ def test_the_prompt_is_the_agents_own_body_plus_the_findings_instruction(patched
 
     client = patched([[_text('{"findings": {}}')]])
     subagent.run_step(STEP, {}, db=None, session_id="s1")
-    system = client.calls[0]["system"]
+    system = wire_text(client.calls[0]["system"])
     assert loader.sections("sales")["FINDING_THE_RIGHT_CAR"] in system
     assert "YOU ARE NOT TALKING TO THE CUSTOMER" in system
 
@@ -185,7 +186,7 @@ def test_the_sub_agent_prompt_carries_no_customer_facing_rules(patched):
     the guardrails."""
     client = patched([[_text('{"findings": {}}')]])
     subagent.run_step(STEP, {}, db=None, session_id="s1")
-    system = client.calls[0]["system"]
+    system = wire_text(client.calls[0]["system"])
     assert "Do not greet" in system
     assert "do not write to the customer" in system
 
