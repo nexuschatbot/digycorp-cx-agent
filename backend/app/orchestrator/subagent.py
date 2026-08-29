@@ -375,7 +375,15 @@ def run_step(
         rounds += 1
         response = client.messages.create(
             model=model,
-            max_tokens=1024,
+            # 400, DOWN FROM 1024 (2026-08-29). A tool round needs ~50 tokens of
+            # arguments; the findings round needs ids and one note — yet Haiku
+            # was measured spending ~6s of an 11s cascade writing 1,156 tokens
+            # of JSON it had been told not to write, copying tool results the
+            # evidence channel already carries. The instruction asks for
+            # brevity; this enforces it. Entities still thread even through a
+            # truncated reply: _harvest_entities reads them from the raw tool
+            # results, not from the model's JSON.
+            max_tokens=400,
             # CACHED, AND IT WAS NOT (found live, 2026-08-29). A card body is
             # 7-10k tokens and this loop re-sent every one of them, uncached,
             # on every round — while the single agent had cached its prefix
@@ -434,9 +442,10 @@ def run_step(
             if evidence:
                 findings["_evidence"] = evidence
             log.info(
-                "%s settled in %d round(s), %dms — tools=[%s] "
+                "%s settled in %d round(s), %dms — model=%s tools=[%s] "
                 "(uncached=%d cache_write=%d cache_read=%d output=%d)",
                 step.agent, rounds, int((time.monotonic() - started) * 1000),
+                model,
                 ", ".join(called) or "none",
                 usage["uncached"], usage["cache_write"],
                 usage["cache_read"], usage["output"],

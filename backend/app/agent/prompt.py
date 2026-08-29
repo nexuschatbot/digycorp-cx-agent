@@ -505,7 +505,49 @@ def system_prompt(
     agent: str | None = None,
     multi_agent: bool = False,
 ) -> str:
-    """The Stage-1 system prompt with today's date, the resolved relative dates, and
+    """The full system prompt as one string — see system_prompt_parts, which
+    this joins. Kept because every existing caller and test reads a string."""
+    return "".join(system_prompt_parts(
+        today,
+        session_facts=session_facts,
+        current_lang=current_lang,
+        live_bookings=live_bookings,
+        held_slot=held_slot,
+        voice_call=voice_call,
+        returning=returning,
+        agent=agent,
+        multi_agent=multi_agent,
+    ))
+
+
+def system_prompt_parts(
+    today: date | None = None,
+    session_facts: dict | None = None,
+    current_lang: str | None = None,
+    live_bookings: list | None = None,
+    held_slot: dict | None = None,
+    voice_call: bool = False,
+    returning: dict | None = None,
+    agent: str | None = None,
+    multi_agent: bool = False,
+) -> tuple[str, str]:
+    """(stable, volatile) halves of the system prompt, split for prompt caching.
+
+    THE SPLIT IS THE CACHE BOUNDARY (found live, 2026-08-29). The whole prompt
+    used to be one cached block, on the reasoning that only the date anchor
+    varied — daily, which was fine. session_facts, the bookings anchor and the
+    language anchor have since moved in, and they change MID-CONVERSATION: a
+    slot lock or a cascade merging entities rewrote the block, and the log
+    showed full ~30k-token cache rewrites (cache_read=0, ttft 3-5s) several
+    times per session. Splitting keeps the ~22k body+date prefix cached across
+    those changes; only the small volatile tail is re-read at full price.
+
+    `stable` — the agent body and the date anchor: byte-identical all day for
+    every session on the same binding. `volatile` — everything derived from
+    THIS conversation (facts, bookings, held slot, second-drive, returning,
+    language, voice/options anchors). Empty tail is normal for a fresh chat.
+
+    The Stage-1 system prompt with today's date, the resolved relative dates, and
     (when present) the confirmed facts of the current conversation.
 
     Called per turn so the dates are always current (the model has no clock). A
@@ -529,8 +571,9 @@ def system_prompt(
     from session_facts["booked_refs"], so no new parameter is threaded here.
     """
     today = today or date.today()
-    prompt = (_resolved_body(agent, multi_agent=multi_agent)
+    stable = (_resolved_body(agent, multi_agent=multi_agent)
               + _DATE_ANCHOR.format(**_relative_dates(today)))
+    prompt = ""
     facts = _render_facts(session_facts or {})
     if facts:
         prompt += _FACTS_ANCHOR.format(facts=facts)
@@ -596,14 +639,14 @@ def system_prompt(
             prompt += _OPTIONS_ANCHOR_CORE
             if "_COMPARE_ANCHOR" in _anchors.anchors_for(agent):
                 prompt += _anchors._OPTIONS_PARAGRAPH_SEPARATOR + _COMPARE_ANCHOR
-    return prompt
+    return stable, prompt
 
 
 # Dateless body, kept for anything that wants the static text. The live agent
 # node uses system_prompt() so it always carries the current date.
 SYSTEM_PROMPT = _resolved_body()
 
-__all__ = ["SYSTEM_PROMPT", "realtime_instructions", "system_prompt"]
+__all__ = ["SYSTEM_PROMPT", "realtime_instructions", "system_prompt", "system_prompt_parts"]
 
 
 def realtime_instructions(today: date | None = None) -> str:

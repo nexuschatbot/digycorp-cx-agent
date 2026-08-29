@@ -244,9 +244,18 @@ def execute(
 #
 # THE BUDGET IS NOT OPTIONAL. _orchestrator_node truncates the composed payload
 # at 16000 chars with a plain slice, which would cut a JSON string in half. This
-# ceiling keeps the evidence well inside that, and the largest realistic single
-# result (search_vehicles, ~3.1k chars) fits with room for several more.
-EVIDENCE_BUDGET_CHARS = 6000
+# ceiling keeps the evidence inside that.
+#
+# 12000, UP FROM 6000 (2026-08-29). The old ceiling was sized to "the largest
+# realistic single result" — but a specialist that calls two tools is routine,
+# and the measured payloads (search_vehicles ~3.1k, search_knowledge ~3.0k,
+# get_vehicle_details ~2.0k) meant any two-tool brief dropped evidence on the
+# floor ("1 result(s) over the budget were dropped", live 2026-08-29). Dropped
+# evidence is what pushed Haiku to copy specs into its findings prose — the
+# composer then quoted a summary instead of the data. Room for four to five
+# results keeps the raw numbers in front of the composer, still well under the
+# 16k slice.
+EVIDENCE_BUDGET_CHARS = 12000
 
 
 def _evidence_for(steps) -> list[dict]:

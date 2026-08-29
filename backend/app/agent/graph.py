@@ -47,7 +47,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.prompt import SYSTEM_PROMPT, system_prompt
+from app.agent.prompt import SYSTEM_PROMPT, system_prompt, system_prompt_parts
 from app.agent.sanitise import MarkdownStripper
 from app.agent.tool_node import tool_node
 # Read-only, for the bookings anchor built in _agent_node. The agent node reads
@@ -418,15 +418,24 @@ def _safe_writer():
         return None
 
 
-def _system_blocks(system: str) -> list[dict]:
-    """The system prompt as ONE cacheable block (prompt caching).
+def _system_blocks(system: str | tuple[str, str]) -> list[dict]:
+    """The system prompt as a cacheable block, plus an uncached volatile tail.
 
-    WHY ONE BLOCK, NOT TWO. The usual advice is to keep volatile content AFTER
-    the cache breakpoint, and system_prompt() does append a date anchor. But
-    that anchor is DATE-granular, not per-request: it is byte-identical for
-    every session and every customer all day long. Splitting it out would only
-    shrink the cached prefix by ~270 tokens and buy nothing. It changes at
-    midnight, invalidating the entry once a day, which is correct.
+    TWO BLOCKS NOW, AND WHY (2026-08-29). This was one cached block, on the
+    reasoning that only the DATE anchor varied — daily, which was fine. The
+    volatile anchors that have since moved into the prompt (session_facts, the
+    bookings/held-slot anchor, the language anchor) change MID-CONVERSATION,
+    and every change rewrote the whole ~30k-token prefix: the log showed
+    cache_read=0 with a full cache_write right after a slot tap, twice in one
+    session, at 3-5s of ttft each. Callers now pass system_prompt_parts()'s
+    (stable, volatile) pair; the breakpoint sits on the stable half — body +
+    date anchor — and the tail (~600-900 tokens) rides uncached behind it. A
+    plain string still becomes the old single cached block, for callers that
+    have nothing volatile.
+
+    Note the API's invalidation hierarchy still applies: a changed tail
+    re-reads the tail and everything after it (the conversation delta) at full
+    price, but the stable prefix — the bulk of the bill — keeps hitting.
 
     WHAT THIS DEPENDS ON. The cached prefix is `tools -> system` — that render
     order is fixed by the API — so TOOL_SCHEMAS must stay byte-stable for this
@@ -459,13 +468,19 @@ def _system_blocks(system: str) -> list[dict]:
     booted the night before demo day warms a prefix that is stale by morning.
     Restart after reset-demo, not before it.
     """
-    return [
+    stable, volatile = system if isinstance(system, tuple) else (system, "")
+    blocks: list[dict] = [
         {
             "type": "text",
-            "text": system,
+            "text": stable,
             "cache_control": {"type": "ephemeral", "ttl": "1h"},
         }
     ]
+    if volatile:
+        # Deliberately NO cache_control: this is the per-conversation tail the
+        # split exists to keep out of the cached prefix.
+        blocks.append({"type": "text", "text": volatile})
+    return blocks
 
 
 def _cached_messages(messages: list) -> list:
@@ -572,7 +587,7 @@ def prewarm_cache() -> None:
             client.messages.create(
                 model=AGENT_MODEL,
                 max_tokens=0,
-                system=_system_blocks(system_prompt()),
+                system=_system_blocks(system_prompt_parts()),
                 tools=schemas,
                 messages=[{"role": "user", "content": "warmup"}],
             # Mirror the live calls' effort (AGENT_EFFORT) so this warmup is
@@ -1160,7 +1175,7 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     assistant = generate(
         _trim_messages(state["messages"]),
         model=model_for_turn,
-        system=system_prompt(
+        system=system_prompt_parts(
             agent=active_agent,
             # Without this Aisha reads the SINGLE-agent body on the multi-agent
             # path — the ported prose that tells her to call lock_slot and
