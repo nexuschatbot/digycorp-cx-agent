@@ -222,9 +222,17 @@ against a 400ms first-audio budget makes the free pre-filter/sticky exits
 
 ## Multi-agent migration — Phases 0 to 8 (August 2026)
 
-Done, on branch `multi-agent-migration`. **The single-agent path is untouched and
-still live**; everything new sits behind a flag, which is why all 1,444 tests
-still pass against the old shape.
+Built and **connected**, on branch `multi-agent-migration`. **The single-agent
+path is untouched and still live**; everything new sits behind a flag, which is
+why all 1,532 tests still pass against the old shape.
+
+> **This section said "Done" for a phase while the cascade was unreachable.**
+> Every module existed and was tested; nothing in `app/` imported
+> `app/orchestrator/`. Corrected 29 Aug 2026 — see the architecture doc §6, which
+> now separates *not built* from *built and not reachable* and lists the four
+> defects of the second kind that this migration produced in a row. The lesson
+> for this checklist: a phase is done when a REQUEST can reach it, not when its
+> files exist and its tests pass.
 
 | flag | default |
 |---|---|
@@ -242,13 +250,49 @@ still pass against the old shape.
 - **Orchestrator**: select → order → execute, plus the only commercial writes.
 - **PDPL**: `turn_trace` swept, transcripts reachable by customer, retention job.
 
+**Wired on 29 August 2026** — the work that turned the above from modules into a
+system, all of it found by asking "who calls this?" rather than by a failing test:
+
+- **`emit_briefs`** written and bound to Aisha; an `orchestrator` node added to
+  the graph; findings returned as that call's tool_result so her next generation
+  composes through the existing streaming and guards.
+- **Five sub-agent tools** written or registered — `get_variants`, `check_stock`,
+  `get_on_road_price`, `get_finance_estimate`, `search_knowledge`. The cards had
+  named all five for a phase; none existed, and **finance bound zero tools**.
+  They live in a `SUBAGENT_REGISTRY` so `TOOL_SCHEMAS` — and the single agent's
+  cached prefix — stays byte-stable.
+- **The commercial write path**: sub-agents propose, the card is the allowlist,
+  `booking_state` gates, the service guards refuse independently, the
+  orchestrator commits. `write.py` had no caller at all before this.
+- **The date anchor** for sub-agents; without it TestDrive dated "Saturday" to
+  Jan 2025 and reported no slots.
+
 **What is deliberately not done**
 
-- Sub-agent graphs are not bound to Haiku (needs live calls).
-- The T0.1 baseline has not been re-run against the new stack (same reason).
-- ~60 brochure marketing pages unread; five files still `draft-partial`.
+- The T0.1 baseline has not been re-run against a correct fixture (T8.4) — see
+  the fixture note below.
+- Aisha has no prompt prose about delegating; she has the tool description alone.
+- ~60 brochure marketing pages unread; three files still `draft-partial`.
+- T3.6's threshold is calibrated on card utterances, not real briefs.
+
+**Two eval fixtures were wrong, and both produced plausible results**
+
+- `booking_full` turn 3 said "any branch, whatever slot is earliest" — which
+  names no branch, so Aisha could not lock a slot and the remaining five turns
+  talked past each other. It deadlocked identically in the single- and
+  multi-agent runs, which is why it looked like a property of the script rather
+  than a fault in it.
+- `baseline._seed_db` seeded **zero variants, zero stock, zero finance banks** —
+  ported from a script predating the variant-level catalogue. Model-level tools
+  were unaffected, so the single agent never noticed and the sub-agents were
+  starved. ~$1.10 of live measurement was spent before this was found.
+  `tests/test_baseline_fixture.py` now guards it.
 
 **Things the build found that no test would have**
+
+- **Four "built but unreachable" defects in a row** — the orchestrator, the
+  sub-agent tools, the write path, the date anchor. Each was complete, tested,
+  and connected to nothing. See the architecture doc §6 for the table.
 
 - Capturing a baseline first (~$1.48) caught Aisha **delivering third-person
   notes-to-self** to customers. Fixed in Phase 6.

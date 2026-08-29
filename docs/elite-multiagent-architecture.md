@@ -1,8 +1,22 @@
 # Elite Dealership AI — Multi-Agent Architecture
 
-**Version 2.0 — August 2026.** Rewritten after Phases 0–8 were built. v1.2 was a
-*specification*; this is a *description*, and where the two disagree the code is
-right and v1.2 is superseded.
+**Version 2.1 — 29 August 2026.** Rewritten after Phases 0–8 were built; revised
+once the cascade was actually connected. v1.2 was a *specification*; this is a
+*description*, and where the two disagree the code is right and v1.2 is
+superseded.
+
+> **What v2.0 got wrong, recorded because the failure mode is the interesting
+> part.** v2.0 said the cascade was "built, tested and switched off behind
+> `MULTI_AGENT_ENABLED`", which read as though flipping the flag would turn it
+> on. It would not have. `app/orchestrator/` was complete and thoroughly tested
+> and **nothing in `app/` imported it** — the graph had two nodes, `agent` and
+> `tools`, and no customer turn could reach a sub-agent. The flag gated a
+> function no request called.
+>
+> A description written from the modules rather than from the call graph cannot
+> see that, and neither can a test suite that exercises each part in isolation.
+> Both were green throughout. §6 below now distinguishes *not built* from *built
+> and not reachable*, because the second is invisible in a way the first is not.
 
 **System:** "Aisha" — Elite Group's assistant for Jetour sales, test drives and
 aftersales in the UAE
@@ -14,8 +28,17 @@ Alembic · ONNX embeddings · Redis (cache only)
 ## 1. What is actually running
 
 **The single agent is still the live path.** The multi-agent cascade is built,
-tested and switched off behind `MULTI_AGENT_ENABLED`. Nothing was taken away to
-make room for it, which is why all 1,444 tests still pass against the old shape.
+wired into the graph, and switched off behind `MULTI_AGENT_ENABLED`. Nothing was
+taken away to make room for it, which is why all 1,532 tests still pass against
+the old shape.
+
+Wired means specifically: Aisha holds an `emit_briefs` tool; a generation
+containing it routes to an `orchestrator` node instead of the tools node; that
+node runs the cascade and returns the findings as that call's *tool_result*, so
+her next generation composes the reply through the existing streaming, script
+guard, sanitiser and card anchors rather than a second path that would drift from
+them. With the flag off she is handed the same 22 tools as before, byte for byte,
+which is what keeps the ~14.8k cached prefix alive.
 
 Two other switches gate the other new capabilities:
 
@@ -165,19 +188,58 @@ meaningless anywhere in this system; rank and margin are the only usable signals
 
 ---
 
-## 6. What is deliberately not built
+## 6. What is not done, and what was done but unreachable
 
-- **Sub-agent graphs are not bound to Haiku.** `turn.execute` takes an injected
-  runner; every test passes a stub. Binding it needs live calls.
-- **The T0.1 baseline has not been re-run** against the new stack (T8.4) — same
-  reason.
+Split up, because v2.0 conflated them and that is how the wiring gap hid for
+a whole phase. **Not built** is visible — the code is absent, and anyone reading for it finds
+nothing. **Built and not reachable** is invisible: every test passes, every module
+is complete, the imports all resolve, and the only symptom is a feature that does
+nothing when you switch it on. A third category, **measured wrong**, is worse
+again — it returns a number.
+
+### Not built
+
 - **Voice stays single-agent.** Its 400 ms first-audio budget cannot absorb a
-  fan-out; the measured Haiku round trip alone is 1,088 ms p50.
+  fan-out; the measured Haiku round trip alone is 1,088 ms p50. `turn.enabled()`
+  excludes it even when the flag is on.
 - **Salesforce stays dormant** (`SF_ENABLED=false`), not deleted.
-- **T0.4b:** ~60 brochure marketing pages unread, five files still
-  `draft-partial`. The one that bites is the **T1 i-DM's missing seat count** —
-  it is seeded null, so that car matches no seat query, which is visible in a
-  test rather than hidden behind a guess.
+- **T0.4b:** ~60 brochure marketing pages unread, three files still
+  `draft-partial` (`dashing`, `t1-i-dm`, `t2-idm`). The one that bites is the
+  **T1 i-DM's missing seat count** — seeded null, so that car matches no seat
+  query, which is visible in a test rather than hidden behind a guess.
+- **Aisha has no prompt prose about delegating.** She has `emit_briefs` and its
+  description and nothing in `base/` or `aisha/` about when to hand work over.
+  Measured once and it read well; it has not been measured against a correct
+  fixture.
+
+### Built and not reachable — the class of defect, and how each was found
+
+Four in a row, none of which any test could see, each found only by running the
+thing end to end:
+
+| what | how it hid | found by |
+|---|---|---|
+| `orchestrator/turn.py` never imported by `app/` | flag gated a function nothing called | reading the call graph |
+| sub-agent cards named 5 tools that did not exist | `_schemas_for` skipped unknown names silently; **finance bound zero tools** and reported `blocked`, which looks like dependency ordering | counting declared vs bound |
+| `orchestrator/write.py` never imported by `app/` | Aisha correctly held no commercial write, sub-agents correctly held none, and the component that owned them was connected to nothing — so **no booking could be created at all** | asking who calls it |
+| sub-agents had no date anchor | resolved "Saturday" to a date 19 months stale and reported "no slots"; the date it used appears nowhere in the findings | one live smoke run |
+
+All four are now closed. The guard against a recurrence is
+`tests/test_subagent_tools.py`, which fails the build when a card declares a tool
+nothing provides, and `log.error` where the silent `continue` used to be.
+
+### Measurement, which is its own trap
+
+- **The T0.1 baseline has not been re-run** against a *correct* fixture (T8.4).
+  Two runs were spent before `evals/baseline._seed_db` was found to seed zero
+  variants, zero stock and zero finance banks — it predates the variant-level
+  catalogue. The single agent never noticed, because its tools are model-level.
+  The sub-agents were starved, and Aisha's impeccable behaviour against a broken
+  database (retry, apologise, escalate) read exactly like a broken agent.
+  `tests/test_baseline_fixture.py` now asserts every sub-agent tool returns data
+  against the fixture.
+- **T3.6's threshold is calibrated on 32 short card utterances**, not on real
+  briefs. `turn_trace.steps` records live scores for the re-run.
 
 ---
 
