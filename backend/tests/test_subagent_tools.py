@@ -15,6 +15,8 @@ of that; the log.error in _schemas_for is the runtime half.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.agents import loader
@@ -141,3 +143,91 @@ def test_subagent_registry_extends_rather_than_replaces():
     """Every single-agent tool stays reachable, with the same implementation."""
     for name, entry in REGISTRY.items():
         assert SUBAGENT_REGISTRY[name] is entry
+
+
+# --------------------------------------------------------------------------- #
+# The date anchor (found live, 2026-08-29)
+# --------------------------------------------------------------------------- #
+def test_every_subagent_prompt_carries_todays_date(monkeypatch):
+    """A sub-agent with no calendar answers date questions confidently wrong.
+
+    THE LIVE FAILURE. Asked for "slots at Deira on Saturday", TestDrive resolved
+    Saturday to 11 Jan 2025 — nineteen months stale — looked that date up, and
+    reported "no slots available". The date it used appears nowhere in the
+    findings, so the wrong answer is indistinguishable from a right one.
+
+    The single agent has always been immune (prompt.py appends this anchor every
+    turn); the sub-agents were split off that path and inherited none of it.
+
+    ASSERTED THROUGH run_step, not by rebuilding the prompt here — a test that
+    composes its own copy of the system prompt passes whether or not the code
+    under test does the same thing.
+    """
+    from datetime import date
+
+    from app.orchestrator import order, subagent as sub
+
+    sent = {}
+
+    class _Stub:
+        class messages:
+            @staticmethod
+            def create(**kw):
+                sent.update(kw)
+                return SimpleNamespace(
+                    content=[SimpleNamespace(type="text", text='{"findings": {}}')],
+                    usage=None,
+                )
+
+    monkeypatch.setattr(sub, "_client", lambda: _Stub)
+
+    for agent in SUBAGENTS:
+        sent.clear()
+        sub.run_step(
+            order.Step(brief="when are you open on Saturday", agent=agent),
+            {}, db=None, session_id="t", timeout=5.0, max_iterations=1,
+        )
+        system = sent["system"]
+        today = date.today()
+        assert str(today.year) in system, f"{agent} has no idea what year it is"
+        assert today.isoformat() in system, f"{agent} was not given today's date"
+        assert "never do date arithmetic yourself" in system
+
+
+def test_the_anchor_is_todays_date_not_a_frozen_one(monkeypatch):
+    """The anchor is computed per call, so a long-running process cannot serve
+    yesterday's calendar to every turn after midnight."""
+    from datetime import date, timedelta
+
+    from app.agent import prompt as _prompt
+    from app.orchestrator import order, subagent as sub
+
+    tomorrow = date.today() + timedelta(days=1)
+    sent = {}
+
+    class _Stub:
+        class messages:
+            @staticmethod
+            def create(**kw):
+                sent.update(kw)
+                return SimpleNamespace(
+                    content=[SimpleNamespace(type="text", text='{"findings": {}}')],
+                    usage=None,
+                )
+
+    monkeypatch.setattr(sub, "_client", lambda: _Stub)
+    monkeypatch.setattr(
+        sub, "_DATE_ANCHOR", _prompt._DATE_ANCHOR, raising=False
+    )
+
+    class _FakeDate(date):
+        @classmethod
+        def today(cls):
+            return tomorrow
+
+    monkeypatch.setattr(sub, "date", _FakeDate)
+    sub.run_step(
+        order.Step(brief="x", agent="testdrive"),
+        {}, db=None, session_id="t", timeout=5.0, max_iterations=1,
+    )
+    assert tomorrow.isoformat() in sent["system"]

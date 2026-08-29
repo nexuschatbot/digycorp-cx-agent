@@ -33,6 +33,7 @@ import json
 import logging
 import time
 import uuid
+from datetime import date
 
 log = logging.getLogger("app.orchestrator.subagent")
 
@@ -187,6 +188,7 @@ def run_step(
     """
     from app import config
     from app.agent import tool_node
+    from app.agent.prompt import _DATE_ANCHOR, _relative_dates
     from app.agents import loader
     from app.tools import SUBAGENT_TOOL_FNS
 
@@ -194,7 +196,25 @@ def run_step(
     model = model or config.CLAUDE_MODEL
     correlation_id = uuid.uuid4().hex
 
-    system = loader.body_for(step.agent) + "\n\n" + FINDINGS_INSTRUCTION
+    # THE DATE ANCHOR, and it is not optional (found live, 2026-08-29). A
+    # sub-agent's prompt is its card body and nothing else, so it had no idea
+    # what day it was: asked for "slots at Deira on Saturday" it resolved
+    # Saturday to 11 Jan 2025, looked up that date, and reported "no slots
+    # available" — a wrong answer that reads exactly like a right one, because
+    # the date it used never appears in the findings.
+    #
+    # The single agent has been immune since prompt.py:510 appends this same
+    # anchor: Python owns the calendar and the model only reads it out. The
+    # sub-agents were split off that path and inherited none of it. Any agent
+    # that can be asked about a day needs it, so it goes on ALL of them rather
+    # than on TestDrive alone — Finance quotes tenures, Sales quotes arrival
+    # dates, and the next one has not been written yet.
+    system = (
+        loader.body_for(step.agent)
+        + _DATE_ANCHOR.format(**_relative_dates(date.today()))
+        + "\n\n"
+        + FINDINGS_INSTRUCTION
+    )
     schemas = _schemas_for(step.agent)
 
     # WHAT THE SUB-AGENT IS TOLD, AND WHAT IT IS NOT. The brief, the entities an

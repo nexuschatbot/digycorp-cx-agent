@@ -28,12 +28,36 @@ import time
 PRICE_IN_PER_M = 1.00
 PRICE_OUT_PER_M = 5.00
 
-BRIEFS = [
-    # One per agent, chosen so the cascade has to do real work rather than
-    # answer from the brief text.
-    {"brief": "what seven seaters do you have and what do they cost"},
-    {"brief": "what times are free at your Deira branch on Saturday"},
-    {"brief": "what would the monthly instalments be on the X50"},
+# TURNS, NOT BRIEFS — and the difference is the whole point of the rewrite.
+#
+# The first version sent three INDEPENDENT briefs, one per agent, each in its
+# own turn.execute with no `known`. TestDrive requires a vehicle_id and Finance
+# requires a variant_id, and neither existed, so order.resolve correctly refused
+# both: two of the three agents came back `blocked` having never run, and the
+# output read as though the cascade had been exercised. It had not. The only
+# agent that was ever proved is the one that requires nothing.
+#
+# A real turn is a CHAIN: Aisha asks for the car and the thing that depends on
+# it in one emit_briefs, with depends_on wiring the second to the first. That is
+# what these are, and it is the only shape that reaches TestDrive or Finance at
+# all.
+TURNS = [
+    {
+        "what": "sales -> finance (variant_id must thread)",
+        "briefs": [
+            {"brief": "a seven-seater SUV under AED 130,000, petrol"},
+            {"brief": "the monthly instalment on that trim over 48 months",
+             "depends_on": [0]},
+        ],
+    },
+    {
+        "what": "sales -> testdrive (vehicle_id must thread)",
+        "briefs": [
+            {"brief": "the Jetour X50 and which trims it comes in"},
+            {"brief": "test drive slots for that car at the Deira branch on Saturday",
+             "depends_on": [0]},
+        ],
+    },
 ]
 
 
@@ -61,9 +85,12 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.live:
-        print("Dry run. Briefs that would be sent:")
-        for b in BRIEFS:
-            print(f"  · {b['brief']}")
+        print("Dry run. Turns that would be sent:")
+        for t in TURNS:
+            print(f"  {t['what']}")
+            for j, b in enumerate(t["briefs"]):
+                dep = f"  (depends_on {b['depends_on']})" if b.get("depends_on") else ""
+                print(f"    [{j}] {b['brief']}{dep}")
         print(f"\nRun for real with:  python -m evals.subagent_smoke --live --cap {args.cap}")
         return 0
 
@@ -101,37 +128,45 @@ def main() -> int:
 
     print(f"\nmodel: {config.CLAUDE_MODEL}   cap: ${args.cap:.2f}\n")
 
-    for i, brief in enumerate(BRIEFS, 1):
-        headroom = max(meter.per_call * 6, 0.02)
+    for i, spec in enumerate(TURNS, 1):
+        # Headroom for a whole CHAIN now, not one brief: the cap must stop us
+        # before a turn we cannot afford to finish, or we pay for a sales step
+        # and abandon the dependent one that was the point of running it.
+        headroom = max(meter.per_call * 6 * len(spec["briefs"]), 0.04)
         if meter.usd + headroom > args.cap:
-            print(f"  [cap] stopping before brief {i} — ${meter.usd:.4f} spent")
+            print(f"  [cap] stopping before turn {i} — ${meter.usd:.4f} spent")
             break
 
-        print(f"[{i}] {brief['brief']}")
-        chosen = select.select(brief["brief"], judge=judge_mod.judge)
-        print(f"    routed to {chosen.agent} via {chosen.layer}"
-              + (f" (margin {chosen.margin:.3f})" if chosen.margin else ""))
+        print(f"[{i}] {spec['what']}")
+        for j, b in enumerate(spec["briefs"]):
+            chosen = select.select(b["brief"], judge=judge_mod.judge)
+            dep = f" after [{b['depends_on'][0]}]" if b.get("depends_on") else ""
+            print(f"    [{j}] {b['brief'][:58]}{dep}")
+            print(f"         -> {chosen.agent} via {chosen.layer}"
+                  + (f" (margin {chosen.margin:.3f})" if chosen.margin else ""))
 
         started = time.perf_counter()
         result = turn.execute(
-            [brief],
+            spec["briefs"],
             subagent.make_runner(db, session_id),
             judge=judge_mod.judge,
-            deadline_seconds=40.0,
+            deadline_seconds=60.0,
         )
         elapsed = int((time.perf_counter() - started) * 1000)
 
+        print(f"    -- {elapsed}ms, entities threaded: {sorted(result.entities)}")
         for s in result.steps:
             keys = sorted(k for k in s.findings if not k.startswith("_"))
-            print(f"    {s.agent}: {s.status}  {elapsed}ms  findings={keys}")
+            print(f"    {s.agent}: {s.status}  findings={keys}")
             if s.findings.get("_note"):
                 print(f"      note: {s.findings['_note'][:100]}")
             if s.detail:
                 print(f"      detail: {s.detail[:100]}")
             results.append({
-                "brief": brief["brief"], "agent": s.agent, "status": s.status,
+                "turn": spec["what"], "brief": s.brief, "agent": s.agent,
+                "status": s.status,
                 "findings": {k: v for k, v in s.findings.items()},
-                "layer": s.layer, "latency_ms": elapsed,
+                "layer": s.layer,
             })
         print(f"    running ${meter.usd:.4f}\n")
 
