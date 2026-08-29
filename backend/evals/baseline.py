@@ -217,7 +217,7 @@ CONVERSATIONS: list[Conversation] = [
         [
             f"Hi! I'd like to book a test drive of the Jetour T2. My name is Test Driver, mobile {MOBILE}.",
             "The petrol one, please.",
-            "A showroom is fine — any branch, whatever slot is earliest.",
+            "Al Quoz, please — whatever slot is earliest.",
             "That works for me, let's go with it.",
             "Just me, nobody else coming.",
             "Yes, that all looks correct.",
@@ -228,7 +228,18 @@ CONVERSATIONS: list[Conversation] = [
             "EIGHT turns, not five. Measured: her flow is variant -> showroom/doorstep "
             "-> lock -> passengers -> recap -> licence -> consent -> create. The first "
             "run scripted five and never reached create_booking, which made the most "
-            "important conversation in the baseline the one with no booking in it."
+            "important conversation in the baseline the one with no booking in it. "
+            ".. "
+            "IT THEN DEADLOCKED A SECOND TIME, for a different reason, and turn 3 is "
+            "the fix. It used to say 'a showroom is fine - any branch, whatever slot "
+            "is earliest', which sounds accommodating and answers nothing: Aisha "
+            "cannot lock a slot without a branch, so she asked which one, the script "
+            "replied to a question it had not been asked, and the remaining five turns "
+            "talked past each other. Both the single-agent and multi-agent runs looped "
+            "identically. NAMING THE BRANCH IS NOT OVER-CONSTRAINING - it is supplying "
+            "the one fact the flow genuinely requires, which is the opposite of the "
+            "over-scripting this module's header warns about. A script may decline to "
+            "steer; it may not withhold what the agent must have."
         ),
     ),
     Conversation(
