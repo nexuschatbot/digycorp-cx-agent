@@ -201,6 +201,32 @@ def _tool_result(tool_use_id: str, result: dict, *, is_error: bool = False) -> d
     return block
 
 
+def _bound_tools(state: dict, cfg: dict) -> frozenset[str] | None:
+    """Exactly the tool names the model was handed this turn, or None.
+
+    THE SAME SOURCE AS THE SCHEMAS, deliberately, and it must stay that way: two
+    lists that are supposed to agree will not, and the failure is silent in the
+    direction that matters. Mirrors graph._agent_node's `tools=` expression
+    branch for branch.
+
+    None on the unrouted single-agent path — it holds the whole registry, so an
+    allowlist would be every key in it and the check is pure cost.
+    """
+    from app.orchestrator import turn as _turn
+
+    if _turn.enabled(voice_call=bool(cfg.get("voice_call"))):
+        from app.tools import aisha_schemas
+
+        return frozenset(s["name"] for s in aisha_schemas())
+
+    agent = state.get("agent")
+    if agent:
+        from app.agent import tool_binding
+
+        return frozenset(tool_binding.tools_for(agent))
+    return None
+
+
 def _dispatch(
     db,
     session_id: str,
@@ -210,6 +236,7 @@ def _dispatch(
     correlation_id: str,
     device_token: str | None = None,
     fns: dict | None = None,
+    allow: frozenset | set | None = None,
 ) -> dict:
     """Run one tool with trusted context injected; return its result as DATA.
 
@@ -223,7 +250,38 @@ def _dispatch(
     is unchanged, so every injection, guard and audit rule below applies
     identically whoever is calling: this widens what can be looked up, never
     what may be done.
+
+    `allow` IS THE BINDING, ENFORCED (found live, 2026-08-29). The architecture
+    said "a prompt can be argued with; an absent tool cannot" — and that was not
+    true here, because a tool was only ever absent from the SCHEMA LIST handed to
+    the model, never from this dispatch table. Aisha on the multi-agent path is
+    granted no commercial write, but her prompt is the ported single-agent
+    journey prose and it tells her to call lock_slot and create_booking. She
+    emitted the tool_use anyway. THIS FUNCTION RAN IT: `lock_slot` succeeded,
+    inventory was held, and the orchestrator — the component that supposedly
+    owns every commercial write — was never involved.
+
+    A model emitting a tool it was not offered is not exotic; it is what a long
+    prompt insisting on that tool reliably produces. So the allowlist has to be
+    checked where the call is EXECUTED, not only where the schemas are chosen.
+    None means "no restriction" and keeps every existing caller byte-identical.
     """
+    if allow is not None and name not in allow:
+        # DATA, NOT AN EXCEPTION, like every other refusal here. Aisha recovers
+        # by doing it the way she is meant to — for a commercial write, that is
+        # emit_briefs and letting the orchestrator decide.
+        log.warning("refusing %r: not bound to this caller", name)
+        return {
+            "error": "tool_not_available",
+            "tool": name,
+            "detail": (
+                f"{name} is not one of your tools on this turn. If it is a "
+                "booking action — holding a slot, creating, moving or "
+                "cancelling — use emit_briefs and let the specialists propose "
+                "it; you do not perform those yourself."
+            ),
+        }
+
     fn = (fns if fns is not None else TOOL_FNS).get(name)
     if fn is None:
         return {"error": "unknown_tool", "tool": name}
@@ -545,7 +603,7 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         else:
             result = _dispatch(
                 db, session_id, name, tool_input, customer_id, correlation_id,
-                device_token=device_token,
+                device_token=device_token, allow=_bound_tools(state, cfg),
             )
 
         # (2b) Mint / refresh the session binding the moment identity is known.

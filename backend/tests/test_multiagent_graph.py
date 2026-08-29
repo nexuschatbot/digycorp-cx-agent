@@ -534,3 +534,77 @@ def test_the_next_turn_can_see_it():
     """_known_entities is what order.resolve consults; close the loop."""
     facts = graph._fold_cascade_facts({"session_facts": {}}, _result_with({"vehicle_id": 7}))
     assert graph._known_entities({"session_facts": facts}) == {"vehicle_id"}
+
+
+# --------------------------------------------------------------------------- #
+# The binding is enforced where the call EXECUTES (found live, 2026-08-29)
+# --------------------------------------------------------------------------- #
+# The architecture said "a prompt can be argued with; an absent tool cannot".
+# That was not true: a tool was absent from the SCHEMA LIST handed to the model
+# and present in the DISPATCH TABLE. Aisha's prompt is the ported single-agent
+# journey prose and it tells her to call lock_slot and create_booking; she is
+# granted neither on the multi-agent path; she emitted the tool_use anyway and
+# tool_node RAN IT. Inventory was held without the orchestrator involved at all.
+def test_a_tool_the_caller_was_not_given_is_refused():
+    from app.agent import tool_node
+
+    out = tool_node._dispatch(
+        None, "s", "lock_slot", {"slot_id": 2}, None, "corr",
+        allow=frozenset({"offer_options"}),
+    )
+    assert out["error"] == "tool_not_available"
+    assert out["tool"] == "lock_slot"
+
+
+def test_the_refusal_tells_her_the_right_way_to_do_it():
+    """A refusal she cannot act on is a dead end; she must reach emit_briefs."""
+    from app.agent import tool_node
+
+    out = tool_node._dispatch(
+        None, "s", "create_booking", {}, None, "corr", allow=frozenset(),
+    )
+    assert "emit_briefs" in out["detail"]
+
+
+def test_no_allowlist_means_no_restriction():
+    """Every existing caller passes None and must behave byte-identically."""
+    from app.agent import tool_node
+
+    out = tool_node._dispatch(None, "s", "nope_not_a_tool", {}, None, "corr")
+    assert out["error"] == "unknown_tool"
+
+
+def test_the_allowlist_matches_what_the_model_was_handed(monkeypatch):
+    """Two lists that must agree, from one source — or the gap reopens silently."""
+    from app.agent import tool_node
+    from app.tools import aisha_schemas
+
+    monkeypatch.setattr("app.config.MULTI_AGENT_ENABLED", True)
+    assert tool_node._bound_tools({}, {}) == frozenset(
+        s["name"] for s in aisha_schemas()
+    )
+
+
+def test_no_commercial_write_survives_the_gate(monkeypatch):
+    from app.agent import tool_node
+    from app.tools import COMMERCIAL_WRITE_TOOLS
+
+    monkeypatch.setattr("app.config.MULTI_AGENT_ENABLED", True)
+    assert tool_node._bound_tools({}, {}) & COMMERCIAL_WRITE_TOOLS == frozenset()
+
+
+def test_the_single_agent_path_is_unrestricted(monkeypatch):
+    """It holds the whole registry, so an allowlist is every key and pure cost."""
+    from app.agent import tool_node
+
+    monkeypatch.setattr("app.config.MULTI_AGENT_ENABLED", False)
+    assert tool_node._bound_tools({}, {}) is None
+
+
+def test_a_routed_agent_is_held_to_its_journey(monkeypatch):
+    from app.agent import tool_binding, tool_node
+
+    monkeypatch.setattr("app.config.MULTI_AGENT_ENABLED", False)
+    bound = tool_node._bound_tools({"agent": "bookingmanagement"}, {})
+    assert bound == frozenset(tool_binding.tools_for("bookingmanagement"))
+    assert "create_booking" not in bound
