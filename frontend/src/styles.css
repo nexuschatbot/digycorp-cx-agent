@@ -1693,3 +1693,362 @@ html, body, #root { height: 100%; }
 /* The one emphasis in the card. A tint, not bold — bold on half the table reads
    as shouting, and these are still just facts. */
 .cmp-row--differs .cmp-val { background: var(--bg-sunken, #f7f5f0); font-weight: 600; }
+
+/* ------------------------------------------------------------------ */
+/* Interior photos.                                                    */
+/*                                                                     */
+/* In the CHAT they cycle inside the vehicle card's own image area     */
+/* (.vcard-carousel below) so the answer costs the thread no extra     */
+/* height. The photo STRIP survives only inside the vehicle dialog.    */
+/* ------------------------------------------------------------------ */
+.int-gallery {
+  display: flex;
+  gap: 0.6rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.int-gallery::-webkit-scrollbar { display: none; }
+.int-gallery > * { scroll-snap-align: start; flex: 0 0 auto; }
+
+.int-gallery-img {
+  border-radius: 10px;
+  border: 1px solid var(--line-hairline);
+  background: var(--color-surface);
+  object-fit: cover;
+}
+
+.int-gallery--dialog {
+  align-self: stretch;
+  margin-bottom: 0.9rem;
+}
+.int-gallery--dialog .int-gallery-img { height: 120px; width: auto; }
+
+/* The in-card carousel: a relative wrapper AROUND the card (the card is a
+   <button>, so the arrows cannot live inside it — invalid HTML). Arrows and
+   dots overlay the image area only; the card underneath stays fully pressable
+   everywhere else. */
+.vcard-carousel {
+  position: relative;
+  flex: 0 0 auto;
+}
+.vcard-carousel-nav {
+  position: absolute;
+  /* The image area: .vcard-img is 140px tall inside the card's 1px border +
+     padding — the nav band covers it and nothing below it. */
+  top: 1px;
+  left: 1px;
+  right: 1px;
+  height: 134px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  pointer-events: none; /* only the arrows catch taps, never the band */
+}
+.vcard-carousel-arrow {
+  pointer-events: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 20, 20, 0.45);
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  padding-bottom: 2px; /* optical centring of the chevron glyph */
+}
+.vcard-carousel-arrow:hover { background: rgba(20, 20, 20, 0.65); }
+.vcard-carousel-dots {
+  position: absolute;
+  top: 122px; /* just inside the bottom edge of the 134px image */
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.vcard-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+}
+.vcard-dot--on { background: #fff; }
+/* ------------------------------------------------------------------ */
+/* Vehicle dialog, showcase redesign (2026-08-29): full-bleed hero     */
+/* carousel with the name and price on a scrim, floating controls,     */
+/* stat tiles, colour pills, trim rows, one big commit button.         */
+/* ------------------------------------------------------------------ */
+.vdlg {
+  padding: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-e3);
+}
+/* The plain bar survives only for loading/error. */
+.vdlg > .vdlg-head { padding: 1rem 1.15rem 0; }
+.vdlg > .vdlg-note { padding: 0 1.15rem 1.25rem; }
+
+.vdlg-hero {
+  position: relative;
+  background: var(--bg-sunken);
+}
+.vdlg-hero-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  cursor: pointer;
+  background: var(--bg-sunken);
+}
+.vdlg-hero-img--empty {
+  display: grid;
+  place-items: center;
+  color: var(--line-strong);
+  font-size: 2rem;
+  cursor: default;
+}
+/* Legibility scrim: a whisper at the top for the floating controls, a firm
+   graphite ramp at the bottom under the caption. Never blocks taps. */
+.vdlg-hero-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(12, 13, 16, 0.35) 0%,
+    rgba(12, 13, 16, 0) 26%,
+    rgba(12, 13, 16, 0) 48%,
+    rgba(12, 13, 16, 0.82) 100%
+  );
+}
+
+.vdlg-close--float {
+  position: absolute;
+  top: 10px;
+  inset-inline-end: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 20, 20, 0.45);
+  color: #fff;
+  font-size: 1.25rem;
+  padding: 0;
+}
+.vdlg-close--float:hover { background: rgba(20, 20, 20, 0.65); }
+
+.vdlg-nav--float {
+  position: absolute;
+  top: 10px;
+  inset-inline-start: 10px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(20, 20, 20, 0.45);
+  border-radius: var(--radius-full);
+  padding: 2px 6px;
+}
+.vdlg-nav--float .vdlg-navbtn,
+.vdlg-nav--float .vdlg-navpos {
+  color: #fff;
+  background: transparent;
+  border: none;
+}
+.vdlg-nav--float .vdlg-navbtn { cursor: pointer; font-size: 1.05rem; padding: 0 4px; }
+.vdlg-nav--float .vdlg-navpos { font-size: 0.78rem; opacity: 0.85; }
+
+/* Frame arrows: vertically centred over the photo, clear of the caption. */
+.vdlg-carousel-nav {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
+}
+.vdlg-carousel-nav .vcard-carousel-arrow {
+  pointer-events: auto;
+  width: 32px;
+  height: 32px;
+  font-size: 1.25rem;
+}
+
+.vdlg-hero-caption {
+  position: absolute;
+  bottom: 12px;
+  inset-inline: 14px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+.vdlg-hero-name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+.vdlg-hero-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 17rem;
+}
+.vdlg-hero-price {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink-primary);
+  font-weight: 700;
+  font-size: 0.92rem;
+  border-radius: var(--radius-full);
+  padding: 0.35rem 0.8rem;
+  white-space: nowrap;
+}
+
+.vdlg-content {
+  padding: 0.9rem 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.vdlg-content .int-gallery--dialog { margin-bottom: 0; }
+
+.vdlg-thumb {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+.vdlg-thumb--on { border-color: var(--ink-action); }
+.vdlg-thumb .int-gallery-img { height: 64px; width: auto; }
+
+.vdlg-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.vdlg-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.4rem;
+  text-align: center;
+}
+.vdlg-stat-value {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink-primary);
+}
+.vdlg-stat-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-secondary);
+}
+
+.vdlg-section { margin: 0; }
+.vdlg-section-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-secondary);
+}
+
+.vdlg-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.vdlg-pill {
+  border: 1px solid var(--line-hairline);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-full);
+  padding: 0.28rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--ink-primary);
+}
+
+.vdlg-trims { display: flex; flex-direction: column; gap: 0.5rem; }
+.vdlg-trim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--line-hairline);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem;
+}
+.vdlg-trim-name { font-weight: 600; font-size: 0.9rem; }
+.vdlg-trim-price { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
+.vdlg-trim-soon {
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+
+.vdlg-features {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.vdlg-features li {
+  position: relative;
+  padding-inline-start: 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.vdlg-features li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.5em;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--brass-line);
+}
+
+.vdlg-book {
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--ink-action);
+  color: var(--ink-on-action);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.85rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-e2);
+}
+.vdlg-book:hover { background: var(--ink-action-hover); }

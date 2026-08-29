@@ -307,9 +307,34 @@ export interface VehicleDetail {
   price_aed_max: number | null
   fuel: 'petrol' | 'phev' | null
   image_url: string | null
+  /** Interior photos cropped from the brochures. Optional: the Salesforce
+   *  read-through may omit it, and several models have none — both render as
+   *  simply "no gallery". */
+  interior_image_urls?: string[]
   headline_features: string[]
   headline_features_ar: string[]
+  /** Vehicle facts shown instead of the showroom list (2026-08-29). All
+   *  optional for the same read-through reason as the interiors; a missing
+   *  block simply doesn't render. */
+  interior_colours?: string[]
+  km_per_l_min?: number | null
+  km_per_l_max?: number | null
+  variants?: VehicleDialogVariant[]
   showrooms: VehicleShowroom[]
+}
+
+/** One trim row in the vehicle dialog. `name` null = the only version (it
+ *  renders under the model's own name); `price_aed` null = not published —
+ *  the row says "coming soon", never a number (FR-CX-07). */
+export interface VehicleDialogVariant {
+  variant_id: number
+  name: string | null
+  price_aed: number | null
+  seats_min: number | null
+  seats_max: number | null
+  km_per_l_min: number | null
+  km_per_l_max: number | null
+  coming_soon: boolean
 }
 
 /** One booking, as the backend's per-booking dict (services/booking.

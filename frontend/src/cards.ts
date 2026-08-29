@@ -14,6 +14,10 @@ export interface VehicleCard {
   vehicleId: number | null
   name: string
   imageUrl: string | null // null → render the card without an image
+  /** Carousel frames for the card image (hero first, then interior shots).
+   *  Set ONLY when the agent passed show_interior on get_vehicle_details —
+   *  absent on search cards and plain detail lookups, which stay single-image. */
+  gallery?: string[]
   priceLabel: string | null // null → unpublished; the card shows no price line
   /** The tagline under the name (developer decision 25 Jul 2026). The ONE
    *  catalogue field behind that row — "Mid-size off-road SUV, 5-door". It is
@@ -114,6 +118,22 @@ export function extractCards(output: unknown): VehicleCard[] {
   if (o.vehicle && typeof o.vehicle === 'object') return [toCard(o.vehicle as VehicleDict)]
   if (Array.isArray(o.candidates)) return (o.candidates as VehicleDict[]).map(toCard)
   return []
+}
+
+/** Interior photo URLs from a get_vehicle_details payload. Only the RESOLVED
+ *  shape carries them — the ambiguous `candidates` case returns [] because a
+ *  gallery beside a which-one question would pre-answer it with the wrong car.
+ *  Grounding as ever (rule 18): URLs come from the payload or not at all. */
+export function extractInteriorImages(output: unknown): { name: string; images: string[] } | null {
+  if (!output || typeof output !== 'object') return null
+  const o = output as Record<string, unknown>
+  if (!o.vehicle || typeof o.vehicle !== 'object') return null
+  const v = o.vehicle as Record<string, unknown>
+  const images = Array.isArray(v.interior_image_urls)
+    ? (v.interior_image_urls as unknown[]).filter((u): u is string => typeof u === 'string')
+    : []
+  if (images.length === 0) return null
+  return { name: typeof v.name === 'string' ? v.name : '', images }
 }
 
 // Discovery recommendations (rule 18 / FR-BK-10): search_vehicles output → up to

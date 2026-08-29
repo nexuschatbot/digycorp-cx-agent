@@ -318,9 +318,25 @@ def _image_url(paths: list | None) -> str | None:
     render cleanly without one, never with a fabricated URL.
     """
     for p in paths or []:
-        if isinstance(p, str) and p.startswith("seed/media/"):
+        # Interior shots (the '-interior-' filename convention) never become
+        # the hero image, whatever their position in the list.
+        if isinstance(p, str) and p.startswith("seed/media/") and "-interior-" not in p:
             return "/" + p[len("seed/") :]  # seed/media/vehicles/x.png -> /media/vehicles/x.png
     return None
+
+
+def _interior_image_urls(paths: list | None) -> list[str]:
+    """Grounded URLs for a model's interior photography (rule 18, FR-CX-07) —
+    the stored paths whose filename carries the '-interior-' marker, cropped
+    from the Jetour brochures. Empty when the brochure had no usable interior
+    photography (T1, T2 i-DM, X50): the caller renders nothing and the agent
+    must describe the cabin in words rather than promise photos.
+    """
+    return [
+        "/" + p[len("seed/") :]
+        for p in paths or []
+        if isinstance(p, str) and p.startswith("seed/media/") and "-interior-" in p
+    ]
 
 
 def _vehicle_dict(
@@ -384,6 +400,10 @@ def _vehicle_dict(
         out["data_provenance"] = v.data_provenance
         out["images"] = list(v.images or [])
         out["interior_colours"] = list(v.interior_colours or [])
+        # Interior photos, so "what's it like inside?" can be SHOWN. On the
+        # full dict only — search cards stay one hero image each. Empty list,
+        # never absent: "no photos" is a fact the agent must not invent around.
+        out["interior_image_urls"] = _interior_image_urls(v.images)
         # THE FULL PATH IS ONE NAMED MODEL, so the trims come with it rather
         # than costing a second round trip. Deliberately NOT on the base dict,
         # which serialises up to six cards per search.
@@ -434,6 +454,12 @@ def detail_for_dialog(db: Session, vehicle_id: int) -> dict | None:
     showrooms = db.scalars(
         select(Showroom).where(Showroom.id.in_(v.showroom_ids or [])).order_by(Showroom.id)
     ).all()
+    variants = _variants_by_model(db, [v.id]).get(v.id, [])
+    economy = [
+        (x.km_per_l_min, x.km_per_l_max)
+        for x in variants
+        if x.km_per_l_min is not None and x.km_per_l_max is not None
+    ]
     return {
         "vehicle_id": v.id,
         "name": v.name,
@@ -446,8 +472,25 @@ def detail_for_dialog(db: Session, vehicle_id: int) -> dict | None:
         "price_aed_max": v.price_aed_max,
         "fuel": v.fuel_type.value if v.fuel_type else None,
         "image_url": _image_url(v.images),
+        "interior_image_urls": _interior_image_urls(v.images),
         "headline_features": list(v.headline_features or []),
         "headline_features_ar": list(v.headline_features_ar or []),
+        # Vehicle facts the dialog shows instead of the showroom list (UI
+        # decision 2026-08-29): the trims with their list prices, the km/L band,
+        # and Elite's interior palette. Same sourcing rules as the tool payload
+        # — a trim with no published price carries null and renders as "coming
+        # soon", never a number.
+        "interior_colours": list(v.interior_colours or []),
+        "km_per_l_min": min(e[0] for e in economy) if economy else None,
+        "km_per_l_max": max(e[1] for e in economy) if economy else None,
+        "variants": [
+            {
+                **_variant_brief(x),
+                "km_per_l_min": x.km_per_l_min,
+                "km_per_l_max": x.km_per_l_max,
+            }
+            for x in variants
+        ],
         "showrooms": [
             {"showroom_id": s.id, "name": s.name, "emirate": s.emirate, "city": s.city}
             for s in showrooms

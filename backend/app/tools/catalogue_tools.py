@@ -247,7 +247,16 @@ GET_VEHICLE_DETAILS_SCHEMA = {
         "numbered lists. Pick the two or three things that actually matter to "
         "this customer rather than reciting every field you were given. This "
         "applies to the AMBIGUOUS case too — separating the T2 from the T2 i-DM "
-        "is a sentence about each, not a bolded spec sheet."
+        "is a sentence about each, not a bolded spec sheet.\n\n"
+        "INTERIOR QUESTIONS: when the customer is asking what it is like "
+        "INSIDE — the cabin, seats, screens, upholstery — pass show_interior: "
+        "true and the interface draws the interior photographs on the card "
+        "beside your answer BY ITSELF. The result's interior_image_urls only "
+        "tells you what they are seeing: NEVER paste those URLs into your "
+        "reply and NEVER write ![image](url) markup — this channel renders no "
+        "markdown, so both reach the customer as literal text. An empty list "
+        "means we hold no interior photography for that model, so describe "
+        "the cabin in words and never promise photos."
     ),
     "input_schema": {
         "type": "object",
@@ -270,6 +279,16 @@ GET_VEHICLE_DETAILS_SCHEMA = {
                     "Exact catalogue code if you already know it, e.g. "
                     "'JET-T2-IDM'. Prefer this once the customer has resolved "
                     "an ambiguous name."
+                ),
+            },
+            "show_interior": {
+                "type": "boolean",
+                "description": (
+                    "True ONLY when the customer is asking about the interior "
+                    "— it puts the model's interior photos on their screen "
+                    "beside your answer. Leave it out for price, spec or "
+                    "availability questions: photos they did not ask for bury "
+                    "the answer they did."
                 ),
             },
         },

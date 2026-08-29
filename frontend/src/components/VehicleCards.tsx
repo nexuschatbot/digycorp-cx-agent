@@ -84,15 +84,17 @@ function displayName(name: string): string {
 }
 
 function CardImage({ card }: { card: VehicleCard }) {
-  const [broken, setBroken] = useState(false)
-  if (card.imageUrl && !broken) {
+  // Broken is remembered PER URL, not per card: a carousel swaps imageUrl
+  // between frames, and one dead frame must not blank the rest.
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null)
+  if (card.imageUrl && brokenSrc !== card.imageUrl) {
     return (
       <img
         className="vcard-img"
         src={card.imageUrl}
         alt={card.name}
         loading="lazy"
-        onError={() => setBroken(true)}
+        onError={() => setBrokenSrc(card.imageUrl)}
       />
     )
   }
@@ -179,6 +181,73 @@ function CompactCard({
   )
 }
 
+/** CAROUSEL IN THE CARD IMAGE, NOT A PHOTO STRIP IN THE THREAD. When the agent
+ *  passes show_interior, the interior shots arrive as `card.gallery` (hero
+ *  first) and cycle INSIDE the card's image area — the answer costs the thread
+ *  no extra height.
+ *
+ *  The card itself is a <button> (see CompactCard), and a button cannot nest
+ *  buttons — so the arrows and dots are SIBLINGS overlaid on a relative
+ *  wrapper, not children of the card. The wrapper owns the frame index and
+ *  hands CompactCard the current frame as a plain imageUrl override; everything
+ *  else about the card — press-to-open, disabled, chips — is untouched.
+ *
+ *  The arrows deliberately BROWSE and never commit (card semantics above):
+ *  swapping a frame changes nothing but which photo is showing. */
+function CarouselCard({
+  card,
+  lang,
+  onViewMore,
+  disabled,
+}: {
+  card: VehicleCard
+  lang: Lang
+  onViewMore?: (card: VehicleCard) => void
+  disabled?: boolean
+}) {
+  const [index, setIndex] = useState(0)
+  const frames = card.gallery ?? []
+  if (frames.length < 2) {
+    return <CompactCard card={card} lang={lang} onViewMore={onViewMore} disabled={disabled} />
+  }
+  const step = (d: number) => setIndex((i) => (i + d + frames.length) % frames.length)
+  return (
+    <div className="vcard-carousel">
+      <CompactCard
+        card={{ ...card, imageUrl: frames[index] }}
+        lang={lang}
+        onViewMore={onViewMore}
+        disabled={disabled}
+      />
+      {/* dir="ltr" pins prev to the visual left in Arabic threads too — the
+          arrows point at screen directions, not reading order. */}
+      <div className="vcard-carousel-nav" dir="ltr">
+        <button
+          type="button"
+          className="vcard-carousel-arrow vcard-carousel-arrow--prev"
+          aria-label="Previous photo"
+          onClick={() => step(-1)}
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          className="vcard-carousel-arrow vcard-carousel-arrow--next"
+          aria-label="Next photo"
+          onClick={() => step(1)}
+        >
+          ›
+        </button>
+      </div>
+      <div className="vcard-carousel-dots" aria-hidden="true">
+        {frames.map((f, i) => (
+          <span key={f} className={i === index ? 'vcard-dot vcard-dot--on' : 'vcard-dot'} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function VehicleCards({
   cards,
   dir,
@@ -213,7 +282,7 @@ export function VehicleCards({
           open never pretends otherwise. `variant` now only picks the container
           class. */}
       {cards.map((c) => (
-        <CompactCard
+        <CarouselCard
           key={c.id}
           card={c}
           lang={lang}

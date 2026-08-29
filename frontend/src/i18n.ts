@@ -61,6 +61,12 @@ export const LABELS = {
     // Showroom choice card
     select: 'Select',
     selected: 'Selected',
+    // Vehicle dialog extras (2026-08-29)
+    economy: 'Fuel economy',
+    kmPerL: 'km/L',
+    interiorColours: 'Interior colours',
+    trims: 'Trims & prices',
+    comingSoon: 'Coming soon',
   },
   ar: {
     price: 'السعر',
@@ -94,6 +100,12 @@ export const LABELS = {
     // Showroom choice card
     select: 'اختيار',
     selected: 'تم الاختيار',
+    // Vehicle dialog extras (2026-08-29)
+    economy: 'استهلاك الوقود',
+    kmPerL: 'كم/لتر',
+    interiorColours: 'ألوان المقصورة',
+    trims: 'الفئات والأسعار',
+    comingSoon: 'قريباً',
   },
 } as const
 

@@ -405,3 +405,49 @@ def test_showrooms_expose_structured_hours_not_display_text(db):
     s = catalogue.list_showrooms(db)["showrooms"][0]
     assert s["hours_by_day"]["sun"] == [12, 21]
     assert "hours" not in s, "display text must not reach the agent (LOC-01)"
+
+
+# --------------------------------------------------------------------------- #
+# interior photos (2026-08-29) — cropped from the Jetour brochures at seed
+# time, marked by the '-interior-' filename convention. The hero image and the
+# interior strip are DIFFERENT surfaces: the hero draws every card, the
+# interiors render only when the agent passes show_interior.
+# --------------------------------------------------------------------------- #
+def test_the_hero_image_is_never_an_interior_shot(db):
+    """Position 0 is the hero by convention, but the guarantee must not hang on
+    list order: _image_url skips '-interior-' paths outright."""
+    for v in db.scalars(select(VehicleModel)).all():
+        d = catalogue.get_details(db, code=v.model_code)["vehicle"]
+        assert d["image_url"] is not None
+        assert "-interior-" not in d["image_url"], v.model_code
+
+
+def test_full_details_carry_interior_urls_when_the_brochure_had_photos(db):
+    d = catalogue.get_details(db, code="JET-G700")["vehicle"]
+    urls = d["interior_image_urls"]
+    assert urls, "the G700 brochure has interior photography"
+    for u in urls:
+        assert u.startswith("/media/vehicles/") and "-interior-" in u
+
+
+def test_models_without_interior_photos_say_so_with_an_empty_list(db):
+    """Empty list, never absent: 'no photos' is a fact the agent must not
+    invent around (the X50, T1 and T2 i-DM brochures had no usable interior
+    photography)."""
+    for code in ("JET-X50", "JET-T1", "JET-T2-IDM"):
+        d = catalogue.get_details(db, code=code)["vehicle"]
+        assert d["interior_image_urls"] == [], code
+
+
+def test_search_cards_do_not_carry_interior_urls(db):
+    """The base dict serialises up to six cards per search — interior URLs ride
+    the FULL dict only, like `variants` and for the same token reason."""
+    for row in catalogue.search(db)["matches"]:
+        assert "interior_image_urls" not in row
+
+
+def test_the_dialog_detail_carries_interior_urls_too(db):
+    row = db.scalars(select(VehicleModel).where(VehicleModel.model_code == "JET-G700")).one()
+    detail = catalogue.detail_for_dialog(db, row.id)
+    assert detail["interior_image_urls"] == catalogue._interior_image_urls(row.images)
+    assert detail["interior_image_urls"]

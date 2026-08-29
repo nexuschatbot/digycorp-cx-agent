@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { fetchVehicle, type VehicleDetail } from '../api'
-import { LABELS, features, fuelLabel, priceLine, seatsLine, type Lang } from '../i18n'
+import { LABELS, features, fuelLabel, priceLine, type Lang } from '../i18n'
 
 // Two aria-labels used only here — kept local rather than added to i18n.ts,
 // whose LABELS table is consumed elsewhere and should not grow for this.
@@ -46,15 +46,12 @@ interface Props {
   onIndex?: (i: number) => void
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="vdlg-row">
-      <span className="vdlg-row-label">{label}</span>
-      {/* <bdi> so a Latin value inside an Arabic panel keeps its own direction. */}
-      <bdi className="vdlg-row-value">{value}</bdi>
-    </div>
-  )
+/** An unnamed trim renders under the model's own short name — "X70 FL" —
+ *  because "the only version" has nothing else to be called. */
+function displayNameForTrim(model: string): string {
+  return model.replace(/^Jetour\s+/, '')
 }
+
 
 export default function VehicleDialog({
   vehicleId,
@@ -70,6 +67,9 @@ export default function VehicleDialog({
 }: Props) {
   const [detail, setDetail] = useState<VehicleDetail | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  // Which photo the big image shows: 0 = hero, then the interior shots. Reset
+  // whenever the dialog moves to a different car.
+  const [frame, setFrame] = useState(0)
   const closeRef = useRef<HTMLButtonElement>(null)
   const t = LABELS[lang]
   // Two or more, because "1 / 1" with dead arrows is worse than no arrows.
@@ -79,6 +79,7 @@ export default function VehicleDialog({
   useEffect(() => {
     let live = true
     setState('loading')
+    setFrame(0)
     fetchVehicle(vehicleId).then((d) => {
       if (!live) return // unmounted, or the customer opened a different car
       if (d) {
@@ -108,6 +109,31 @@ export default function VehicleDialog({
   const fuel = detail ? fuelLabel(detail.fuel, lang) : null
   const bullets = detail ? features(detail.headline_features, detail.headline_features_ar, lang) : []
 
+  // The photo set the big image cycles through: hero first, then interiors.
+  const frames: string[] = detail
+    ? [
+        ...(detail.image_url ? [detail.image_url] : []),
+        ...(detail.interior_image_urls ?? []),
+      ]
+    : []
+  const current = frames.length > 0 ? frames[Math.min(frame, frames.length - 1)] : null
+  const step = (d: number) => setFrame((i) => (i + d + frames.length) % frames.length)
+
+  // "AED 79,000" per trim — reuses the single-value path of priceLine.
+  const trimPrice = (aed: number | null) => (aed == null ? null : priceLine(aed, aed, lang))
+  const economy =
+    detail && detail.km_per_l_min != null && detail.km_per_l_max != null
+      ? `${
+          detail.km_per_l_min === detail.km_per_l_max
+            ? detail.km_per_l_min
+            : `${detail.km_per_l_min}–${detail.km_per_l_max}`
+        } ${t.kmPerL}`
+      : null
+  const trims = detail?.variants ?? []
+  // One unnamed trim is "the only version" — a section naming nothing under a
+  // price already shown above would be noise.
+  const showTrims = trims.length > 1 || (trims.length === 1 && trims[0].name != null)
+
   return (
     <div
       className="vdlg-backdrop"
@@ -118,92 +144,216 @@ export default function VehicleDialog({
       }}
     >
       <div className="vdlg" role="dialog" aria-modal="true" dir={dir}>
-        <header className="vdlg-head">
-          {/* The model name is Latin in both languages — isolate it. */}
-          <bdi className="vdlg-title">{detail?.name ?? ''}</bdi>
-          {/* MOVE ALONG THE ROW IN PLACE. Rendered only when there is a row to
-              move along, and the arrows are RTL-agnostic because they are DOM
-              order, not screen order: the flex container flips with `dir`, so
-              "previous" stays on the reading-start side in both languages. */}
-          {hasSiblings && (
-            <div className="vdlg-nav">
-              <button
-                type="button"
-                className="vdlg-navbtn"
-                onClick={() => onIndex?.((index! - 1 + siblings!.length) % siblings!.length)}
-                aria-label={NAV_LABELS[lang].previous}
-              >
-                ‹
-              </button>
-              <span className="vdlg-navpos">
-                {(index ?? 0) + 1} / {siblings!.length}
-              </span>
-              <button
-                type="button"
-                className="vdlg-navbtn"
-                onClick={() => onIndex?.((index! + 1) % siblings!.length)}
-                aria-label={NAV_LABELS[lang].next}
-              >
-                ›
-              </button>
-            </div>
-          )}
-          <button ref={closeRef} className="vdlg-close" onClick={onClose} aria-label={t.close}>
-            ×
-          </button>
-        </header>
-
+        {/* Loading / error keep a plain header bar; the ready state's chrome
+            all floats over the hero photo instead. */}
+        {state !== 'ready' && (
+          <header className="vdlg-head">
+            <bdi className="vdlg-title">{detail?.name ?? ''}</bdi>
+            <button ref={closeRef} className="vdlg-close" onClick={onClose} aria-label={t.close}>
+              ×
+            </button>
+          </header>
+        )}
         {state === 'loading' && <p className="vdlg-note">{t.loading}</p>}
         {state === 'error' && <p className="vdlg-note vdlg-note--error">{t.unavailable}</p>}
 
         {state === 'ready' && detail && (
           <>
-            {detail.image_url ? (
-              <img className="vdlg-img" src={detail.image_url} alt={detail.name} />
-            ) : (
-              <div className="vdlg-img vdlg-img--empty" aria-hidden="true">
-                ◆
-              </div>
-            )}
+            {/* FULL-BLEED HERO. The photo runs edge to edge with the name,
+                body line and price pill overlaid on a bottom scrim — the car
+                sells the card. It is a CAROUSEL over hero + interior shots:
+                click the photo to advance, arrows both ways, thumbnails below
+                jump. All browse, nothing commits. */}
+            <div className="vdlg-hero">
+              {current ? (
+                <img
+                  className="vdlg-hero-img"
+                  src={current}
+                  alt={frame === 0 ? detail.name : `${detail.name} interior ${frame}`}
+                  onClick={() => frames.length > 1 && step(1)}
+                />
+              ) : (
+                <div className="vdlg-hero-img vdlg-hero-img--empty" aria-hidden="true">
+                  ◆
+                </div>
+              )}
+              <div className="vdlg-hero-scrim" aria-hidden="true" />
 
-            <div className="vdlg-rows">
-              {/* No price line at all when unpublished — never "None". */}
-              {price && <Row label={t.price} value={price} />}
-              <Row label={t.seats} value={seatsLine(detail.seats_min, detail.seats_max, lang)} />
-              {fuel && <Row label={t.fuel} value={fuel} />}
-              <Row label={t.bodyType} value={detail.body_type} />
+              <button
+                ref={closeRef}
+                className="vdlg-close vdlg-close--float"
+                onClick={onClose}
+                aria-label={t.close}
+              >
+                ×
+              </button>
+
+              {/* MOVE ALONG THE ROW IN PLACE — same semantics as before, now
+                  floating on the photo. DOM order, not screen order, so the
+                  reading-start side holds "previous" in both languages. */}
+              {hasSiblings && (
+                <div className="vdlg-nav vdlg-nav--float">
+                  <button
+                    type="button"
+                    className="vdlg-navbtn"
+                    onClick={() => onIndex?.((index! - 1 + siblings!.length) % siblings!.length)}
+                    aria-label={NAV_LABELS[lang].previous}
+                  >
+                    ‹
+                  </button>
+                  <span className="vdlg-navpos">
+                    {(index ?? 0) + 1} / {siblings!.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="vdlg-navbtn"
+                    onClick={() => onIndex?.((index! + 1) % siblings!.length)}
+                    aria-label={NAV_LABELS[lang].next}
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
+
+              {frames.length > 1 && (
+                <div className="vdlg-carousel-nav" dir="ltr">
+                  <button
+                    type="button"
+                    className="vcard-carousel-arrow"
+                    aria-label={NAV_LABELS[lang].previous}
+                    onClick={() => step(-1)}
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="vcard-carousel-arrow"
+                    aria-label={NAV_LABELS[lang].next}
+                    onClick={() => step(1)}
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
+
+              <div className="vdlg-hero-caption">
+                <div className="vdlg-hero-text">
+                  <bdi className="vdlg-hero-name">{detail.name}</bdi>
+                  <span className="vdlg-hero-sub">
+                    <bdi>{detail.body_type}</bdi>
+                  </span>
+                </div>
+                {/* No pill at all when the price is unpublished — never "None". */}
+                {price && (
+                  <span className="vdlg-hero-price">
+                    <bdi>{price}</bdi>
+                  </span>
+                )}
+              </div>
             </div>
 
-            {bullets.length > 0 && (
-              <section className="vdlg-section">
-                <h3 className="vdlg-section-title">{t.highlights}</h3>
-                <ul className="vdlg-features">
-                  {bullets.map((f, i) => (
-                    <li key={i}>
-                      <bdi>{f}</bdi>
-                    </li>
+            <div className="vdlg-content">
+              {frames.length > 1 && (
+                <div className="int-gallery int-gallery--dialog">
+                  {frames.map((src, i) => (
+                    <button
+                      key={src}
+                      type="button"
+                      className={i === frame ? 'vdlg-thumb vdlg-thumb--on' : 'vdlg-thumb'}
+                      onClick={() => setFrame(i)}
+                    >
+                      <img
+                        className="int-gallery-img"
+                        src={src}
+                        alt={i === 0 ? detail.name : `${detail.name} interior ${i}`}
+                        loading="lazy"
+                      />
+                    </button>
                   ))}
-                </ul>
-              </section>
-            )}
+                </div>
+              )}
 
-            {detail.showrooms.length > 0 && (
-              <section className="vdlg-section">
-                <h3 className="vdlg-section-title">{t.availableAt}</h3>
-                <ul className="vdlg-showrooms">
-                  {detail.showrooms.map((s) => (
-                    <li key={s.showroom_id}>
-                      <bdi>{s.name}</bdi>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
+              {/* STAT TILES — the three facts a buyer scans first. A tile with
+                  no data behind it is omitted, never guessed (FR-CX-07). */}
+              <div className="vdlg-stats">
+                <div className="vdlg-stat">
+                  <span className="vdlg-stat-value">
+                    {detail.seats_min === detail.seats_max
+                      ? detail.seats_min
+                      : `${detail.seats_min}–${detail.seats_max}`}
+                  </span>
+                  <span className="vdlg-stat-label">{t.seats}</span>
+                </div>
+                {fuel && (
+                  <div className="vdlg-stat">
+                    <span className="vdlg-stat-value">{fuel}</span>
+                    <span className="vdlg-stat-label">{t.fuel}</span>
+                  </div>
+                )}
+                {economy && (
+                  <div className="vdlg-stat">
+                    <span className="vdlg-stat-value">{economy}</span>
+                    <span className="vdlg-stat-label">{t.economy}</span>
+                  </div>
+                )}
+              </div>
 
-            {/* COMMIT — the one action here that wakes the agent. */}
-            <button className="vdlg-book" onClick={() => onBook(detail)}>
-              {t.bookTestDrive}
-            </button>
+              {(detail.interior_colours?.length ?? 0) > 0 && (
+                <section className="vdlg-section">
+                  <h3 className="vdlg-section-title">{t.interiorColours}</h3>
+                  <div className="vdlg-pills">
+                    {detail.interior_colours!.map((c) => (
+                      <span className="vdlg-pill" key={c}>
+                        <bdi>{c}</bdi>
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* TRIMS, with their list prices. A trim with no published price
+                  says "coming soon", never a number (FR-CX-07). Hidden for a
+                  model with one unnamed version — nothing to choose. */}
+              {showTrims && (
+                <section className="vdlg-section">
+                  <h3 className="vdlg-section-title">{t.trims}</h3>
+                  <div className="vdlg-trims">
+                    {trims.map((v) => (
+                      <div className="vdlg-trim" key={v.variant_id}>
+                        <bdi className="vdlg-trim-name">
+                          {v.name ?? displayNameForTrim(detail.name)}
+                        </bdi>
+                        {trimPrice(v.price_aed) ? (
+                          <span className="vdlg-trim-price">
+                            <bdi>{trimPrice(v.price_aed)}</bdi>
+                          </span>
+                        ) : (
+                          <span className="vdlg-trim-soon">{t.comingSoon}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {bullets.length > 0 && (
+                <section className="vdlg-section">
+                  <h3 className="vdlg-section-title">{t.highlights}</h3>
+                  <ul className="vdlg-features">
+                    {bullets.map((f, i) => (
+                      <li key={i}>
+                        <bdi>{f}</bdi>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {/* COMMIT — the one action here that wakes the agent. */}
+              <button className="vdlg-book" onClick={() => onBook(detail)}>
+                {t.bookTestDrive}
+              </button>
+            </div>
           </>
         )}
       </div>

@@ -19,7 +19,7 @@ import {
   type TranscriptTurn,
 } from './api'
 import { extractBookingCards, toBookingCard, type BookingCard } from './bookings'
-import { cardFromDetail, extractCards, extractSearchCards, type VehicleCard } from './cards'
+import { cardFromDetail, extractCards, extractInteriorImages, extractSearchCards, type VehicleCard } from './cards'
 import type { CardVariant } from './components/VehicleCards'
 import { CALL_END_LINES, LIFECYCLE_LINES, VOICE_LABELS, callSummaryLine } from './i18n'
 import { isRtl } from './rtl'
@@ -1057,7 +1057,21 @@ export function useChat(): UseChat {
         //   search_vehicles     -> up to 3 COMPACT cards ("here are options")
         // Every other tool_event stays behind the subtle "working…" label.
         if (e.tool === 'get_vehicle_details') {
-          queueRow(buildCards(extractCards(e.output), 'full', turnDirRef.current))
+          const cards = extractCards(e.output)
+          // The interior carousel is AGENT-CONTROLLED: the card's image becomes
+          // a hero-plus-interiors carousel only when the model passed
+          // show_interior (the customer asked what it is like inside), never as
+          // a side effect of a price or spec lookup. In-card rather than a
+          // separate photo strip, so the answer costs no extra thread height.
+          const input = e.input as Record<string, unknown> | null
+          if (input && input.show_interior === true && cards.length === 1) {
+            const interior = extractInteriorImages(e.output)
+            if (interior) {
+              const hero = cards[0].imageUrl ? [cards[0].imageUrl] : []
+              cards[0] = { ...cards[0], gallery: [...hero, ...interior.images] }
+            }
+          }
+          queueRow(buildCards(cards, 'full', turnDirRef.current))
           return
         }
         if (e.tool === 'search_vehicles') {
