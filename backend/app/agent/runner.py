@@ -302,6 +302,8 @@ def run_turn(
     card_rows: list[dict] = []
     # Anchors already drawn this turn — see the tool_event branch below.
     drawn_anchors: set[str] = set()
+    # Vehicles already carded this turn, across tools and variants.
+    drawn_vehicle_ids: set[int] = set()
     # Cascade routing for turn_trace.steps — see the "cascade" branch below.
     cascade_steps: list[dict] = []
     turn_closed = False
@@ -459,6 +461,26 @@ def run_turn(
                             chunk["tool"], session_id,
                         )
                         continue
+                    # THE SAME VEHICLE IS NEVER DRAWN TWICE IN ONE TURN either
+                    # (found live, 2026-08-29, second shape): a sales sub-agent
+                    # searched — three compact cards — then called
+                    # get_vehicle_details on its candidates, and each detail
+                    # event re-drew a car the customer was already looking at,
+                    # one row under another. Different anchors (variant and
+                    # grouping differ), same cars — so the exact-key check
+                    # above never fires. Suppressed only when EVERY vehicle in
+                    # the row has already been drawn this turn: a row that
+                    # introduces even one new car still renders whole, because
+                    # filtering cars out of a tool payload would redraw a
+                    # different row on reload than the turn showed live.
+                    ids = anchor.get("vehicle_ids")
+                    if ids and set(ids) <= drawn_vehicle_ids:
+                        log.info(
+                            "suppressing re-drawn vehicle card(s) %s from %s — session=%s",
+                            ids, chunk["tool"], session_id,
+                        )
+                        continue
+                    drawn_vehicle_ids.update(ids or [])
                     drawn_anchors.add(key)
                     card_rows.append(anchor)
                 event = {

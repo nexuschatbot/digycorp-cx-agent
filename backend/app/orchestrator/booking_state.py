@@ -91,7 +91,7 @@ def read(db, session_id: str, *, customer_id: int | None = None) -> BookingState
         slot = db.scalar(
             select(Slot).where(
                 Slot.locked_by_session == session_id,
-                Slot.status == SlotStatus.held,
+                Slot.status == SlotStatus.locked,
             )
         )
     except Exception:  # noqa: BLE001
