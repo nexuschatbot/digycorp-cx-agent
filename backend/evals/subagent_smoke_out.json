@@ -1,0 +1,49 @@
+{
+  "model": "claude-haiku-4-5",
+  "spent_usd": 0.02741,
+  "calls": 2,
+  "results": [
+    {
+      "brief": "what seven seaters do you have and what do they cost",
+      "agent": "sales",
+      "status": "ok",
+      "findings": {
+        "models": [
+          {
+            "vehicle_id": 7,
+            "name": "Jetour X70 FL Plus",
+            "seats": 7,
+            "price": "AED 89,000",
+            "fuel": "petrol"
+          },
+          {
+            "vehicle_id": 8,
+            "name": "Jetour X70 FL",
+            "seats": "5 or 5+2",
+            "price": "AED 79,000",
+            "fuel": "petrol"
+          }
+        ],
+        "_note": "Two models found with seven-seat capability; X70 FL Plus is a true seven-seater, X70 FL seats five with an optional third row"
+      },
+      "layer": "judge",
+      "latency_ms": 5181
+    },
+    {
+      "brief": "what times are free at your Deira branch on Saturday",
+      "agent": "testdrive",
+      "status": "blocked",
+      "findings": {},
+      "layer": "fast_lane",
+      "latency_ms": 45
+    },
+    {
+      "brief": "what would the monthly instalments be on the X50",
+      "agent": "finance",
+      "status": "blocked",
+      "findings": {},
+      "layer": "judge",
+      "latency_ms": 1810
+    }
+  ]
+}
