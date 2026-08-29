@@ -60,6 +60,9 @@ from app.tools.booking_tools import (
     get_booking,
     reschedule_booking,
 )
+from app.tools.brief_tools import (
+    EMIT_BRIEFS_SCHEMA,
+)
 from app.tools.catalogue_tools import (
     GET_SHOWROOMS_SCHEMA,
     GET_VARIANTS_SCHEMA,
@@ -311,6 +314,49 @@ SUBAGENT_ONLY: dict[str, dict] = {
 SUBAGENT_REGISTRY: dict[str, dict] = {**REGISTRY, **SUBAGENT_ONLY}
 SUBAGENT_TOOL_FNS = {name: entry["fn"] for name, entry in SUBAGENT_REGISTRY.items()}
 
+
+# --------------------------------------------------------------------------- #
+# Aisha's surface on the multi-agent path (T5.1)
+# --------------------------------------------------------------------------- #
+# THE THIRD BINDING, and the last one. REGISTRY is the single agent's;
+# SUBAGENT_REGISTRY is the specialists'; this is Aisha's when the fan-out is on.
+# Her card lists what she keeps — identity, consent, licence, memory, close,
+# options — and emit_briefs is added here rather than to REGISTRY for the same
+# reason the five reads were: TOOL_SCHEMAS must not move while the single-agent
+# path is the live one.
+#
+# emit_briefs HAS NO FUNCTION, deliberately. It is answered by the orchestrator
+# node in graph.py, not dispatched by tool_node, so there is nothing to call —
+# see brief_tools.py. It appears in AISHA_ONLY for its SCHEMA alone, which is
+# why this dict is shaped {name: {"schema": ...}} with no "fn" key, and why it
+# is never merged into a *_TOOL_FNS table.
+AISHA_ONLY: dict[str, dict] = {
+    "emit_briefs": {"schema": EMIT_BRIEFS_SCHEMA},
+}
+
+
+def aisha_schemas() -> list[dict]:
+    """Aisha's `tools=` payload on the multi-agent path.
+
+    Card order, then emit_briefs last — stable across turns, because this list
+    is a cache prefix like any other and a set-iteration order would quietly
+    reshuffle it between processes.
+    """
+    from app.agents import loader
+
+    declared = list(loader.frontmatter("aisha").get("tools") or [])
+    out = []
+    for name in declared:
+        if name in COMMERCIAL_WRITE_TOOLS:
+            # Doc §2: holding inventory and booking are the orchestrator's.
+            # Belt and braces behind the card test, for the same reason
+            # subagent._schemas_for refuses a write it should never be given.
+            continue
+        entry = REGISTRY.get(name) or AISHA_ONLY.get(name)
+        if entry is not None:
+            out.append(entry["schema"])
+    return out
+
 # The invariant, enforced at import: nothing added here may be a write, and
 # nothing here may shadow a registered tool with a different implementation.
 assert not (set(SUBAGENT_ONLY) & set(REGISTRY)), (
@@ -330,4 +376,6 @@ __all__ = [
     "SUBAGENT_ONLY",
     "SUBAGENT_REGISTRY",
     "SUBAGENT_TOOL_FNS",
+    "AISHA_ONLY",
+    "aisha_schemas",
 ]

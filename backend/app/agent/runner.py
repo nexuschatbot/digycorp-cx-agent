@@ -430,9 +430,16 @@ def run_turn(
                 anchor = _card_anchor(chunk["tool"], chunk["output"])
                 if anchor:
                     card_rows.append(anchor)
-                on_event("tool_event", {
+                event = {
                     "tool": chunk["tool"], "input": chunk["input"], "output": chunk["output"],
-                })
+                }
+                # WHICH SPECIALIST DREW THIS CARD. Present only on the
+                # multi-agent path — turn.forward_events stamps it so a card
+                # cannot be attributed to Aisha — and omitted entirely
+                # otherwise, so the single-agent payload stays byte-identical.
+                if chunk.get("agent"):
+                    event["agent"] = chunk["agent"]
+                on_event("tool_event", event)
             elif kind == "booking":
                 on_event("booking", {"booking_ref": chunk["booking_ref"]})
             elif kind == "text_break":

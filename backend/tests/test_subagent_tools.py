@@ -20,12 +20,14 @@ import pytest
 from app.agents import loader
 from app.orchestrator import subagent
 from app.tools import (
+    AISHA_ONLY,
     COMMERCIAL_WRITE_TOOLS,
     REGISTRY,
     SUBAGENT_ONLY,
     SUBAGENT_REGISTRY,
     TOOL_SCHEMAS,
     WRITE_TOOLS,
+    aisha_schemas,
 )
 
 SUBAGENTS = ("sales", "testdrive", "finance")
@@ -36,10 +38,22 @@ def _declared(agent: str) -> list[str]:
     return list(loader.frontmatter(agent).get("tools") or [])
 
 
+def _resolvable(agent: str) -> set[str]:
+    """Which registry answers for this agent.
+
+    Aisha and the specialists have different surfaces on purpose — she holds
+    emit_briefs and none of their reads, they hold the reads and no write — so
+    "does this tool exist" is a different question per card, not one global set.
+    """
+    if agent == "aisha":
+        return set(REGISTRY) | set(AISHA_ONLY)
+    return set(SUBAGENT_REGISTRY)
+
+
 @pytest.mark.parametrize("agent", ALL_CARDS)
 def test_every_declared_tool_exists(agent):
     """No card may name a tool that does not exist. The finance defect."""
-    missing = [t for t in _declared(agent) if t not in SUBAGENT_REGISTRY]
+    missing = [t for t in _declared(agent) if t not in _resolvable(agent)]
     assert missing == [], (
         f"{agent}'s card declares {missing}, which no registry provides. "
         "Register the tool or remove it from the card — a declared tool that "
@@ -74,6 +88,35 @@ def test_every_subagent_has_at_least_one_tool(agent):
 def test_aisha_holds_no_commercial_write():
     """Doc §2: holding inventory and booking belong to the orchestrator alone."""
     assert set(_declared("aisha")) & COMMERCIAL_WRITE_TOOLS == set()
+    assert {s["name"] for s in aisha_schemas()} & COMMERCIAL_WRITE_TOOLS == set()
+
+
+def test_aisha_binds_every_tool_her_card_declares():
+    """Same contract as the sub-agents, against her own binding."""
+    assert [s["name"] for s in aisha_schemas()] == _declared("aisha")
+
+
+def test_aisha_holds_emit_briefs_and_no_specialist_read():
+    """She delegates rather than looking things up herself.
+
+    If she kept a catalogue read she would answer from it instead of briefing,
+    and the fan-out would be dead code that still cost a generation.
+    """
+    bound = {s["name"] for s in aisha_schemas()}
+    assert "emit_briefs" in bound
+    for agent in SUBAGENTS:
+        specialist_reads = set(_declared(agent)) - {"search_knowledge"}
+        assert bound & specialist_reads == set(), (
+            f"Aisha holds {bound & specialist_reads}, which is {agent}'s work"
+        )
+
+
+def test_emit_briefs_has_a_schema_and_no_function():
+    """It is answered by the orchestrator node, so there is nothing to call."""
+    assert "schema" in AISHA_ONLY["emit_briefs"]
+    assert "fn" not in AISHA_ONLY["emit_briefs"]
+    assert "emit_briefs" not in REGISTRY
+    assert "emit_briefs" not in SUBAGENT_REGISTRY
 
 
 def test_single_agent_tool_surface_is_unchanged():

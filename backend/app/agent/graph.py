@@ -65,7 +65,8 @@ from app.config import (
     USE_DIRECT_ANTHROPIC,
 )
 from app.agent import tool_binding
-from app.tools import TOOL_SCHEMAS
+from app.tools import TOOL_SCHEMAS, aisha_schemas
+from app.tools.brief_tools import CALLED_ALONGSIDE_ERROR
 
 log = logging.getLogger("app.agent.graph")
 
@@ -1139,8 +1140,17 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
         # `agent` unset is the un-routed path — the whole registry, exactly as
         # before the split — so every caller that has not moved to the router yet
         # is untouched.
+        #
+        # THE MULTI-AGENT BINDING (T5.1) sits in FRONT of both, and only when
+        # the flag is on for this channel: Aisha keeps her card's conversational
+        # tools plus emit_briefs, and holds no catalogue, slot or finance read
+        # at all — those are what the specialists are for. With the flag off
+        # this expression is byte-identical to what it was, which is what keeps
+        # the cached prefix alive on the live path.
         tools=(
-            tool_binding.schemas_for(active_agent) if active_agent else TOOL_SCHEMAS
+            aisha_schemas() if _multi_agent(cfg)
+            else tool_binding.schemas_for(active_agent) if active_agent
+            else TOOL_SCHEMAS
         ),
         config=config,
     )
@@ -1166,8 +1176,165 @@ def _route_from_agent(state: AgentState) -> str:
     if last.get("role") == "assistant" and any(
         isinstance(b, dict) and b.get("type") == "tool_use" for b in content
     ):
+        # emit_briefs is answered by the ORCHESTRATOR, not the tools node: it
+        # has no function to dispatch, and the cascade owns a transaction the
+        # tool node must not be inside. Checked first so a message carrying it
+        # never reaches tool_node, which would return unknown_tool and strand
+        # the turn on a delivered opening line.
+        if _brief_block(state) is not None:
+            return "orchestrator"
         return "tools"
     return END
+
+
+def _multi_agent(cfg: dict) -> bool:
+    """Whether THIS turn fans out. Channel-aware, and cheap enough to re-ask.
+
+    Voice is excluded inside turn.enabled() rather than here, so there is one
+    answer to "is the fan-out on" and not two that can drift.
+    """
+    from app.orchestrator import turn as _turn
+
+    return _turn.enabled(voice_call=bool(cfg.get("voice_call")))
+
+
+def _brief_block(state: AgentState) -> dict | None:
+    """The emit_briefs tool_use in the last assistant message, if there is one."""
+    last = state["messages"][-1]
+    if not isinstance(last, dict) or last.get("role") != "assistant":
+        return None
+    for b in last.get("content") or []:
+        if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "emit_briefs":
+            return b
+    return None
+
+
+def _stream_sink(writer):
+    """Adapt the LangGraph writer to the (kind, payload) shape forward_events wants.
+
+    THE ONE ADAPTER THAT MUST NOT BE WRONG. The writer takes a single dict whose
+    `type` names the event; turn.forward_events calls its sink with (kind,
+    payload). Get this backwards and every sub-agent tool_event is dropped —
+    which does not raise, does not log, and shows up only as a reply with all
+    its vehicle and slot cards missing, reading as a styling bug.
+    """
+    def _post(kind: str, payload: dict) -> None:
+        if writer is None:
+            return
+        writer({"type": kind, **(payload or {})})
+
+    return _post
+
+
+def _known_entities(state: AgentState) -> set[str]:
+    """Entities this session already established, so a follow-up runs alone.
+
+    Without this, "book it for Saturday" looks like it needs a Sales step to
+    produce the vehicle_id the customer settled on ten turns ago — and the
+    TestDrive brief comes back blocked on a question nobody asked.
+    """
+    from app.orchestrator import order as _order
+
+    facts = state.get("session_facts") or {}
+    producible: set[str] = set()
+    for agent in ("sales", "testdrive", "finance"):
+        producible |= _order.produces(agent)
+    return {k for k in producible if facts.get(k) is not None}
+
+
+def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
+    """Answer an emit_briefs call by running the cascade (T5.1-T5.6).
+
+    THIS IS A TOOL RESULT, NOT A SECOND CONVERSATION. The findings come back as
+    the tool_result for Aisha's own emit_briefs call, so her NEXT generation —
+    the ordinary post-tools edge — is the composition step. That reuses the
+    streaming, the script guard, the sanitiser and the card anchors exactly as
+    they are, rather than growing a second reply path that would have to
+    re-implement all four and drift from them.
+
+    IT NEVER RAISES. Every failure is a tool_result Aisha can speak to: a
+    cascade that dies must produce "I could not check that just now", never a
+    turn that ends with the opening line already delivered and nothing after it.
+    """
+    import dataclasses
+    import json as _json
+
+    from app.agent import profile as _profile
+    from app.orchestrator import subagent, turn as _turn
+    from app.orchestrator.judge import judge as _judge
+
+    cfg = config.get("configurable", {})
+    session_id = cfg.get("session_id", "?")
+    block = _brief_block(state)
+    last = state["messages"][-1]
+    tool_uses = [
+        b for b in (last.get("content") or [])
+        if isinstance(b, dict) and b.get("type") == "tool_use"
+    ]
+
+    # Composition needs time too, and the ceiling is wall-clock from turn start
+    # (AD-D). What is left after the reserve is what the steps may share.
+    deadline = cfg.get("deadline_monotonic")
+    remaining = (
+        max(deadline - time.monotonic(), 1.0) if deadline is not None
+        else float(AGENT_DEADLINE_SECONDS)
+    )
+
+    payload: dict
+    try:
+        briefs = list((block.get("input") or {}).get("briefs") or []) if block else []
+        if not briefs:
+            payload = {
+                "findings": [], "unavailable": [], "partial": False,
+                "nothing_worked": True,
+                "detail": "No briefs were sent, so nothing was looked up.",
+            }
+        else:
+            prof = _profile.from_state(state)
+            as_dict = {
+                k: v for k, v in dataclasses.asdict(prof).items() if v not in (None, "", [])
+            }
+            result = _turn.execute(
+                briefs,
+                subagent.make_runner(
+                    cfg["db"], session_id,
+                    customer_id=state.get("customer_id"),
+                    profile=as_dict or None,
+                ),
+                known=_known_entities(state),
+                judge=_judge,
+                deadline_seconds=remaining,
+                parent_writer=_stream_sink(_safe_writer()),
+            )
+            payload = _turn.compose_input(result)
+            log.info(
+                "orchestrator — session=%s briefs=%d ok=%d partial=%s",
+                session_id, len(briefs),
+                sum(1 for st in result.steps if st.ok), result.partial,
+            )
+    except Exception:  # noqa: BLE001 — the opening line is already delivered
+        log.exception("orchestrator failed — session=%s", session_id)
+        payload = {
+            "findings": [], "unavailable": [], "partial": False,
+            "nothing_worked": True,
+            "detail": "The specialists could not be reached for this question.",
+        }
+
+    results: list[dict] = []
+    for b in tool_uses:
+        body = payload if b is block else CALLED_ALONGSIDE_ERROR
+        results.append({
+            "type": "tool_result",
+            "tool_use_id": b.get("id"),
+            "content": _json.dumps(body, default=str)[:16000],
+        })
+
+    # `iterations` is NOT advanced here. The bound counts GENERATIONS, and this
+    # node calls no model of its own — the sub-agents run under their own
+    # per-step budget and iteration ceiling. Counting the cascade against
+    # Aisha's loop bound would cost her the composition turn it exists to
+    # protect.
+    return {"messages": [{"role": "user", "content": results}]}
 
 
 def _route_from_tools(state: AgentState, config: RunnableConfig) -> str:
@@ -1211,9 +1378,22 @@ def build_graph(checkpointer: Any):
     g = StateGraph(AgentState)
     g.add_node("agent", _agent_node)
     g.add_node("tools", tool_node)
+    # The fan-out. Present in the graph on every path — reachable only when a
+    # generation actually emits briefs, which only happens when Aisha was handed
+    # emit_briefs, which only happens behind MULTI_AGENT_ENABLED. An unreachable
+    # node costs nothing; a second compiled graph would have to be kept in step
+    # with this one forever.
+    g.add_node("orchestrator", _orchestrator_node)
     g.add_edge(START, "agent")
-    g.add_conditional_edges("agent", _route_from_agent, {"tools": "tools", END: END})
+    g.add_conditional_edges(
+        "agent", _route_from_agent,
+        {"tools": "tools", "orchestrator": "orchestrator", END: END},
+    )
     g.add_conditional_edges("tools", _route_from_tools, {"agent": "agent", END: END})
+    # Straight back to Aisha: the findings are a tool_result, and her next
+    # generation composes the reply from them. No conditional — a cascade that
+    # produced nothing still needs her to say so.
+    g.add_edge("orchestrator", "agent")
     return g.compile(checkpointer=checkpointer)
 
 
