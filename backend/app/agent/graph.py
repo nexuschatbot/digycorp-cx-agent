@@ -1324,6 +1324,52 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
     return out
 
 
+def _fold_cascade_facts(state: AgentState, result) -> dict | None:
+    """Carry what the cascade established into session_facts (found live).
+
+    WHY THIS IS NOT OPTIONAL. Entities thread between STEPS inside one turn —
+    Sales produces a vehicle_id and TestDrive receives it — but before this they
+    were discarded when the turn ended. `_known_entities` reads session_facts,
+    and only tool_node writes it, so a sub-agent's findings never got there.
+
+    The live failure: turn 1 established the T2, turn 3 asked for slots at Al
+    Quoz, and order.resolve correctly blocked TestDrive because vehicle_id was
+    unknown *again*. Aisha retried five times, apologised, and escalated. Every
+    component behaved exactly as designed and the booking still could not happen,
+    because the memory between them was missing.
+
+    STILL TOOL-DERIVED, so rule 2 holds. subagent._harvest_entities reads these
+    off the tool RESULTS rather than the model's prose, which is the whole reason
+    that function exists — a model-asserted vehicle_id must never reach the facts
+    anchor and be re-stated to the customer as established.
+
+    Returns the FULL merged dict, matching tool_node's contract: session_facts
+    uses last-value semantics, so a partial write would silently drop identity.
+    """
+    entities = {k: v for k, v in (result.entities or {}).items() if v is not None}
+    if not entities:
+        return None
+
+    facts = dict(state.get("session_facts") or {})
+    # Only what the facts anchor and the ordering actually consume. A sub-agent
+    # may return a great deal; this is not a general-purpose scratchpad, and
+    # anything landing here is re-stated to the customer every single turn.
+    for key in ("vehicle_id", "variant_id", "slot_id", "booking_ref", "vehicle_name"):
+        if entities.get(key) is not None:
+            facts[key] = entities[key]
+
+    # The car's NAME, for the anchor's sentence. Taken from a successful step's
+    # findings rather than the entity map, which carries ids only.
+    if "vehicle_name" not in facts:
+        for step in result.steps:
+            name = (step.findings or {}).get("name") if step.ok else None
+            if name and step.agent == "sales":
+                facts["vehicle_name"] = name
+                break
+
+    return facts if facts != (state.get("session_facts") or {}) else None
+
+
 def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     """Answer an emit_briefs call by running the cascade (T5.1-T5.6).
 
@@ -1363,6 +1409,7 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     )
 
     payload: dict
+    facts: dict | None = None
     try:
         briefs = list((block.get("input") or {}).get("briefs") or []) if block else []
         if not briefs:
@@ -1390,6 +1437,7 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
             )
             payload = _turn.compose_input(result)
             payload["actions"] = _execute_proposals(result, state, cfg)
+            facts = _fold_cascade_facts(state, result)
             log.info(
                 "orchestrator — session=%s briefs=%d ok=%d partial=%s",
                 session_id, len(briefs),
@@ -1417,7 +1465,10 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     # per-step budget and iteration ceiling. Counting the cascade against
     # Aisha's loop bound would cost her the composition turn it exists to
     # protect.
-    return {"messages": [{"role": "user", "content": results}]}
+    out: dict = {"messages": [{"role": "user", "content": results}]}
+    if facts is not None:
+        out["session_facts"] = facts
+    return out
 
 
 def _route_from_tools(state: AgentState, config: RunnableConfig) -> str:

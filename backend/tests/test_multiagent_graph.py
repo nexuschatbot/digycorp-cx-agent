@@ -446,3 +446,91 @@ def test_actions_reach_aisha_in_the_compose_payload(monkeypatch):
         "b")
     assert body["actions"] == [{"action": "create_booking", "status": "executed",
                                 "detail": "", "booking_ref": "TD-2026-0042"}]
+
+
+# --------------------------------------------------------------------------- #
+# Cross-turn memory (found live, 2026-08-29)
+# --------------------------------------------------------------------------- #
+# Entities threaded between STEPS from the start; they did not survive the TURN.
+# _known_entities reads session_facts and only tool_node wrote it, so a
+# sub-agent's vehicle_id was discarded at the end of every turn. Turn 1
+# established the T2; turn 3 asked for slots and TestDrive was blocked on
+# vehicle_id all over again. Every component was correct and the booking still
+# could not happen, because the memory between them was missing.
+def _result_with(entities, steps=None):
+    r = _run.TurnResult(steps=steps or [])
+    r.entities = entities
+    return r
+
+
+def test_cascade_entities_reach_session_facts():
+    facts = graph._fold_cascade_facts({"session_facts": {}},
+                                      _result_with({"vehicle_id": 7, "variant_id": 21}))
+    assert facts["vehicle_id"] == 7
+    assert facts["variant_id"] == 21
+
+
+def test_identity_already_held_is_not_dropped():
+    """session_facts is last-value, so a partial write loses the customer."""
+    facts = graph._fold_cascade_facts(
+        {"session_facts": {"name": "Test Driver", "mobile": "+971509998877"}},
+        _result_with({"vehicle_id": 7}))
+    assert facts["name"] == "Test Driver"
+    assert facts["mobile"] == "+971509998877"
+    assert facts["vehicle_id"] == 7
+
+
+def test_only_the_entities_that_are_consumed_are_kept():
+    """Not a scratchpad — whatever lands here is re-stated to the customer every
+    turn by the facts anchor."""
+    facts = graph._fold_cascade_facts(
+        {"session_facts": {}},
+        _result_with({"vehicle_id": 7, "emi_estimate": 2459, "on_road_price": 96500}))
+    assert set(facts) == {"vehicle_id"}
+
+
+def test_nothing_established_writes_nothing():
+    assert graph._fold_cascade_facts({"session_facts": {"a": 1}}, _result_with({})) is None
+
+
+def test_a_null_entity_is_not_recorded():
+    """run.execute seeds entities from `known` with None values."""
+    assert graph._fold_cascade_facts({"session_facts": {}},
+                                     _result_with({"vehicle_id": None})) is None
+
+
+def test_the_car_name_comes_from_a_successful_sales_step():
+    facts = graph._fold_cascade_facts(
+        {"session_facts": {}},
+        _result_with({"vehicle_id": 7}, steps=[
+            _run.StepResult(brief="b", agent="sales", status="ok",
+                            findings={"name": "Jetour X70 FL Plus"}),
+        ]))
+    assert facts["vehicle_name"] == "Jetour X70 FL Plus"
+
+
+def test_a_failed_steps_name_is_not_trusted():
+    facts = graph._fold_cascade_facts(
+        {"session_facts": {}},
+        _result_with({"vehicle_id": 7}, steps=[
+            _run.StepResult(brief="b", agent="sales", status="failed",
+                            findings={"name": "Something Invented"}),
+        ]))
+    assert "vehicle_name" not in facts
+
+
+def test_the_node_returns_session_facts(monkeypatch):
+    """The whole point: it must leave the node, or the next turn cannot see it."""
+    from app.orchestrator import turn
+
+    monkeypatch.setattr(turn, "execute", lambda *a, **k: _result_with({"vehicle_id": 7}))
+    monkeypatch.setattr(graph, "_execute_proposals", lambda *a, **k: [])
+    state = {"messages": [_assistant(_briefs("x", tid="b"))], "session_facts": {}}
+    out = graph._orchestrator_node(state, _config(db=SimpleNamespace()))
+    assert out["session_facts"]["vehicle_id"] == 7
+
+
+def test_the_next_turn_can_see_it():
+    """_known_entities is what order.resolve consults; close the loop."""
+    facts = graph._fold_cascade_facts({"session_facts": {}}, _result_with({"vehicle_id": 7}))
+    assert graph._known_entities({"session_facts": facts}) == {"vehicle_id"}
