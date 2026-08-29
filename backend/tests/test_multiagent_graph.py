@@ -222,3 +222,87 @@ def test_the_single_agent_payload_never_changes(monkeypatch, flag):
     if flag:
         assert [s["name"] for s in aisha_schemas()] != [s["name"] for s in TOOL_SCHEMAS]
     assert len(TOOL_SCHEMAS) == 22
+
+
+# --------------------------------------------------------------------------- #
+# The bubble seal (T5.1)
+# --------------------------------------------------------------------------- #
+# WHY THIS IS TESTED HERE AND NOT BUILT HERE. emit_briefs' description promises
+# Aisha that her opening line is DELIVERED and cannot be retracted, and the
+# whole one-generation trick rests on that being true. It already is: graph.py
+# seals the bubble on the start of ANY tool_use block, and emit_briefs is an
+# ordinary tool_use as far as the model and the SDK are concerned. So there is
+# no new mechanism — but the promise is now load-bearing on a path that did not
+# exist when the seal was written, and an unasserted promise is a rule waiting
+# to be refactored away.
+from types import SimpleNamespace  # noqa: E402
+
+from tests.test_lang_guard import _FakeStream, _text_events  # noqa: E402
+
+
+def _briefs_tool_start():
+    return SimpleNamespace(
+        type="content_block_start",
+        content_block=SimpleNamespace(type="tool_use", id="b1", name="emit_briefs"),
+    )
+
+
+def _generate(monkeypatch, stream):
+    from tests.test_lang_guard import _FakeClient
+
+    client = _FakeClient([stream])
+    emitted = []
+    monkeypatch.setattr(graph, "_client", client)
+    monkeypatch.setattr(graph, "_safe_writer", lambda: emitted.append)
+    graph._default_generate(
+        [{"role": "user", "content": "what seven seaters do you have"}],
+        model="test-model", system="SYSTEM", tools=[],
+        config={"configurable": {"session_id": "s1", "expected_lang": "en"}},
+    )
+    return emitted
+
+
+def test_the_opening_line_is_sealed_before_the_briefs_run(monkeypatch):
+    """Opening line delivered as its own bubble, then emit_briefs. Without the
+    seal, her acknowledgement and her composed answer arrive as one run-on
+    bubble — and the promise the tool description makes her is false."""
+    stream = _FakeStream(
+        _text_events("Let me check that ", "for you.") + [_briefs_tool_start()],
+        stop_reason="tool_use",
+    )
+    emitted = _generate(monkeypatch, stream)
+    kinds = [e.get("type") for e in emitted]
+    assert "text_break" in kinds, "the opening line was never sealed"
+    # And it seals AFTER the text, not before: the words are delivered first.
+    assert kinds.index("text_break") == len(kinds) - 1
+    streamed = "".join(e["text"] for e in emitted if e.get("type") == "token")
+    assert streamed == "Let me check that for you."
+
+
+def test_briefs_with_no_opening_line_seal_nothing(monkeypatch):
+    """No text, no bubble to seal — an empty break would render as a stray gap."""
+    stream = _FakeStream([_briefs_tool_start()], stop_reason="tool_use")
+    emitted = _generate(monkeypatch, stream)
+    assert "text_break" not in [e.get("type") for e in emitted]
+
+
+def test_a_wrong_language_opening_aborts_before_the_cascade(monkeypatch):
+    """Rule 3 still bites on the brief path: the seal is where the window
+    settles, so a violation stops the turn BEFORE any sub-agent is paid for."""
+    stream = _FakeStream(
+        _text_events("حسناً، ") + [_briefs_tool_start()], stop_reason="tool_use"
+    )
+    from tests.test_lang_guard import _FakeClient
+
+    client = _FakeClient([stream, _FakeStream(_text_events("Let me check."))])
+    emitted = []
+    monkeypatch.setattr(graph, "_client", client)
+    monkeypatch.setattr(graph, "_safe_writer", lambda: emitted.append)
+    graph._default_generate(
+        [{"role": "user", "content": "hi"}],
+        model="test-model", system="SYSTEM", tools=[],
+        config={"configurable": {"session_id": "s1", "expected_lang": "en"}},
+    )
+    streamed = "".join(e["text"] for e in emitted if e.get("type") == "token")
+    assert streamed == "Let me check."
+    assert len(client.calls) == 2
