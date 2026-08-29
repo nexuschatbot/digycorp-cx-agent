@@ -173,6 +173,68 @@ export interface VehicleRow {
   interior_colours: string[]
 }
 
+/** One entry in the human-callback queue. Mirrors console._handoff_row. */
+export interface HandoffRow {
+  audit_id: number
+  ts: string | null
+  session: string
+  reason: string
+  /** The customer's OWN WORDS for what they want a person for ("discount on the
+   *  T2"). Shown so the operator knows what they are calling about; it is never
+   *  spoken back to a customer as policy (rule 13). */
+  topic: string | null
+  customer_id: number | null
+  customer_name: string | null
+  customer_mobile: string | null
+}
+
+/** One step of one multi-agent turn. Mirrors orchestrator/run.trace_steps. */
+export interface RoutingStep {
+  agent: string | null
+  status: string
+  /** How the agent was chosen: 'fast_lane' (free, instant) or 'judge' (Haiku). */
+  layer: string | null
+  score: number | null
+  /** Gap to the runner-up. The fast lane only routes above MIN_MARGIN. */
+  margin: number | null
+  latency_ms: number
+  detail: string | null
+}
+
+/** One turn's routing detail. Mirrors console._routing_row. */
+export interface RoutingRow {
+  trace_id: string
+  session: string
+  ts: string | null
+  user_message: string | null
+  detected_lang: string | null
+  routed_to: string | null
+  previous_agent: string | null
+  router_latency_ms: number | null
+  latency_ms: number | null
+  /** EMPTY on every turn that ran single-agent, which is all of them until the
+   *  kill switch flips. Empty means "not applicable", never "it failed". */
+  steps: RoutingStep[]
+  step_count: number
+  fast_lane_steps: number
+  judged_steps: number
+  failed_steps: number
+  prompt_versions: Record<string, string> | null
+}
+
+export interface RoutingSummary {
+  turns: number
+  steps: number
+  fast_lane: number
+  judged: number
+  /** THE NUMBER THIS VIEW EXISTS FOR. Calibration predicted ~1/3 on 32 synthetic
+   *  utterances; this is what real briefs do. Far lower means the fast lane is
+   *  not earning its complexity. */
+  fast_lane_share: number | null
+  failed: number
+  by_agent: Record<string, number>
+}
+
 export interface ShowroomRow {
   showroom_id: number
   brand: string | null
@@ -477,6 +539,21 @@ export function fetchVehicles(
 ): Promise<Result<Envelope<VehicleRow>>> {
   return request<Envelope<VehicleRow>>('/vehicles', params, opts)
 }
+
+export function fetchHandoffs(
+  params: QueryParams = {},
+  opts: AdminOptions = {},
+): Promise<Result<Envelope<HandoffRow>>> {
+  return request<Envelope<HandoffRow>>('/handoffs', params, opts)
+}
+
+export function fetchRouting(
+  params: QueryParams = {},
+  opts: AdminOptions = {},
+): Promise<Result<Envelope<RoutingRow>>> {
+  return request<Envelope<RoutingRow>>('/routing', params, opts)
+}
+
 
 export function fetchShowrooms(
   params: QueryParams = {},

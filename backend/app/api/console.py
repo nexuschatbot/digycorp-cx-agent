@@ -208,6 +208,55 @@ def get_conversations(
     return console.list_conversations(db, limit=limit, offset=offset)
 
 
+@router.get("/handoffs")
+def get_handoffs(
+    reason: str | None = Query(None),
+    limit: int | None = Query(None),
+    offset: int | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The human-callback queue, OLDEST FIRST (T8.1).
+
+    Deliberately the opposite order to every other browser here. Newest-first
+    suits an audit log, which is read to find out what just happened. This is a
+    WORK QUEUE: the person waiting longest is the one being let down most, and
+    sorting them to the bottom is how a queue starves its oldest entry.
+    """
+    return console.list_handoffs(db, reason=reason, limit=limit, offset=offset)
+
+
+@router.get("/routing")
+def get_routing(
+    session: str | None = Query(None),
+    routed_to: str | None = Query(None),
+    only_multi_agent: bool = Query(False),
+    limit: int | None = Query(None),
+    offset: int | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Per-turn routing detail, newest first (T8.2).
+
+    Every field is a READ of something turn_trace has been recording all along
+    and nothing displayed.
+    """
+    return console.list_routing(
+        db, session=session, routed_to=routed_to,
+        only_multi_agent=only_multi_agent, limit=limit, offset=offset,
+    )
+
+
+@router.get("/routing/summary")
+def get_routing_summary(db: Session = Depends(get_db)) -> dict:
+    """How the cascade behaves in aggregate.
+
+    `fast_lane_share` is the number this exists for: the calibration predicted
+    the embedding shortcut settles about a third of briefs, on 32 SYNTHETIC
+    utterances. This says what it settles on real ones — and if it is far lower,
+    the honest move is to delete the fast lane and always ask the judge.
+    """
+    return console.routing_summary(db)
+
+
 @router.get("/audit-log")
 def get_audit_log(
     session: str | None = Query(None),

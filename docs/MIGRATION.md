@@ -220,6 +220,46 @@ against a 400ms first-audio budget makes the free pre-filter/sticky exits
 | 5 | `tests/test_health.py` asserts `service == "digycorp-cx-agent"`; ported `main.py` is titled "Elite Test Drive Booking API" | S1 | open |
 | 6 | `psycopg[binary]` left unpinned — not installed in the source venv, so no production version to copy | — | noted |
 
+## Multi-agent migration — Phases 0 to 8 (August 2026)
+
+Done, on branch `multi-agent-migration`. **The single-agent path is untouched and
+still live**; everything new sits behind a flag, which is why all 1,444 tests
+still pass against the old shape.
+
+| flag | default |
+|---|---|
+| `MULTI_AGENT_ENABLED` | off — and voice is excluded even when on |
+| `RETRIEVAL_ENABLED` | off |
+| `PROMPT_VERSIONS` | unset — per-agent rollback with no deploy |
+
+**What changed structurally**
+
+- **Alembic**, adopted on a `create_all` database. `main.py` migrates at boot.
+- **Prompts are Markdown** under `app/agents/`, versioned, with an activation
+  gate that refuses a version which has lost a load-bearing rule.
+- **Variant-level catalogue**: 9 models, 15 variants, 330 stock rows, 7,544 units.
+- **Local retrieval**: vendored ONNX embeddings, 228 chunks, Redis-cached.
+- **Orchestrator**: select → order → execute, plus the only commercial writes.
+- **PDPL**: `turn_trace` swept, transcripts reachable by customer, retention job.
+
+**What is deliberately not done**
+
+- Sub-agent graphs are not bound to Haiku (needs live calls).
+- The T0.1 baseline has not been re-run against the new stack (same reason).
+- ~60 brochure marketing pages unread; five files still `draft-partial`.
+
+**Things the build found that no test would have**
+
+- Capturing a baseline first (~$1.48) caught Aisha **delivering third-person
+  notes-to-self** to customers. Fixed in Phase 6.
+- The seed had the **two X70s' seat counts swapped**, and a code comment repeated
+  the error as fact.
+- **"Forget me" was a partial delete that looked complete** — `turn_trace` was
+  never swept.
+- The **retention windows had been declared and never read** by anything.
+
+---
+
 ## Known gaps in the architecture doc
 
 The doc describes roughly 60% of the system. Absent entirely: feedback surveys,

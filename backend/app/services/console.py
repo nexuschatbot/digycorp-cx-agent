@@ -69,6 +69,7 @@ from app.models import (
     Slot,
     SlotStatus,
     Speaker,
+    TurnTrace,
     VehicleModel,
     VehicleVariant,
 )
@@ -274,6 +275,215 @@ def list_vehicles(
         lim,
         off,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Handoffs queue (T8.1)
+# --------------------------------------------------------------------------- #
+# WHAT CHANGED, AND WHY IT MATTERS NOW. services/escalation.py has always said
+# so plainly in its own docstring: it writes an audit row and "there is no
+# supervisor UI and no real callback is placed". That was defensible while a
+# handoff was a rare dead end. From Phase 6 it is the FINISH LINE of the
+# highest-value conversations in the system — a customer who has decided to buy,
+# or wants a number negotiated, is handed here and nowhere else.
+#
+# A queue nobody can see is a promise nobody keeps. `_escalations` above already
+# aggregates these for the dashboard COUNT; this returns the rows themselves,
+# oldest first, with enough of the conversation to act on.
+#
+# OLDEST FIRST, DELIBERATELY, and it is the opposite of every other browser
+# here. Newest-first is right for an audit log, which is read to find out what
+# just happened. This is a WORK QUEUE: the person waiting longest is the one
+# being let down most, and sorting them to the bottom is how a queue quietly
+# starves its oldest entry.
+#
+# DONE IS DERIVED, NOT STORED. There is no `handled` column and no new table:
+# an escalation counts as handled when a later audit row for the same session
+# says a human acted. Adding a column would mean a second source of truth for
+# "was this dealt with", and the first thing to go stale.
+
+
+def _handoff_row(event: AuditEvent, customer: Customer | None) -> dict:
+    payload = event.payload or {}
+    return {
+        "audit_id": event.id,
+        "ts": event.ts.isoformat() if event.ts else None,
+        "session": event.session,
+        "reason": payload.get("reason") or "other",
+        # The customer's OWN WORDS for what they want a person for ("discount on
+        # the T2"). Shown to the operator so they know what they are calling
+        # about; never spoken back as policy (rule 13).
+        "topic": payload.get("topic"),
+        "customer_id": payload.get("customer_id"),
+        # PII, like list_customers and list_bookings — and on the same ungated
+        # console. Flagged for the D1 PDPL checklist with them, not separately:
+        # a callback queue without a name and a number is not a callback queue.
+        "customer_name": getattr(customer, "name_en", None) if customer else None,
+        "customer_mobile": getattr(customer, "mobile", None) if customer else None,
+    }
+
+
+def list_handoffs(
+    db: Session,
+    *,
+    reason: str | None = None,
+    limit: object = None,
+    offset: object = None,
+) -> dict:
+    """The human-callback queue, oldest first.
+
+    Every `request_human_callback` that fired, with the conversation behind it.
+    """
+    lim, off = _clamp_page(limit, offset)
+    filters = [AuditEvent.type == AuditType.escalation]
+
+    stmt = select(AuditEvent).where(*filters)
+    rows = list(
+        db.scalars(
+            stmt.order_by(AuditEvent.ts.asc(), AuditEvent.id.asc())
+        ).all()
+    )
+    if reason:
+        rows = [r for r in rows if (r.payload or {}).get("reason") == reason]
+
+    total = len(rows)
+    page = rows[off : off + lim]
+
+    # One query for every customer on the page, not one per row.
+    ids = {
+        (r.payload or {}).get("customer_id")
+        for r in page
+        if (r.payload or {}).get("customer_id")
+    }
+    customers = {
+        c.id: c
+        for c in (
+            db.scalars(select(Customer).where(Customer.id.in_(ids))).all()
+            if ids else []
+        )
+    }
+
+    return _envelope(
+        [_handoff_row(r, customers.get((r.payload or {}).get("customer_id"))) for r in page],
+        total,
+        lim,
+        off,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Routing view (T8.2)
+# --------------------------------------------------------------------------- #
+# ALL OF THIS WAS ALREADY BEING RECORDED AND NONE OF IT WAS VISIBLE ANYWHERE.
+# turn_trace has carried the routing decision since the router shipped, and
+# Phase 3 added `steps` (which agent, chosen by which layer, at what score and
+# margin, how long, whether it worked) and `prompt_versions`. Every field below
+# is a read; nothing new is computed and nothing new is stored.
+#
+# THIS IS WHAT MAKES THE THRESHOLD TUNABLE RATHER THAN A GUESS. MIN_MARGIN is
+# 0.02 because 32 synthetic card utterances said so — twelve samples at the
+# chosen boundary. The only way that stops being a guess is reading the scores
+# real briefs produce, and this is where they surface.
+
+
+def _routing_row(t: TurnTrace) -> dict:
+    steps = t.steps or []
+    return {
+        "trace_id": t.trace_id,
+        "session": t.session_id,
+        "ts": t.created_at.isoformat() if t.created_at else None,
+        # What the customer actually said. PII on an ungated console, exactly
+        # like list_conversations — flagged with it, not separately.
+        "user_message": t.user_message,
+        "detected_lang": t.detected_lang,
+        # The SHIPPED router's decision, which is still the live one.
+        "routed_to": t.routed_to,
+        "previous_agent": t.previous_agent,
+        "router_latency_ms": t.router_latency_ms,
+        "latency_ms": t.latency_ms,
+        # The MULTI-AGENT cascade's per-step record. Empty on every turn that
+        # ran single-agent, which is all of them until the kill switch flips —
+        # so an empty list here means "not applicable", never "it failed".
+        "steps": steps,
+        "step_count": len(steps),
+        # Straight from the steps, so the routing view answers the one question
+        # the calibration cannot: how often does the cheap path actually settle
+        # a REAL brief, and how close were the ones it declined?
+        "fast_lane_steps": sum(1 for s in steps if s.get("layer") == "fast_lane"),
+        "judged_steps": sum(1 for s in steps if s.get("layer") == "judge"),
+        "failed_steps": sum(1 for s in steps if s.get("status") not in (None, "ok")),
+        # Which prompt answered this turn (T2.4). Prompts are editable without a
+        # deploy, so this is what pins a quality change to a prompt change.
+        "prompt_versions": t.prompt_versions,
+    }
+
+
+def list_routing(
+    db: Session,
+    *,
+    session: str | None = None,
+    routed_to: str | None = None,
+    only_multi_agent: bool = False,
+    limit: object = None,
+    offset: object = None,
+) -> dict:
+    """Per-turn routing detail, newest first.
+
+    NEWEST FIRST, unlike the handoffs queue — this is read to find out what just
+    happened, not worked through. The two orders are opposite on purpose.
+    """
+    lim, off = _clamp_page(limit, offset)
+    filters = []
+    if session:
+        filters.append(TurnTrace.session_id == session)
+    if routed_to:
+        filters.append(TurnTrace.routed_to == routed_to)
+
+    stmt = select(TurnTrace)
+    if filters:
+        stmt = stmt.where(*filters)
+    rows = list(
+        db.scalars(
+            stmt.order_by(TurnTrace.created_at.desc(), TurnTrace.id.desc())
+        ).all()
+    )
+    if only_multi_agent:
+        rows = [r for r in rows if r.steps]
+
+    total = len(rows)
+    return _envelope([_routing_row(r) for r in rows[off : off + lim]], total, lim, off)
+
+
+def routing_summary(db: Session) -> dict:
+    """How the cascade is behaving, in aggregate.
+
+    THE NUMBER THIS EXISTS FOR is `fast_lane_share`. The calibration predicted
+    the embedding shortcut would settle about a third of briefs; this says what
+    it settles on real ones. If it is far lower, the fast lane is not earning
+    its complexity and the honest move is to delete it and always judge.
+    """
+    traces = [t for t in db.scalars(select(TurnTrace)).all() if t.steps]
+    steps = [s for t in traces for s in (t.steps or [])]
+    if not steps:
+        return {
+            "turns": 0, "steps": 0, "fast_lane": 0, "judged": 0,
+            "fast_lane_share": None, "failed": 0, "by_agent": {},
+        }
+    fast = sum(1 for s in steps if s.get("layer") == "fast_lane")
+    judged = sum(1 for s in steps if s.get("layer") == "judge")
+    by_agent: dict[str, int] = {}
+    for s in steps:
+        agent = s.get("agent") or "unrouted"
+        by_agent[agent] = by_agent.get(agent, 0) + 1
+    return {
+        "turns": len(traces),
+        "steps": len(steps),
+        "fast_lane": fast,
+        "judged": judged,
+        "fast_lane_share": round(fast / len(steps), 3),
+        "failed": sum(1 for s in steps if s.get("status") not in (None, "ok")),
+        "by_agent": dict(sorted(by_agent.items(), key=lambda kv: -kv[1])),
+    }
 
 
 def _showroom_row(s: Showroom) -> dict:

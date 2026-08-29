@@ -24,6 +24,8 @@ const Customers = lazy(() => import('./admin/tabs/Customers'))
 const Conversations = lazy(() => import('./admin/tabs/Conversations'))
 const Notifications = lazy(() => import('./admin/tabs/Notifications'))
 const Audit = lazy(() => import('./admin/tabs/Audit'))
+const Handoffs = lazy(() => import('./admin/tabs/Handoffs'))
+const Routing = lazy(() => import('./admin/tabs/Routing'))
 
 const InsightsList = lazy(() =>
   import('./insights/Insights').then((m) => ({ default: m.InsightsList })),
@@ -56,6 +58,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="customers" element={<Customers />} />
             <Route path="conversations" element={<Conversations />} />
             <Route path="notifications" element={<Notifications />} />
+            <Route path="handoffs" element={<Handoffs />} />
+            <Route path="routing" element={<Routing />} />
             <Route path="audit" element={<Audit />} />
           </Route>
         </Routes>

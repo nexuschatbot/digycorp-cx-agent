@@ -41,6 +41,8 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 // import ForumRoundedIcon from '@mui/icons-material/ForumRounded'
 // import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
+import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded'
+import AltRouteRoundedIcon from '@mui/icons-material/AltRouteRounded'
 
 import { theme } from './theme'
 
@@ -107,6 +109,14 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'Agent',
     items: [
       // { to: '/admin/conversations', label: 'Conversations', Icon: ForumRoundedIcon },
+      // HANDOFFS IS FIRST IN THIS GROUP ON PURPOSE (T8.1). It is the only screen
+      // here that is a WORK QUEUE rather than a record: somebody is waiting for
+      // a call, and the plan's own note is that this became "the finish line for
+      // the highest-value conversations" once Aisha started taking money
+      // questions. Burying it under the audit trail would be burying the one
+      // thing on this panel that needs doing rather than reading.
+      { to: '/admin/handoffs', label: 'Handoffs', Icon: SupportAgentRoundedIcon },
+      { to: '/admin/routing', label: 'Routing', Icon: AltRouteRoundedIcon },
       { to: '/admin/audit', label: 'Audit trail', Icon: FactCheckRoundedIcon },
     ],
   },
