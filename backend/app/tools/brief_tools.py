@@ -117,7 +117,9 @@ EMIT_BRIEFS_SCHEMA = {
                             "type": "array",
                             "description": (
                                 "Indices of briefs in THIS list whose answers "
-                                "this one needs. Usually omitted."
+                                "this one needs. Usually omitted. Never use it "
+                                "for a fact you already hold — write that fact "
+                                "into this brief instead, so both run at once."
                             ),
                             "items": {"type": "integer"},
                         },
