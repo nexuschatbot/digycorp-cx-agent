@@ -3,6 +3,7 @@
 Source: `/Users/themacstore/Desktop/Digycorp/Elite-group` (333 files)
 Target: this repo, branch `test`
 Architecture: [elite-multiagent-architecture.md](elite-multiagent-architecture.md)
+Carried-forward defects: [OPEN-ISSUES.md](OPEN-ISSUES.md)
 
 **Rule zero: port, don't re-author.** Prose, comments, anchors, tools and tests
 move verbatim. Only assembly code (prompt composer, router, tool binding) is new.
@@ -217,14 +218,18 @@ against a 400ms first-audio budget makes the free pre-filter/sticky exits
 | 2 | Deploy model — source ships 4 containers (incl. Postgres + sf-sync); target is rsync + systemd + nginx, room for one service | S2, S9 | open |
 | 3 | `ruff check .` — 12 errors in ported tests, more expected across `app/`. Fix, or add a config matching how the source was linted? | CI | open |
 | 4 | Python — source dev runs 3.14, this repo's CI pins 3.12 | CI | open |
-| 5 | `tests/test_health.py` asserts `service == "digycorp-cx-agent"`; ported `main.py` is titled "Elite Test Drive Booking API" | S1 | open |
+| 5 | `tests/test_health.py` asserts `service == "digycorp-cx-agent"`; ported `main.py` is titled "Elite Test Drive Booking API" — **and the app serves `/api/health`, not `/health`, so `remote-deploy.sh` fails every deploy's health gate** ([OPEN-ISSUES.md #6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate)) | S1, **deploys** | open, now urgent |
 | 6 | `psycopg[binary]` left unpinned — not installed in the source venv, so no production version to copy | — | noted |
+
+Eight further defects, each with its live evidence, are in **[OPEN-ISSUES.md](OPEN-ISSUES.md)** — carried out of `multi-agent-migration` deliberately, to be fixed on their own branch.
 
 ## Multi-agent migration — Phases 0 to 8 (August 2026)
 
 Built and **connected**, on branch `multi-agent-migration`. **The single-agent
 path is untouched and still live**; everything new sits behind a flag, which is
-why all 1,532 tests still pass against the old shape.
+why the single-agent suite still passes against the old shape — **1,653 tests,
+12 failing as the dev `.env` stands** ([OPEN-ISSUES.md #5](OPEN-ISSUES.md#5-env-leaks-flags-into-pytest--10-failures)
+and [#6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate)).
 
 > **This section said "Done" for a phase while the cascade was unreachable.**
 > Every module existed and was tested; nothing in `app/` imported
@@ -301,6 +306,59 @@ system, all of it found by asking "who calls this?" rather than by a failing tes
 - **"Forget me" was a partial delete that looked complete** — `turn_trace` was
   never swept.
 - The **retention windows had been declared and never read** by anything.
+
+### Post-wiring hardening — 31 August 2026
+
+The cascade had been reachable for two days. **Six defects, none of which any
+test could see, all found by driving the app in a browser and reading the logs
+beside it.** Three commits: `8f8c80f`, `c47f9f1`, `a0130fe`.
+
+| # | Defect | How it presented | Fix |
+|---|---|---|---|
+| 1 | A specialist's reply was **discarded whole** when it held no JSON — 14 of 47 steps | the step returned `ok` with no findings, which `compose_input` put in neither list, so Aisha saw a lookup that was not there and briefed the same specialist three times over 22s | prose rides `_note`; a step that truly returns nothing is **named as a gap** |
+| 2 | The finance card declared `produces: [emi_estimate, on_road_price]` — **two names its tools never return** | `entities=[]` on every finance step, and no early settle: all five measured paid a second round to summarise what they already had | `produces: [on_road_aed]`. 2 rounds / 3.2–4.1s → 1 round / 1.3s, answer unchanged |
+| 3 | A specialist **asked for the same booking twice** — once by tool call, once by proposal, with different argument spellings | both survived the dedupe, both executed, **two identical cards**. One DB row only, because `booking.create`'s guard 2 is idempotent | proposals dedupe on *what the write acts on*, not on every argument |
+| 4 | **Accessories had no tool.** Seeded since T0.7, read by nothing | asked the price of the alloy wheel upgrade, Aisha said we did not hold it, with `4500` sitting in the row | `services/accessories.py` + `tools/accessory_tools.py` + the sales card entry |
+| 5 | **Retrieval buried the policy docs** whenever a customer named a car | `"warranty"` → warranty.md rank **1**; `"what warranty comes with the X70 FL Plus"` → rank **39** | `COLLECTION_FLOOR = 2`. 7/9 policy questions at a floor of one, **9/9 at two** |
+| 6 | **Visit details were promised and not recorded.** "my wife and two kids, we'll need a child seat" → `child_seat=0`, `companions` empty | nothing in the pipeline dropped them — the sub-agent that writes the booking had never been told the brief *is* the conversation it did not see | prose at three decision points: the testdrive card, `emit_briefs`, `create_booking` |
+
+**Why five of six were invisible to the suite.** Each is a disagreement between
+two things that are individually correct: a card and its tools (2), a tool call
+and a proposal (3), a table and the code (4), two collections and one ranking
+(5), a gatherer and a writer (6). A unit test asserts one side.
+
+**The latency picture, measured over ~120 calls.** Recorded here because it
+changed the ranking of what to fix next:
+
+| | fixed cost per call | per output token |
+|---|---|---|
+| Sonnet 4.6 (Aisha) | 2,401 ms | 20.0 ms (r = +0.94) |
+| Haiku 4.5 (specialists) | 1,123 ms | 7.3 ms (+2,248 ms per extra round) |
+
+The fixed cost held flat (r ≈ 0) against **every input the app controls** —
+prompt length, cache state, tool count, brief count — so it is not shortenable
+from here. A median 17.7s cascade turn was prefill 5.2s (30%), **Aisha's own
+typing 7.4s (42%)**, specialists 5.1s (29%). Post-fix p50 14.7s, small sample,
+directional only. Detail and the remaining levers:
+[OPEN-ISSUES.md #2](OPEN-ISSUES.md#2-the-per-model-call-latency-floor).
+
+**Also shipped that day:** `MAX_CASCADES_PER_TURN` (default 2) — a ceiling on
+re-briefing within one turn, refused as a `tool_result` rather than an error so
+Aisha answers from what she already has. It is a **number, not a constant**, and
+whether it costs answer quality is unmeasured —
+[OPEN-ISSUES.md #3](OPEN-ISSUES.md#3-max_cascades_per_turn--2-is-an-unproven-guess).
+
+**All ten of Elite's workbook sheets were audited against what the app can
+answer.** Models, Stock, On-Road Pricing and Financing are wired and correct
+(banks 3/3, stock 330 rows); Purchase Confirmation was already prose in the
+finance card; Warranty, Delivery, Registration and Promotions existed but were
+buried by defect 5; Accessories was defect 4.
+
+**What was NOT fixed, and why:** eight items, each with its evidence and the
+reason it needs a decision rather than a patch →
+**[OPEN-ISSUES.md](OPEN-ISSUES.md)**. The one to take first is a specialist that
+narrates instead of proposing the write — two of three live booking runs
+succeeded, and the third ended in a human handoff.
 
 ---
 

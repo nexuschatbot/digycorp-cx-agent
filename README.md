@@ -77,6 +77,12 @@ Merging into `test`, `elite-prod`, or `general-prod` triggers
 that branch's Azure VM over SSH, runs `scripts/remote-deploy.sh` to install
 dependencies and restart services, then polls `/health` until it returns 200.
 
+> ⚠️ **That poll cannot succeed.** The ported app serves `/api/health` and
+> nothing serves the bare path, so `remote-deploy.sh` retries fifteen times and
+> exits 1 on a service that started fine. Open decision 5 in
+> [docs/MIGRATION.md](docs/MIGRATION.md) — detail and the two ways out in
+> [docs/OPEN-ISSUES.md](docs/OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate).
+
 Each target reads its own repository secrets:
 
 | Secret                  | Purpose                                    |

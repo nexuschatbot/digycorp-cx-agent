@@ -1,9 +1,16 @@
 # Elite Dealership AI — Multi-Agent Architecture
 
-**Version 2.1 — 29 August 2026.** Rewritten after Phases 0–8 were built; revised
-once the cascade was actually connected. v1.2 was a *specification*; this is a
+**Version 2.2 — 31 August 2026.** Rewritten after Phases 0–8 were built; revised
+once the cascade was actually connected (v2.1), and again after two days of
+driving it in a browser (v2.2). v1.2 was a *specification*; this is a
 *description*, and where the two disagree the code is right and v1.2 is
 superseded.
+
+> **What v2.2 changed.** §3.7 (a global ranking buries cross-cutting policy),
+> §5 (the collection floor), §6's third category — *built, reachable, and
+> throwing its own answer away* — and §8, the latency budget, which is new.
+> Defects still open are in **[OPEN-ISSUES.md](OPEN-ISSUES.md)** rather than
+> here: this document describes the system, that one lists what to fix next.
 
 > **What v2.0 got wrong, recorded because the failure mode is the interesting
 > part.** v2.0 said the cascade was "built, tested and switched off behind
@@ -29,8 +36,9 @@ Alembic · ONNX embeddings · Redis (cache only)
 
 **The single agent is still the live path.** The multi-agent cascade is built,
 wired into the graph, and switched off behind `MULTI_AGENT_ENABLED`. Nothing was
-taken away to make room for it, which is why all 1,532 tests still pass against
-the old shape.
+taken away to make room for it, which is why the single-agent suite still passes
+against the old shape — **1,653 tests, 12 failing as the dev `.env` stands**, ten
+of them *because* of it and two predating the port (OPEN-ISSUES.md #5 and #6).
 
 Wired means specifically: Aisha holds an `emit_briefs` tool; a generation
 containing it routes to an `orchestrator` node instead of the tools node; that
@@ -39,6 +47,13 @@ her next generation composes the reply through the existing streaming, script
 guard, sanitiser and card anchors rather than a second path that would drift from
 them. With the flag off she is handed the same 22 tools as before, byte for byte,
 which is what keeps the ~14.8k cached prefix alive.
+
+**In dev, both flags are now on** (`backend/.env`), which is how the six defects
+of 31 August were found — see
+[MIGRATION.md](MIGRATION.md#post-wiring-hardening--31-august-2026). They ship
+**off**, and the suite still runs against the single-agent contract, which is a
+problem in itself: nothing pins the flag for pytest the way `ROUTER_ENABLED` is
+pinned ([OPEN-ISSUES.md #5](OPEN-ISSUES.md#5-env-leaks-flags-into-pytest--10-failures)).
 
 Two other switches gate the other new capabilities:
 
@@ -80,7 +95,7 @@ action `orchestrator/write.py` cannot execute.
 
 ---
 
-## 3. Six things the build proved wrong about the specification
+## 3. Seven things the build proved wrong about the specification
 
 These are the entries worth reading. Everything else went roughly as v1.2 said.
 
@@ -154,6 +169,29 @@ Aisha writing notes-to-self in the **third person** before tool calls — and
 petrol T2 (already confirmed above)."* No test would have caught it. Fixed in
 Phase 6.
 
+### 3.7 A purely global ranking buries the documents policy lives in
+
+`retrieval/index.py` ranked every collection on one scale, on the stated
+reasoning that a per-collection quota "would only encode a guess about where
+facts live". **The reasoning was sound and the premise was false**, and one
+measurement says so:
+
+| question | where warranty.md ranked |
+|---|---|
+| `"warranty"` | **1** |
+| `"what warranty comes with the X70 FL Plus"` | **39** |
+
+Naming the car buries the answer. Every score on this corpus sits in 0.83–0.89,
+so nothing discriminates strongly — and a model name appears on **every page** of
+that model's brochure while the topic word appears once. The brochure wins on
+volume and takes all five slots. The same held for delivery, registration and
+promotions: **policy is cross-cutting, brochures are numerous, and a customer
+almost always names the car.**
+
+The fix is a floor, not a threshold — see §5. It is worth recording as a wrong
+prediction rather than a bug, because the argument against quotas was a good one
+and it still lost to a measurement.
+
 ---
 
 ## 4. Data
@@ -168,6 +206,14 @@ Nine models, **fifteen variants**, 330 stock rows across 5 branches, 7,544 units
 
 **Prices live in exactly one place**, at variant level. Two price sources is how
 a customer is quoted one number in chat and another on the invoice.
+
+**Being in the database is not the same as being reachable.** The `accessories`
+table was seeded at T0.7 — five priced parts, straight from Elite's sheet — and
+until 31 August **nothing read it**: no service, no tool, no endpoint. A customer
+asking the price of the alloy wheel upgrade was told we did not hold it, with
+`4500` sitting in the row. `services/accessories.py` and `tools/accessory_tools.py`
+now do. All ten workbook sheets have since been audited against what the app can
+actually answer; that was the only one with no path at all.
 
 ---
 
@@ -186,16 +232,37 @@ to.
 **Scores are compressed into 0.75–0.87 on this corpus.** Absolute thresholds are
 meaningless anywhere in this system; rank and margin are the only usable signals.
 
+**`COLLECTION_FLOOR = 2`** (31 August). Two slots of five are reserved for each
+collection's own best chunks before the global ranking fills the rest — the fix
+for §3.7. Measured over nine policy questions, four topics, asked both bare and
+with a model named:
+
+| floor | reached the right document | slots spent |
+|---|---|---|
+| 1 | 7 / 9 | 1 of 5 |
+| **2** | **9 / 9** | 2 of 5 |
+
+The two that a floor of one missed were both promotions, and both lost *inside*
+the knowledge collection by under 0.005 — noise on this model, not a judgement.
+One slot represents a collection; two represent it reliably.
+
+**A floor needs no threshold**, which is why it is the right shape here: it asks
+each collection for its best, not for anything above a number. And it is cheaper
+than it looks — the slots it takes from a pure spec question were never the ones
+answering it, because seats, engines and trims come from `search_vehicles`, not
+from retrieval.
+
 ---
 
-## 6. What is not done, and what was done but unreachable
+## 6. What is not done, what was unreachable, and what threw its answer away
 
-Split up, because v2.0 conflated them and that is how the wiring gap hid for
-a whole phase. **Not built** is visible — the code is absent, and anyone reading for it finds
-nothing. **Built and not reachable** is invisible: every test passes, every module
-is complete, the imports all resolve, and the only symptom is a feature that does
-nothing when you switch it on. A third category, **measured wrong**, is worse
-again — it returns a number.
+Split up, because v2.0 conflated the first two and that is how the wiring gap hid
+for a whole phase. **Not built** is visible — the code is absent, and anyone
+reading for it finds nothing. **Built and not reachable** is invisible: every test
+passes, every module is complete, the imports all resolve, and the only symptom is
+a feature that does nothing when you switch it on. **Built, reachable, and
+discarding its own answer** is worse than either, because the feature appears to
+work. And **measured wrong** is worse again — it returns a number.
 
 ### Not built
 
@@ -228,6 +295,30 @@ All four are now closed. The guard against a recurrence is
 `tests/test_subagent_tools.py`, which fails the build when a card declares a tool
 nothing provides, and `log.error` where the silent `continue` used to be.
 
+### Built, reachable, and throwing the answer away
+
+Two days of running the connected cascade in a browser found **six more**, and
+they are a different shape again: the code ran, the tool returned, the specialist
+answered — and something downstream dropped it on the floor. Full table and
+measurements in
+[MIGRATION.md](MIGRATION.md#post-wiring-hardening--31-august-2026); the pattern is
+what belongs here.
+
+| what | what was thrown away |
+|---|---|
+| `_parse_findings` returned `{}` for any reply with no JSON | **the entire prose answer**, on 14 of 47 steps — the step came back `ok` and empty, which `compose_input` put in neither list, so Aisha re-briefed the same specialist three times over 22 seconds |
+| the finance card declared two entities its tools never return | every harvest, so `entities=[]` and no early settle — all five measured finance steps paid a **second model round** to summarise what they already held |
+| a specialist called `create_booking` *and* proposed it, spelled differently | nothing — it kept **both**, and drew the customer two identical booking cards |
+| nothing read the `accessories` table | five priced products, seeded and invisible |
+| retrieval ranked globally | the document that answered the question, whenever the customer named a car (§3.7) |
+| the sub-agent that writes the booking never saw the conversation that gathered the visit details | the child seat Aisha had just promised |
+
+**Five of the six are a disagreement between two things that are each correct on
+their own** — a card and its tools, a tool call and a proposal, a table and the
+code, two collections and one ranking, a gatherer and a writer. A unit test
+asserts one side of a disagreement, which is why the suite was green through all
+of them and one afternoon in a browser was not.
+
 ### Measurement, which is its own trap
 
 - **The T0.1 baseline has not been re-run** against a *correct* fixture (T8.4).
@@ -256,4 +347,48 @@ nothing provides, and `log.error` where the silent `continue` used to be.
 4. **The T1 brochure and the catalogue disagree on fuel economy** by roughly a
    factor of two.
 5. **Accessories have no Arabic** — an Arabic conversation gets a price and an
-   English sentence.
+   English sentence. **This stopped being theoretical on 31 August**: until then
+   nothing read the table, so nobody could ask. A tool now does.
+
+---
+
+## 8. What a turn costs, and where the time goes
+
+Measured over ~120 live calls on 31 August, from a dev laptop. Recorded because
+it changed the ranking of what to optimise, and the answer was not the expected
+one.
+
+| | fixed cost per call | per output token |
+|---|---|---|
+| Sonnet 4.6 (Aisha) | **2,401 ms** | 20.0 ms (r = +0.94) |
+| Haiku 4.5 (specialists) | **1,123 ms** | 7.3 ms (+2,248 ms per extra round) |
+
+**The fixed cost is not something the app can shorten.** It held flat (r ≈ 0)
+against every input the code controls — prompt length, cache state, tool count,
+brief count. Prompt caching still pays for itself on price; it does not buy
+latency here.
+
+Where a median 17.7s cascade turn went, before the 31 August fixes:
+
+| | | |
+|---|---|---|
+| prefill, all calls | 5.2 s | 30% |
+| **Aisha's own typing** | **7.4 s** | **42%** |
+| specialists | 5.1 s | 29% |
+
+**The largest single line is Aisha's output tokens**, which the routing and
+fan-out work had not predicted. Of those, roughly **110 tokens per call are the
+`emit_briefs` JSON** — never read by a customer, billed at 20 ms each.
+
+Two earlier suspicions did not survive measurement. The routing judge was said to
+cost "~1.3s in front of each step"; the parallel-judge change had already fixed
+it and selection overhead measures **1 ms**. And `turn_trace.streamed` counts
+writer *emissions*, not tokens — reading it as tokens makes a healthy turn look
+like a silent one.
+
+Post-fix p50 was **14.7 s** on a small sample: directional, not a result. The
+remaining levers, and the decisions they need, are
+[OPEN-ISSUES.md #2](OPEN-ISSUES.md#2-the-per-model-call-latency-floor).
+
+**None of this is the UAE VM.** Like the S7 router numbers, it is a laptop
+measurement and must be re-taken on the box that will serve it.
