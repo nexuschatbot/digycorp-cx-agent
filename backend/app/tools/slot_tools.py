@@ -51,7 +51,11 @@ GET_AVAILABLE_SLOTS_SCHEMA = {
         "means we have nothing matching. Say so and offer the nearest real "
         "alternative — a different day, showroom, or a doorstep drive. Each "
         "slot has start_human for speaking to the customer and start_iso for "
-        "your own reasoning; quote the human form, in their language."
+        "your own reasoning; quote the human form, in their language.\n\n"
+        "A slot marked held_by_you is NOT taken: it is the slot THIS customer "
+        "already chose, held for them while the booking is finished. Never "
+        "report a held_by_you slot as unavailable and never offer alternatives "
+        "to it — finishing the booking on that slot is the next step."
     ),
     "input_schema": {
         "type": "object",
@@ -149,7 +153,11 @@ def get_available_slots(
     earliest_hour: object = None,
     **_ignored: object,
 ) -> dict:
-    """Thin wrapper over slots.query_available (AD-J: in-process, never HTTP)."""
+    """Thin wrapper over slots.query_available (AD-J: in-process, never HTTP).
+
+    session_id goes through so the session's OWN held slot stays visible,
+    flagged `held_by_you` — see the note on query_available.
+    """
     if vehicle_id is None:
         return {"error": "missing_vehicle_id", "slots": []}
     return slots.query_available(
@@ -161,6 +169,7 @@ def get_available_slots(
         date_to=date_to,
         daypart=daypart or "",
         earliest_hour=earliest_hour,
+        session_id=session_id,
     )
 
 

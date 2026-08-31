@@ -83,6 +83,13 @@ your findings:
 
 The actions you may ask for are: %s
 
+The args each action takes — use these exact names: \
+hold_slot {"slot_id"}; \
+create_booking {"vehicle_id", "slot_id"}; \
+reschedule_booking {"ref" or "mobile", "new_slot_id" — the slot to MOVE TO, \
+already held}; \
+cancel_booking {"ref" or "mobile"}.
+
 An entry is a REQUEST, not a result. It may be refused — because the step before \
 it has not happened, because the slot went, because a rule says not yet. So never \
 write in your note that something HAS been done, booked, held or cancelled. Say \
@@ -157,6 +164,27 @@ def _proposals_clause(agent: str) -> str:
     return PROPOSALS_INSTRUCTION % ", ".join(actions)
 
 
+# The write tools take `ref`, but the card prose and the model both reach for
+# `booking_ref` — the name every tool RESULT uses. Read, don't insist: an alias
+# is not a different request. Ints arrive as strings for the same reason (the
+# model copies them out of prose), and write.execute passes args straight to the
+# tool function, so they are coerced here or not at all.
+_PROPOSAL_ALIASES = {"booking_ref": "ref", "reference": "ref"}
+_PROPOSAL_INTS = ("slot_id", "new_slot_id", "vehicle_id", "variant_id")
+
+
+def _proposal_args(raw: dict) -> dict:
+    """One tool_use's input, in the shape write.execute will actually call with."""
+    out: dict = {}
+    for key, value in (raw or {}).items():
+        out[_PROPOSAL_ALIASES.get(key, key)] = value
+    for key in _PROPOSAL_INTS:
+        value = out.get(key)
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            out[key] = int(value.strip())
+    return out
+
+
 def _validate_proposals(agent: str, raw: list[dict]) -> list[dict]:
     """Keep only what this agent's card actually permits it to ask for.
 
@@ -181,7 +209,29 @@ def _validate_proposals(agent: str, raw: list[dict]) -> list[dict]:
     return out
 
 
-def _harvest_entities(agent: str, tool_results: list[dict]) -> dict:
+# WHAT A TOOL OFFERS IS NOT WHAT THE CUSTOMER CHOSE (found live, 2026-08-31).
+#
+# get_available_slots returns a LIST of times nobody has picked yet, and the
+# walk below takes the first `slot_id` it meets anywhere. On a reschedule that
+# ran get_booking then get_available_slots, run.execute's last-step-wins fold
+# put slot 477 — 5 PM, the first row of the offer — into session_facts, over
+# the top of the booking's real slot. The customer had chosen 6:30 PM.
+#
+# THE FIRST ROW IS THE RIGHT ANSWER FOR A SEARCH AND THE WRONG ONE FOR AN OFFER,
+# and that is the whole distinction. search_vehicles is RANKED — its first row
+# is the one the agent recommended, which is why the walk works that way and
+# must keep working that way (see the docstring below). A list of free times
+# carries no recommendation at all: the customer picks, and until they do
+# nothing is established. So availability is excluded from `slot_id` by name,
+# rather than the walk being made cleverer.
+_OFFERS_NOT_FACTS: dict[str, frozenset[str]] = {
+    "get_available_slots": frozenset({"slot_id"}),
+}
+
+
+def _harvest_entities(
+    agent: str, tool_results: list[dict], tools: list[str] | None = None
+) -> dict:
     """Pull the entities this agent DECLARES IT PRODUCES out of its tool results.
 
     WHY THIS EXISTS, FOUND BY RUNNING IT FOR REAL. The findings instruction asks
@@ -208,18 +258,27 @@ def _harvest_entities(agent: str, tool_results: list[dict]) -> dict:
 
     found: dict = {}
 
-    def _walk(node):
+    def _walk(node, harvestable: frozenset):
         if isinstance(node, dict):
             for key, value in node.items():
-                if key in wanted and key not in found and isinstance(value, (int, str)):
+                if (
+                    key in harvestable
+                    and key not in found
+                    and isinstance(value, (int, str))
+                ):
                     found[key] = value
-                _walk(value)
+                _walk(value, harvestable)
         elif isinstance(node, list):
             for item in node:
-                _walk(item)
+                _walk(item, harvestable)
 
-    for result in tool_results:
-        _walk(result)
+    # `tools` is parallel to `tool_results` — both are appended in the same
+    # branch of the dispatch loop. Omitted (the unit tests, and any caller that
+    # has only the bare results), nothing is excluded and this behaves exactly
+    # as it did.
+    for index, result in enumerate(tool_results):
+        tool = tools[index] if tools and index < len(tools) else None
+        _walk(result, wanted - _OFFERS_NOT_FACTS.get(tool, frozenset()))
         if wanted <= set(found):
             break
     return found
@@ -326,6 +385,20 @@ def run_step(
         + _proposals_clause(step.agent)
     )
     schemas = _schemas_for(step.agent)
+    # THE BINDING, ENFORCED AT THE EXECUTION SITE — the same lesson dispatch
+    # learned for Aisha on 2026-08-29, relearned here on 2026-08-31. The card
+    # prose is ported single-agent journey text and it SAYS "call
+    # cancel_booking"; Haiku obliged with a tool_use it was never offered, and
+    # with no `allow` this loop ran it through SUBAGENT_TOOL_FNS — which holds
+    # every write. The booking survived only because a sub-agent session never
+    # commits; the model saw the call go through and reported the cancellation
+    # as done. A schema list constrains what is OFFERED, never what a model
+    # emits — the allowlist has to travel with the dispatch.
+    allowed = frozenset(s["name"] for s in schemas)
+    # WHAT THIS AGENT MAY ASK FOR — the same card list `_proposals_clause`
+    # advertises. A tool_use naming one of these is intercepted below rather
+    # than refused: see the loop.
+    proposable = frozenset(_proposes(step.agent))
 
     # WHAT THE SUB-AGENT IS TOLD, AND WHAT IT IS NOT. The brief, the entities an
     # earlier step produced, and the customer's stated CONSTRAINTS. Never a name,
@@ -333,6 +406,27 @@ def run_step(
     # here, and this is the data-minimisation line (see agent/profile.py).
     parts = [f"Request: {step.brief}"]
     known = {k: v for k, v in (context or {}).items() if v is not None}
+    # THE BOOKING STATE GOES IN AS DATA, not instruction (found live,
+    # 2026-08-31). A hold sets the slot to `locked`, and a sub-agent briefed to
+    # finish the booking used to re-verify with get_available_slots, find the
+    # customer's own held slot missing, and report their choice as taken — on
+    # every slot they picked. Handing it the SAME derived state the write gate
+    # enforces (booking_state.read, never raises) means the cascade and the
+    # gate cannot disagree about where the booking is: a held slot arrives as
+    # an established fact, and the remaining step is to propose create_booking.
+    try:
+        from app.orchestrator import booking_state as _booking_state
+
+        _bstate = (
+            _booking_state.read(db, session_id, customer_id=customer_id)
+            if db is not None else None
+        )
+        if _bstate is not None and _bstate.slot_id is not None:
+            known.setdefault("held_slot_id", _bstate.slot_id)
+            known.setdefault("booking_stage", _bstate.stage)
+            known.setdefault("licence_acknowledged", _bstate.licence_acknowledged)
+    except Exception:  # noqa: BLE001 — context enrichment must never kill a step
+        log.warning("could not read booking state for %s", step.agent, exc_info=True)
     if known:
         parts.append(f"Already established: {json.dumps(known)}")
     if profile:
@@ -350,6 +444,10 @@ def run_step(
     # or where the seconds went. Every duplicate card on screen is one of these
     # calls, so the tool sequence IS the explanation for a repeated card.
     called: list[str] = []
+    # Write tool_uses READ AS PROPOSALS (see the dispatch loop). Kept apart from
+    # whatever the model writes into its JSON so the two can be merged, deduped
+    # and validated together at the settle point.
+    intercepted: list[dict] = []
     rounds = 0
     # Summed across the step's rounds. `cache_read` is the number that says
     # whether the caching above is working at all: it is 0 on the first round
@@ -428,15 +526,42 @@ def run_step(
             # Whatever it wrote is kept as context; the ids the next step needs
             # are read from what the tools actually returned. See
             # _harvest_entities for the live failure that made this necessary.
-            harvested = _harvest_entities(step.agent, seen_results)
+            harvested = _harvest_entities(
+                step.agent, seen_results, [e["tool"] for e in evidence]
+            )
             for key, value in harvested.items():
                 findings.setdefault(key, value)
-            if "_proposals" in findings:
-                kept = _validate_proposals(step.agent, findings["_proposals"])
+            # WHAT IT ASKED FOR, however it asked. A model that called the
+            # tool AND wrote the proposal has asked once, not twice — deduped
+            # on (action, args) because write.execute_all runs a list in order
+            # and would otherwise reschedule the same booking to the same slot
+            # twice. Intercepts come first: they carry the tool's own argument
+            # names, already normalised.
+            proposed = list(intercepted)
+            for item in findings.get("_proposals") or []:
+                if isinstance(item, dict):
+                    proposed.append(
+                        {"action": item.get("action"),
+                         "args": _proposal_args(item.get("args") or {})}
+                    )
+            deduped: list[dict] = []
+            seen_keys: set[str] = set()
+            for item in proposed:
+                key = json.dumps(
+                    [item.get("action"), item.get("args")], sort_keys=True, default=str
+                )
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                deduped.append(item)
+            if deduped:
+                kept = _validate_proposals(step.agent, deduped)
                 if kept:
                     findings["_proposals"] = kept
                 else:
-                    findings.pop("_proposals")
+                    findings.pop("_proposals", None)
+            else:
+                findings.pop("_proposals", None)
             # Lifted off findings by run.execute, like _proposals. Underscored
             # so it can never be mistaken for something the model wrote.
             if evidence:
@@ -465,13 +590,79 @@ def run_step(
         for use in tool_uses:
             called.append(use.name)
             args_chars += len(json.dumps(dict(use.input or {}), default=str))
+
+            # A WRITE IT MAY ASK FOR IS READ AS THE ASKING (found live,
+            # 2026-08-31, and this is the second attempt at it).
+            #
+            # The card body is ported single-agent journey prose and it SAYS
+            # "call reschedule_booking"; ~10k tokens later the proposals clause
+            # says to ask instead. The prose wins, every time. The first fix
+            # enforced the binding at dispatch — correct, and it stopped the
+            # write — but a refusal is not an outcome: measured live, a
+            # reschedule went sub-agent tool_use -> refused, Aisha re-briefed,
+            # sub-agent tool_use -> refused, Aisha tried the tool HERSELF ->
+            # refused, and the customer was told to phone the helpline. The
+            # booking never moved. Half of all cascades that day ended this way.
+            #
+            # ASKING HARDER IS THE WRONG FIX and this repo has learned it twice
+            # already (sanitise.py on rule 17, _harvest_entities on the ids).
+            # The request is not something the model needs to re-express in a
+            # different shape: a tool_use for `cancel_booking` with a ref IS the
+            # proposal, in the tool's own argument names, and reading it as one
+            # is deterministic. So it is lifted here and the round is spent.
+            #
+            # NOTHING IS EXECUTED AND NO GATE MOVES. This produces a REQUEST on
+            # exactly the path a well-behaved proposal takes — _validate_proposals
+            # checks it against the card, booking_state says whether it is valid
+            # now, and the service guards refuse independently underneath. The
+            # allowlist below is untouched: a write this agent may NOT propose
+            # still reaches _dispatch and is still refused.
+            if use.name not in allowed and use.name in proposable:
+                args = _proposal_args(dict(use.input or {}))
+                intercepted.append({"action": use.name, "args": args})
+                log.info(
+                    "%s asked for %s as a tool; reading it as a proposal",
+                    step.agent, use.name,
+                )
+                # NO tool_event AND NO evidence. Nothing happened yet — a card
+                # drawn from this would show the customer a change that has not
+                # been decided, and `evidence` is what the TOOLS returned.
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": use.id,
+                    "content": json.dumps({
+                        "requested": use.name,
+                        "args": args,
+                        "detail": (
+                            f"Recorded as a request to {use.name}. You do not "
+                            "perform writes; somebody else decides whether this "
+                            "happens and the customer is told by somebody else. "
+                            "Do not say it has been done. Report your findings "
+                            "now — there is nothing further to call."
+                        ),
+                    }),
+                })
+                continue
+
             result = tool_node._dispatch(
                 db, session_id, use.name, dict(use.input or {}),
                 customer_id, correlation_id,
                 # The sub-agent surface: TOOL_FNS plus the five card reads.
                 # Passed explicitly so the single agent's dispatch is untouched.
                 fns=SUBAGENT_TOOL_FNS,
+                allow=allowed,
             )
+            if result.get("error") == "tool_not_available":
+                # Dispatch's stock refusal points at emit_briefs — Aisha's
+                # mechanism, which a sub-agent does not have. Its way to ask
+                # for a commercial action is the proposals list.
+                result["detail"] = (
+                    f"{use.name} is not one of your tools. If the request "
+                    "needs a commercial action — holding a slot, creating, "
+                    "moving or cancelling a booking — add it to the "
+                    "`proposals` list beside your findings instead; you never "
+                    "perform writes yourself."
+                )
             # FORWARDED, OR THE CARDS VANISH. runner._card_anchor builds the
             # vehicle and slot cards from these; a sub-agent that emits them
             # nowhere produces a turn with no cards and no error.

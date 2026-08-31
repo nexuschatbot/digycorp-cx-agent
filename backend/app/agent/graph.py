@@ -1282,12 +1282,37 @@ def _stream_sink(writer):
     return _post
 
 
-def _known_entities(state: AgentState) -> set[str]:
+def _known_entities(state: AgentState, cfg: dict | None = None) -> set[str]:
     """Entities this session already established, so a follow-up runs alone.
 
     Without this, "book it for Saturday" looks like it needs a Sales step to
     produce the vehicle_id the customer settled on ten turns ago — and the
     TestDrive brief comes back blocked on a question nobody asked.
+
+    SESSION_FACTS IS NOT THE ONLY EVIDENCE, and believing it was cost a whole
+    cascade per reschedule (found live, 2026-08-31). `_agent_node` reads the
+    customer's live bookings and held slot from the DB on EVERY generation and
+    renders them into the prompt, so Aisha opened the turn by saying "you have
+    a booking, TD-2026-7QHB, the Jetour G700, at Jetour Al Quoz" — and then the
+    orchestrator blocked her TestDrive brief for want of a booking_ref, because
+    only tool_node and _fold_cascade_facts write session_facts and neither had
+    run. The customer waited through a dead cascade, Aisha re-briefed with the
+    reference spelled into the text (which run.plan_turn detects), and the same
+    answer arrived two model calls later.
+
+    READ, NOT REMEMBERED, for exactly the reason the bookings anchor is read
+    fresh each generation rather than folded into session_facts: a booking
+    CHANGES — the console, a reminder tap and the WhatsApp handoff can all move
+    it — so a value cached at tool time goes stale inside the same conversation.
+
+    NAMES ONLY, NEVER VALUES. This returns the SET of entities that exist, which
+    is all `order.resolve` needs to decide what may run; the values still come
+    from the steps that produce them. So nothing here can put a stale booking
+    reference in front of a sub-agent.
+
+    Failure is degradation, never a dead turn — the same telemetry-grade caution
+    the anchor itself follows. A failed read leaves `known` exactly as it was
+    before this existed.
     """
     from app.orchestrator import order as _order
 
@@ -1295,7 +1320,30 @@ def _known_entities(state: AgentState) -> set[str]:
     producible: set[str] = set()
     for agent in ("sales", "testdrive", "finance"):
         producible |= _order.produces(agent)
-    return {k for k in producible if facts.get(k) is not None}
+    known = {k for k in producible if facts.get(k) is not None}
+
+    cfg = cfg or {}
+    db = cfg.get("db")
+    if db is None:
+        return known
+    try:
+        customer_id = state.get("customer_id")
+        if (
+            "booking_ref" in producible
+            and customer_id is not None
+            and booking.for_customer(db, customer_id=customer_id)
+        ):
+            known.add("booking_ref")
+        if "slot_id" in producible and slots.held_by_session(
+            db, session_id=cfg.get("session_id", "")
+        ):
+            known.add("slot_id")
+    except Exception:  # noqa: BLE001 — an anchor must not be able to break a turn
+        log.exception(
+            "could not read live bookings for the ordering — continuing without them "
+            "(session=%s)", cfg.get("session_id", "?"),
+        )
+    return known
 
 
 def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
@@ -1366,15 +1414,27 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
         row = {"action": r.action, "status": r.status, "detail": r.detail}
         # WHAT AISHA MAY SAY. The reference and the slot she needs to read a
         # confirmation back, and nothing else from the write's internals.
-        for key in ("booking_ref", "slot_id", "starts_at", "showroom_name"):
-            if r.result.get(key) is not None:
-                row[key] = r.result[key]
+        #
+        # THE SERVICES NEST THESE UNDER "booking" (found live, 2026-08-31):
+        # create/reschedule/cancel all return {"booking": _booking_dict(...)},
+        # and reading only the top level here meant an EXECUTED create_booking
+        # reached Aisha with no reference at all — she told the customer it
+        # hadn't come through while the card drew from a follow-up get_booking.
+        inner = r.result.get("booking")
+        inner = inner if isinstance(inner, dict) else {}
+        for key in ("booking_ref", "slot_id", "start_human", "start_iso", "showroom_name"):
+            val = r.result.get(key)
+            if val is None:
+                val = inner.get(key)
+            if val is not None:
+                row[key] = val
         out.append(row)
         # The booking event the UI draws its card from, same as tool_node emits.
-        if r.ok and r.result.get("booking_ref"):
+        booked_ref = r.result.get("booking_ref") or inner.get("booking_ref")
+        if r.ok and booked_ref:
             writer = _safe_writer()
             if writer:
-                writer({"type": "booking", "booking_ref": r.result["booking_ref"]})
+                writer({"type": "booking", "booking_ref": booked_ref})
     log.info("orchestrator writes — session=%s %s", session_id,
              [(r.action, r.status) for r in results])
     return out
@@ -1493,7 +1553,7 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                     # read-only sub-agents get their own and never commit.
                     session_factory=SessionLocal,
                 ),
-                known=_known_entities(state),
+                known=_known_entities(state, cfg),
                 judge=_judge,
                 deadline_seconds=remaining,
                 parent_writer=_stream_sink(_safe_writer()),

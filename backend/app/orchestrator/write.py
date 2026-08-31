@@ -148,9 +148,17 @@ def execute(
         # A SERVICE GUARD SAID NO — the licence reminder, lock ownership, a slot
         # already taken. Reported as data so Aisha can say what happened, and
         # NOT converted into an exception: this is the system working.
+        #
+        # THE REMEDIATION RIDES ALONG (found live, 2026-08-31). The services
+        # write their refusals in two parts — a slug ("identity_not_verified")
+        # and a `detail` sentence saying what to DO about it. Passing only the
+        # slug starved Aisha into guessing: told just "refused:
+        # identity_not_verified", she announced the customer's own held slot
+        # had been taken. The sentence names the next step; she follows it.
         return WriteResult(
             action=action, status="refused",
-            result=result, detail=str(result.get("error")),
+            result=result,
+            detail=str(result.get("detail") or result.get("error")),
             correlation_id=correlation_id,
         )
 

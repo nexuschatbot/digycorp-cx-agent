@@ -8,9 +8,14 @@ anything, so her ordering is a HINT, checked here against what the cards declare
 
 THE CHECK IS `requires` / `produces`, DECLARED IN EACH CARD:
 
-    sales      requires []                produces vehicle_id, variant_id
-    testdrive  requires [vehicle_id]      produces slot_id, booking_ref
-    finance    requires [variant_id]      produces emi_estimate, on_road_price
+    sales      requires []                          produces vehicle_id, variant_id
+    testdrive  requires [vehicle_id|booking_ref]    produces slot_id, booking_ref
+    finance    requires [variant_id]                produces emi_estimate, on_road_price
+
+A `|` in an entry names ALTERNATIVES — either member satisfies the group. The
+manage journey is why: a booking reference identifies the booking (and thereby
+the car), so "cancel TD-2026-XXXX" must not block on the vehicle_id that only
+the NEW-booking journey needs. See requires_groups.
 
 So "book a test drive for the X70" cannot run TestDrive first, whatever Aisha
 said — and if she said otherwise, that disagreement is LOGGED rather than
@@ -53,6 +58,11 @@ class Step:
     agent: str
     depends_on: tuple[int, ...] = ()   # indices into the ORIGINAL brief list
     index: int = 0
+    # Entities THIS BRIEF ITSELF carries — a booking reference the customer
+    # said, detected deterministically by run.plan_turn. Satisfies this step's
+    # requirements alone: what one brief carries is not made available to the
+    # others, so a ref in a cancel brief cannot unblock an unrelated step.
+    carries: frozenset = frozenset()
 
 
 @dataclass
@@ -80,8 +90,39 @@ def _card(agent: str) -> dict:
         return {}
 
 
+def requires_groups(agent: str) -> list[frozenset[str]]:
+    """The card's requirements as ALTERNATIVE GROUPS (found live, 2026-08-31).
+
+    A card entry may name alternatives with `|`: `vehicle_id|booking_ref` is
+    satisfied when EITHER is available. TestDrive needs a vehicle_id to book a
+    NEW drive, but a booking reference is a complete identity for the manage
+    journey — the booking already knows its vehicle, and blocking "cancel
+    TD-2026-XXXX" for want of a vehicle_id asks "which car?" of someone holding
+    a ticket with the car printed on it.
+    """
+    return [
+        frozenset(part.strip() for part in str(entry).split("|") if part.strip())
+        for entry in (_card(agent).get("requires") or [])
+    ]
+
+
 def requires(agent: str) -> set[str]:
-    return set(_card(agent).get("requires") or [])
+    """Every entity named anywhere in the card's requirements, flattened.
+
+    For introspection (the no-deadlock invariant: nothing may be required that
+    nothing produces). The ordering check itself uses requires_groups — a
+    group is met by ANY of its members, which a flat set cannot express.
+    """
+    return set().union(*requires_groups(agent)) if requires_groups(agent) else set()
+
+
+def _unmet(agent: str, available: set[str]) -> list[str]:
+    """The requirement groups `available` does not satisfy, rendered a|b."""
+    return sorted(
+        "|".join(sorted(group))
+        for group in requires_groups(agent)
+        if not (group & available)
+    )
 
 
 def produces(agent: str) -> set[str]:
@@ -111,12 +152,14 @@ def resolve(steps: list[Step], *, known: set[str] | None = None) -> Plan:
     while remaining:
         runnable = [
             s for s in remaining
-            if requires(s.agent) <= available and set(s.depends_on) <= done
+            if not _unmet(s.agent, available | s.carries) and set(s.depends_on) <= done
         ]
         if not runnable:
             # Try ignoring Aisha's depends_on — if that frees something, her
             # ordering was the problem and it is worth recording as hers.
-            loosened = [s for s in remaining if requires(s.agent) <= available]
+            loosened = [
+                s for s in remaining if not _unmet(s.agent, available | s.carries)
+            ]
             if loosened:
                 s = loosened[0]
                 plan.disagreements.append(
@@ -127,7 +170,7 @@ def resolve(steps: list[Step], *, known: set[str] | None = None) -> Plan:
             else:
                 # Genuinely unsatisfiable: nothing left can run.
                 for s in remaining:
-                    plan.blocked.append((s, sorted(requires(s.agent) - available)))
+                    plan.blocked.append((s, _unmet(s.agent, available | s.carries)))
                 break
 
         chosen = runnable[0]
@@ -160,7 +203,7 @@ def independent_groups(plan: Plan) -> list[list[Step]]:
     while pending:
         wave = [
             s for s in pending
-            if requires(s.agent) <= available and set(s.depends_on) <= done
+            if not _unmet(s.agent, available | s.carries) and set(s.depends_on) <= done
         ]
         if not wave:
             wave = [pending[0]]  # cannot happen after resolve(); belt and braces

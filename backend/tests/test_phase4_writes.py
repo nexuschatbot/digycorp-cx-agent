@@ -406,3 +406,25 @@ def test_attribution_never_breaks_a_turn(db):
             raise RuntimeError("checkpoint is gone")
 
     _attribute_session(db, _Broken(), {}, "s-x")  # must not raise
+
+
+def test_a_refusals_remediation_sentence_reaches_aisha(monkeypatch):
+    """Found live, 2026-08-31. The services refuse in two parts — a slug and a
+    `detail` sentence naming the next step. Handed only the slug
+    ("identity_not_verified"), Aisha guessed at the reason and told the
+    customer their own held slot had been taken. The sentence rides along; the
+    slug remains the fallback when a service sends none."""
+    monkeypatch.setitem(
+        __import__("app.tools", fromlist=["TOOL_FNS"]).TOOL_FNS,
+        "reschedule_booking",
+        lambda db, s, **k: {
+            "error": "identity_not_verified",
+            "detail": (
+                "This booking can only be changed by the identified customer. "
+                "Identify them with identify_by_reference_or_mobile first."
+            ),
+        },
+    )
+    result = write.execute(None, "s1", write.Proposal(action="reschedule_booking"))
+    assert result.status == "refused"
+    assert "identify_by_reference_or_mobile" in result.detail

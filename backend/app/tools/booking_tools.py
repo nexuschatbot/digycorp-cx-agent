@@ -388,6 +388,7 @@ def reschedule_booking(
     session_id: str,
     customer_id: int | None = None,  # INJECTED — the VERIFIED session customer
     new_slot_id: int | None = None,
+    slot_id: int | None = None,  # alias for new_slot_id — see below
     ref: str | None = None,
     mobile: str | None = None,
     doorstep_address: str | None = None,
@@ -396,11 +397,20 @@ def reschedule_booking(
 ) -> dict:
     """Thin wrapper over booking.reschedule (AD-J: in-process, never HTTP).
 
+    `slot_id` is read as an ALIAS for new_slot_id (found live, 2026-08-31):
+    every other booking action calls its slot `slot_id`, and models reliably
+    reach for that name here too — the sub-agent proposed it twice and was
+    refused twice for a spelling. The alias is safe because the value is
+    guarded either way: the service books only a slot LOCKED BY THIS SESSION,
+    so a wrong id (the old slot, a guess) is refused loudly, never used.
+
     customer_id is the session's verified customer, injected by the tool node
     (never modelled) and passed on as session_customer_id — the service refuses
     the move unless it owns the booking. If no customer is identified the tool
     node short-circuits before we get here, so a None arriving is defensive only.
     """
+    if new_slot_id is None:
+        new_slot_id = slot_id
     if new_slot_id is None:
         return {
             "error": "invalid_slot_id",

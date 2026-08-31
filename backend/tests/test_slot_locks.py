@@ -183,3 +183,41 @@ def test_lock_result_never_exposes_an_expiry(db, open_slot):
     assert "expire" not in blob
     assert "ttl" not in blob
     assert "locked_at" not in blob
+
+
+# --------------------------------------------------------------------------- #
+# A held slot is still availability — to its owner (found live, 2026-08-31)
+# --------------------------------------------------------------------------- #
+def test_the_sessions_own_held_slot_stays_visible_and_flagged(db, open_slot):
+    """The lock sets status=locked, which used to make the customer's own slot
+    vanish from query_available the moment they tapped it — so the confirm
+    step re-checked, found it "gone", and reported their own choice as taken,
+    for every slot they picked."""
+    slots_service.lock(db, session_id=SESSION, slot_id=open_slot.id)
+    out = slots_service.query_available(
+        db, vehicle_id=open_slot.vehicle_id, session_id=SESSION
+    )
+    mine = [s for s in out["slots"] if s["slot_id"] == open_slot.id]
+    assert mine, "the session's own held slot must remain in its availability"
+    assert mine[0]["held_by_you"] is True
+
+
+def test_a_slot_held_by_another_session_is_still_hidden(db, open_slot):
+    slots_service.lock(db, session_id=OTHER_SESSION, slot_id=open_slot.id)
+    out = slots_service.query_available(
+        db, vehicle_id=open_slot.vehicle_id, session_id=SESSION
+    )
+    assert open_slot.id not in [s["slot_id"] for s in out["slots"]]
+
+
+def test_without_a_session_a_held_slot_is_hidden(db, open_slot):
+    slots_service.lock(db, session_id=SESSION, slot_id=open_slot.id)
+    out = slots_service.query_available(db, vehicle_id=open_slot.vehicle_id)
+    assert open_slot.id not in [s["slot_id"] for s in out["slots"]]
+
+
+def test_open_slots_carry_no_held_flag(db, open_slot):
+    out = slots_service.query_available(
+        db, vehicle_id=open_slot.vehicle_id, session_id=SESSION
+    )
+    assert all("held_by_you" not in s for s in out["slots"])

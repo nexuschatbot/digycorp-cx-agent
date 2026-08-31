@@ -115,7 +115,7 @@ def _result_for(out: dict, tool_use_id: str) -> dict:
 def test_every_tool_use_gets_a_tool_result(monkeypatch):
     """A tool_use without a matching tool_result is an API error next turn."""
     monkeypatch.setattr(
-        graph, "_known_entities", lambda state: set()
+        graph, "_known_entities", lambda state, cfg=None: set()
     )
     state = {
         "messages": [_assistant(_tool_use("get_showrooms", "a"), _briefs("x", tid="b"))],
@@ -194,6 +194,42 @@ def test_session_entities_are_passed_as_known():
 def test_unrelated_facts_are_not_treated_as_entities():
     known = graph._known_entities({"session_facts": {"name": "Ahmed", "mobile": "050..."}})
     assert known == set()
+
+
+def test_a_booking_the_anchor_already_names_counts_as_known(db, monkeypatch):
+    """Found live, 2026-08-31. `_agent_node` reads the customer's bookings from
+    the DB every generation and renders them into the prompt, so Aisha opened
+    the turn with "you have a booking, TD-2026-7QHB" — and the orchestrator then
+    blocked her TestDrive brief for want of a booking_ref, because only
+    tool_node and _fold_cascade_facts write session_facts and neither had run.
+    A whole cascade died on a fact that was already on screen."""
+    monkeypatch.setattr(
+        "app.services.booking.for_customer",
+        lambda db_, customer_id=None: [{"booking_ref": "TD-2026-7QHB"}],
+    )
+    known = graph._known_entities(
+        {"session_facts": {}, "customer_id": 6},
+        {"db": db, "session_id": "s1"},
+    )
+    assert "booking_ref" in known
+
+
+def test_no_db_leaves_the_ordering_exactly_as_it_was():
+    """The read is an anchor, not a dependency: without a session it degrades to
+    session_facts alone rather than failing the turn."""
+    assert graph._known_entities({"session_facts": {"vehicle_id": 7}}, {}) == {"vehicle_id"}
+
+
+def test_a_broken_read_never_costs_the_turn(db, monkeypatch):
+    def _boom(*a, **k):
+        raise RuntimeError("db is gone")
+
+    monkeypatch.setattr("app.services.booking.for_customer", _boom)
+    known = graph._known_entities(
+        {"session_facts": {"vehicle_id": 7}, "customer_id": 6},
+        {"db": db, "session_id": "s1"},
+    )
+    assert known == {"vehicle_id"}
 
 
 # --------------------------------------------------------------------------- #
@@ -364,6 +400,45 @@ def test_a_proposal_reaches_write_execute_all(monkeypatch):
     assert seen["proposals"][0].action == "create_booking"
     assert out == [{"action": "create_booking", "status": "executed",
                     "detail": "", "booking_ref": "TD-2026-0001"}]
+
+
+def test_the_reference_surfaces_from_the_nested_booking_result(monkeypatch):
+    """The REAL create_booking result nests everything Aisha may say under
+    "booking" ({"booking": _booking_dict(...), "created": True}). Reading only
+    the top level meant an EXECUTED booking reached her with no reference —
+    she told the customer it had not come through while the write had in fact
+    landed (found live, 2026-08-31)."""
+    from app.orchestrator import write
+
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None):
+        return [write.WriteResult(action="create_booking", status="executed",
+                                  result={"created": True, "booking": {
+                                      "booking_ref": "TD-2026-0002",
+                                      "slot_id": 814,
+                                      "start_human": "Monday, 31 August, 1:00 pm",
+                                      "start_iso": "2026-08-31T13:00:00",
+                                      "showroom_name": "Jetour Al Quoz",
+                                      "customer_mobile": "+971500000000",
+                                  }})]
+
+    monkeypatch.setattr(write, "execute_all", _fake)
+    _patch_state(monkeypatch, {"create_booking"})
+    events = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: (lambda p: events.append(p)))
+
+    result = _run.TurnResult(steps=[
+        _step_with([{"action": "create_booking", "args": {"slot_id": 814}, "agent": "testdrive"}])
+    ])
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    out = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
+
+    assert out[0]["booking_ref"] == "TD-2026-0002"
+    assert out[0]["start_human"] == "Monday, 31 August, 1:00 pm"
+    assert out[0]["showroom_name"] == "Jetour Al Quoz"
+    # Only what she may read back — never the write's internals.
+    assert "customer_mobile" not in out[0]
+    # The UI card event fires from the nested ref too.
+    assert {"type": "booking", "booking_ref": "TD-2026-0002"} in events
 
 
 def test_the_state_machine_gate_is_passed_through(monkeypatch):

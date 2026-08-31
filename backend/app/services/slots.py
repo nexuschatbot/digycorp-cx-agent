@@ -15,7 +15,7 @@ from __future__ import annotations
 import random
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.calendar_rules import EVENING_START_HOUR, slot_times_for_day
@@ -217,8 +217,15 @@ def query_available(
     earliest_hour: object = None,
     limit: int = DEFAULT_SLOT_LIMIT,
     now: datetime | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """Open slots matching the filters. Never raises; errors return as data.
+
+    A slot THIS session holds is availability too, flagged `held_by_you`. The
+    hold sets status=locked, which used to make the customer's own slot vanish
+    from this query the moment they tapped it — so the confirm step re-checked,
+    found it "gone", and reported the customer's own choice as taken. A held
+    slot is scoped by session_id, so no OTHER session ever sees it as free.
 
     Past slots are excluded: yesterday's inventory is not availability. So are
     slots inside the SLOT_MIN_LEAD_MINUTES buffer — a start the customer could
@@ -287,11 +294,20 @@ def query_available(
             return {"error": "showroom_not_found", "showroom_id": showroom_id, "slots": []}
         showroom_id = sid
 
+    visible = Slot.status == SlotStatus.open
+    if session_id:
+        visible = or_(
+            visible,
+            and_(
+                Slot.status == SlotStatus.locked,
+                Slot.locked_by_session == session_id,
+            ),
+        )
     stmt = (
         select(Slot)
         .where(
             Slot.vehicle_id == vid,
-            Slot.status == SlotStatus.open,
+            visible,
             Slot.start >= _lead_cutoff(now),
         )
         .order_by(Slot.start)
@@ -327,20 +343,48 @@ def query_available(
     # snapshot has ever loaded, available_slot_app_ids returns None and we leave the
     # local result as-is (cold-start degrade) rather than emptying the calendar;
     # once a snapshot exists, a transient blip serves the last-good Available set.
+    # A slot this session holds is EXPECTED to be Locked in Salesforce — the
+    # hold is what locked it — so the gate must not drop it: that would re-hide
+    # the customer's own slot and reintroduce the exact lie the session_id
+    # filter above exists to fix.
+    def _held(s: Slot) -> bool:
+        return bool(
+            session_id
+            and s.status == SlotStatus.locked
+            and s.locked_by_session == session_id
+        )
+
     try:
         from app.services import salesforce as _sf
         if _sf.enabled() and rows:
             _avail = _sf.available_slot_app_ids([s.id for s in rows])
             if _avail is not None:
-                rows = [s for s in rows if s.id in _avail]
+                rows = [s for s in rows if s.id in _avail or _held(s)]
     except Exception:  # noqa: BLE001 — availability must never break on SF issues
         pass
 
-    rows = rows[: max(1, _coerce_int(limit) or DEFAULT_SLOT_LIMIT)]
+    # THE CAP MUST NOT CROWD OUT THE HELD SLOT. It ties on start with the open
+    # slots around it (same calendar grid) and sorts among them arbitrarily, so
+    # a plain slice can drop the one slot the customer has actually chosen.
+    # Held slots are kept unconditionally, the cap fills with open ones, and
+    # the result goes back into start order.
+    cap = max(1, _coerce_int(limit) or DEFAULT_SLOT_LIMIT)
+    held_rows = [s for s in rows if _held(s)]
+    if held_rows:
+        rest = [s for s in rows if not _held(s)]
+        rows = sorted(
+            held_rows + rest[: max(cap - len(held_rows), 0)],
+            key=lambda s: (s.start, s.id),
+        )
+    else:
+        rows = rows[:cap]
 
     return {
         "vehicle": {"vehicle_id": vehicle.id, "name": vehicle.name},
-        "slots": [_slot_dict(s) for s in rows],
+        "slots": [
+            {**_slot_dict(s), "held_by_you": True} if _held(s) else _slot_dict(s)
+            for s in rows
+        ],
         "count": len(rows),
     }
 

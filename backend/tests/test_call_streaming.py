@@ -260,7 +260,13 @@ def test_the_gateway_arms_the_voice_anchor(db, client, stream_env):
         _drain_until(ws, "done")
         ws.send_json({"type": "hangup"})
 
-    assert seen_systems and "LIVE VOICE CALL" in seen_systems[0]
+    # The cache split hands the model (stable, volatile) rather than one
+    # string; the anchor is volatile by design. Join before searching, so this
+    # keeps asserting WHAT the model sees, not how the prompt is packaged.
+    assert seen_systems
+    first = seen_systems[0]
+    blob = first if isinstance(first, str) else "".join(first)
+    assert "LIVE VOICE CALL" in blob
 
 
 def test_first_sentence_is_spoken_while_the_second_still_generates(db, client, stream_env):

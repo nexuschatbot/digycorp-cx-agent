@@ -253,6 +253,30 @@ def test_nothing_is_invented_when_the_tools_returned_nothing():
     assert subagent._harvest_entities("sales", []) == {}
 
 
+def test_an_offer_of_times_establishes_no_slot():
+    """Found live, 2026-08-31. A reschedule ran get_booking then
+    get_available_slots; the walk took the first slot_id it met, and
+    run.execute's last-step-wins fold put slot 477 — 5 PM, the first row of the
+    OFFER — into session_facts over the booking's real slot. The customer had
+    chosen 6:30 PM.
+
+    The first row is the right answer for a ranked SEARCH and the wrong one for
+    a list of free times, where nothing is established until the customer picks.
+    """
+    results = [
+        {"booking": {"booking_ref": "TD-1", "slot_id": 91}},
+        {"slots": [{"slot_id": 477}, {"slot_id": 530}]},
+    ]
+    tools = ["get_booking", "get_available_slots"]
+    assert subagent._harvest_entities("testdrive", results, tools) == {
+        "booking_ref": "TD-1", "slot_id": 91
+    }
+    # And availability ALONE establishes no slot at all.
+    assert subagent._harvest_entities(
+        "testdrive", [{"slots": [{"slot_id": 477}]}], ["get_available_slots"]
+    ) == {}
+
+
 def test_only_the_entities_the_card_declares_are_harvested():
     """A sub-agent does not get to introduce entities its card never promised —
     the ordering is built on those declarations."""
@@ -277,3 +301,119 @@ def test_harvested_ids_reach_the_findings(patched):
     )
     out = subagent.run_step(STEP, {}, db=None, session_id="s1")
     assert out["vehicle_id"] == 7 and out["variant_id"] == 13
+
+
+# --------------------------------------------------------------------------- #
+# The booking state arrives as data (found live, 2026-08-31)
+# --------------------------------------------------------------------------- #
+def test_a_held_slot_reaches_the_brief_as_an_established_fact(patched, db, open_slot):
+    """A sub-agent briefed to finish a booking used to re-verify with
+    get_available_slots, find the customer's own held slot missing (the hold
+    is what locked it), and report their choice as taken. The derived booking
+    state goes into the brief as data, so the cascade and the write gate can
+    never disagree about where the booking is."""
+    from app.services import slots as slots_service
+
+    slots_service.lock(db, session_id="s-held", slot_id=open_slot.id)
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(
+        Step(brief="finish the booking", agent="testdrive", index=0),
+        {}, db=db, session_id="s-held",
+    )
+    sent = wire_text(client.calls[0]["messages"][0]["content"])
+    assert "held_slot_id" in sent and str(open_slot.id) in sent
+    assert "booking_stage" in sent
+
+
+def test_no_hold_means_no_booking_state_in_the_brief(patched, db):
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(STEP, {}, db=db, session_id="s-none")
+    sent = wire_text(client.calls[0]["messages"][0]["content"])
+    assert "held_slot_id" not in sent
+
+
+def test_a_write_the_card_proposes_is_read_as_the_proposal(monkeypatch):
+    """Found live, 2026-08-31, and this is the SECOND fix for it.
+
+    The card prose is ported single-agent journey text and SAYS "call
+    cancel_booking"; Haiku emits the tool_use it was never offered. The first
+    fix enforced the binding at dispatch, which correctly stopped the write —
+    but a refusal is not an outcome. Measured live on a reschedule: sub-agent
+    tool_use refused, Aisha re-briefed, refused again, Aisha tried the tool
+    herself, refused, and the customer was told to phone the helpline while the
+    booking never moved.
+
+    A tool_use for an action the card PROPOSES is the proposal, in the tool's
+    own argument names. Reading it as one is deterministic, costs no extra
+    round, and asking harder had already failed twice."""
+    client = _FakeClient([
+        [_use("cancel_booking", {"ref": "TD-2026-0KXC"})],
+        [_text('{"findings": {}}')],
+    ])
+    monkeypatch.setattr(subagent, "_client", lambda: client)
+
+    out = subagent.run_step(
+        Step(brief="cancel booking TD-2026-0KXC", agent="testdrive", index=0),
+        {}, db=None, session_id="s1",
+    )
+
+    # It was NOT refused, and it was NOT executed — it was recorded as a request.
+    recorded = json.loads(client.calls[1]["messages"][2]["content"][0]["content"])
+    assert "error" not in recorded
+    assert recorded["requested"] == "cancel_booking"
+    assert "do not say it has been done" in recorded["detail"].lower()
+
+    assert out["_proposals"] == [
+        {"action": "cancel_booking", "args": {"ref": "TD-2026-0KXC"},
+         "agent": "testdrive"}
+    ]
+
+
+def test_a_write_the_card_does_not_propose_is_still_refused_at_dispatch(monkeypatch):
+    """The interception above is scoped to the card's `proposes` list and the
+    allowlist underneath it is untouched. Sales proposes NOTHING, so a write it
+    reaches for still meets the refusal — which is the guard the first fix added
+    and which must not have been widened into a way in.
+
+    Real _dispatch here, deliberately: the refusal happens before any db use,
+    and stubbing it out is exactly how this hole stayed invisible."""
+    client = _FakeClient([
+        [_use("cancel_booking", {"ref": "TD-2026-0KXC"})],
+        [_text('{"findings": {}}')],
+    ])
+    monkeypatch.setattr(subagent, "_client", lambda: client)
+
+    out = subagent.run_step(
+        Step(brief="cancel it", agent="sales", index=0),
+        {}, db=None, session_id="s1",
+    )
+
+    refusal = json.loads(client.calls[1]["messages"][2]["content"][0]["content"])
+    assert refusal["error"] == "tool_not_available"
+    assert "_proposals" not in out
+
+
+def test_asking_twice_in_one_round_is_one_request(monkeypatch):
+    """A model that calls the tool AND writes the proposal has asked once.
+    write.execute_all runs a list in order, so a duplicate would reschedule the
+    same booking to the same slot twice."""
+    client = _FakeClient([
+        [_use("reschedule_booking", {"booking_ref": "TD-2026-0KXC", "new_slot_id": "530"})],
+        [_text('{"findings": {}, "proposals": [{"action": "reschedule_booking", '
+               '"args": {"ref": "TD-2026-0KXC", "new_slot_id": 530}}]}')],
+    ])
+    monkeypatch.setattr(subagent, "_client", lambda: client)
+
+    out = subagent.run_step(
+        Step(brief="move it", agent="testdrive", index=0),
+        {}, db=None, session_id="s1",
+    )
+
+    # `booking_ref` is the name every tool RESULT uses; the write tool takes
+    # `ref`, and "530" arrives as a string because the model copied it out of
+    # prose. Both are normalised, which is also what makes the dedupe possible.
+    assert out["_proposals"] == [
+        {"action": "reschedule_booking",
+         "args": {"ref": "TD-2026-0KXC", "new_slot_id": 530},
+         "agent": "testdrive"}
+    ]

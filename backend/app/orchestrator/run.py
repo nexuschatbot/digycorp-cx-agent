@@ -37,6 +37,7 @@ the whole cascade offline; Phase 5 passes the real Haiku sub-graphs.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
@@ -44,6 +45,11 @@ from dataclasses import dataclass, field
 
 from app.orchestrator import order as _order
 from app.orchestrator import select as _select
+
+# The reference the customer says: TD, a 4-digit year, 4 code characters — with
+# any or no punctuation between the parts ("TD 2026 HTXE", "td2026htxe" and
+# "TD-2026-HTXE" are the same code, exactly as booking._normalise_ref reads it).
+_BOOKING_REF_RE = re.compile(r"\bTD[\s\-._]*\d{4}[\s\-._]*[A-Z0-9]{4}\b", re.IGNORECASE)
 
 log = logging.getLogger("app.orchestrator.run")
 
@@ -114,6 +120,13 @@ def plan_turn(
 
     for i, item in enumerate(briefs):
         text = (item.get("brief") or "").strip()
+        # A booking reference IN THE BRIEF is an entity the customer supplied,
+        # detected deterministically (the TD shape is fixed; separators are
+        # read, not required — same forgiveness as booking._normalise_ref).
+        # It satisfies THIS step's requirements only, via Step.carries.
+        carries = (
+            frozenset({"booking_ref"}) if _BOOKING_REF_RE.search(text) else frozenset()
+        )
         chosen = _select.select(text, judge=judge)
         if chosen.agent is None:
             unroutable.append(
@@ -130,6 +143,7 @@ def plan_turn(
                 agent=chosen.agent,
                 depends_on=tuple(item.get("depends_on") or ()),
                 index=i,
+                carries=carries,
             )
         )
         # Carry the selection detail so the trace can explain the decision.

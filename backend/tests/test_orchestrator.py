@@ -168,7 +168,7 @@ def test_an_unsatisfiable_step_is_blocked_and_says_what_it_needed():
     plan = order.resolve([order.Step("book a drive", "testdrive", index=0)])
     assert not plan.ok
     step, missing = plan.blocked[0]
-    assert step.agent == "testdrive" and missing == ["vehicle_id"]
+    assert step.agent == "testdrive" and missing == ["booking_ref|vehicle_id"]
 
 
 def test_independent_briefs_run_in_one_wave_not_in_series():
@@ -197,7 +197,51 @@ def test_showroom_is_not_a_requirement_of_testdrive():
     deadlocks the ordering forever — the customer's branch is a CONSTRAINT that
     narrows a tool call, never a gate on whether the agent runs."""
     assert "showroom_id" not in order.requires("testdrive")
-    assert order.requires("testdrive") == {"vehicle_id"}
+    assert order.requires("testdrive") == {"vehicle_id", "booking_ref"}
+    # ONE group with two alternatives, not two requirements: either satisfies.
+    assert order.requires_groups("testdrive") == [frozenset({"vehicle_id", "booking_ref"})]
+
+
+def test_a_booking_ref_satisfies_testdrive_without_a_vehicle():
+    """The manage journey (found live, 2026-08-31): "cancel TD-2026-0KXC" in a
+    fresh chat has no vehicle_id and needs none — the booking knows its
+    vehicle. The gate used to block it, and Aisha told the customer the
+    booking could not be cancelled."""
+    plan = order.resolve(
+        [order.Step("cancel the booking", "testdrive", index=0)],
+        known={"booking_ref"},
+    )
+    assert plan.ok and [s.agent for s in plan.steps] == ["testdrive"]
+
+
+def test_what_a_brief_carries_is_per_step_not_global():
+    """carries satisfies the step that carries it; it is never folded into the
+    plan's known set, so a ref in a cancel brief cannot stand in for entities
+    an unrelated step needs."""
+    plan = order.resolve([
+        order.Step("cancel TD-2026-0KXC", "testdrive", index=0,
+                   carries=frozenset({"booking_ref"})),
+        order.Step("the instalments", "finance", index=1),
+    ])
+    assert [s.agent for s in plan.steps] == ["testdrive"]
+    step, missing = plan.blocked[0]
+    assert step.agent == "finance" and missing == ["variant_id"]
+    assert "booking_ref" not in plan.known
+
+
+def test_plan_turn_detects_the_reference_the_customer_said():
+    """The TD shape is fixed and separators are read, not required — the same
+    forgiveness booking._normalise_ref applies to a spoken or typed ref."""
+    from app.orchestrator import run as run_module
+
+    for text in ("Cancel the test drive booking TD-2026-0KXC",
+                 "cancel the customer's test drive, reference td 2026 htxe",
+                 "cancel the booking with reference td2026htxe"):
+        plan, unroutable = run_module.plan_turn([{"brief": text}])
+        assert not unroutable and plan.ok, text
+        assert plan.steps[0].carries == frozenset({"booking_ref"}), text
+    plan, _ = run_module.plan_turn([{"brief": "book me a test drive"}])
+    assert not plan.ok  # no ref, no vehicle: still honestly blocked
 
 
 def test_the_cards_declare_the_producer_of_every_requirement():

@@ -526,3 +526,17 @@ def test_get_booking_tool_requires_an_identified_session(db, slots):
     ok = get_booking_tool(db, SESSION, ref=ref, viewer_customer_id=cid)
     assert ok["count"] == 1
     assert ok["bookings"][0]["booking_ref"] == ref
+
+
+def test_reschedule_reads_slot_id_as_an_alias_for_new_slot_id(db):
+    """Found live, 2026-08-31. Every other booking action calls its slot
+    `slot_id`, and the sub-agent proposed that name here too — twice, refused
+    twice for a spelling. The alias is safe: the service still books only a
+    slot locked by this session, so a wrong id is refused loudly, never used."""
+    from app.tools.booking_tools import reschedule_booking
+
+    out = reschedule_booking(
+        db, "sess-alias", customer_id=1, ref="TD-2026-XXXX", slot_id=999999
+    )
+    # The alias took: we got PAST invalid_slot_id to the real lookup guards.
+    assert out.get("error") != "invalid_slot_id"

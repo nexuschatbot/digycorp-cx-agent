@@ -344,6 +344,11 @@ def create(
             "slot_id": sid,
             "slot_vehicle_id": slot.vehicle_id,
             "requested_vehicle_id": vid,
+            "detail": (
+                "That slot belongs to a different model than the one being "
+                "booked. Offer times for the requested car with "
+                "get_available_slots and let the customer pick again."
+            ),
         }
 
     # ---- Doorstep (FR-SL-07) + data minimisation ---------------------------- #
@@ -858,6 +863,12 @@ def reschedule(
             "slot_id": nsid,
             "slot_vehicle_id": new_slot.vehicle_id,
             "booking_vehicle_id": booking.vehicle_id,
+            "detail": (
+                "A reschedule keeps the same car, and that slot is for a "
+                "different model. Offer times for the booking's own vehicle — "
+                "or, if the customer wants the other car, that is a NEW "
+                "booking, not a move."
+            ),
         }
 
     # ---- Doorstep on the NEW slot (FR-SL-07) + data minimisation ------------- #
