@@ -126,6 +126,61 @@ def test_every_tool_use_gets_a_tool_result(monkeypatch):
     assert ids == {"a", "b"}
 
 
+# --------------------------------------------------------------------------- #
+# The cascade ceiling (2026-08-31)
+# --------------------------------------------------------------------------- #
+def test_a_turn_may_go_back_to_the_specialists_only_so_many_times(monkeypatch):
+    """MEASURED, on a 15-turn conversation against a clean db. One question
+    about Islamic finance and the on-road price ran THREE cascades back to back
+    and took 33 seconds; a consent chip ran two and took 22. Every model call
+    costs ~2.2s before it writes a word, so a re-briefing spiral IS the latency.
+
+    Her prompt already forbids it in those words and she does it anyway — the
+    same lesson sanitise.py records about rule 17."""
+    monkeypatch.setattr("app.config.MAX_CASCADES_PER_TURN", 2)
+    state = {
+        "messages": [_assistant(_briefs("and the on-road price?", tid="b9"))],
+        "session_facts": {},
+        "cascades": 2,
+    }
+    out = graph._orchestrator_node(state, _config())
+    body = _result_for(out, "b9")
+
+    # Refused BEFORE dispatch — no specialist ran, so the round cost nothing
+    # but the generation that asked for it.
+    assert body["findings"] == [] and body["nothing_worked"] is False
+    assert "answer the customer from what you have" in body["detail"].lower()
+
+
+def test_the_ceiling_counts_a_failed_cascade_too(monkeypatch):
+    """A turn that cannot reach the specialists must not be free to keep
+    trying — that is the spiral in its other costume."""
+    monkeypatch.setattr("app.config.MAX_CASCADES_PER_TURN", 5)
+    state = {"messages": [_assistant(_briefs("x", tid="b1"))], "session_facts": {},
+             "cascades": 0}
+    out = graph._orchestrator_node(state, _config())
+    assert out["cascades"] == 1
+
+
+def test_the_ceiling_can_be_switched_off(monkeypatch):
+    """Whether this costs answer quality is an open question a re-run settles,
+    so 0 disables it without a deploy."""
+    monkeypatch.setattr("app.config.MAX_CASCADES_PER_TURN", 0)
+    state = {"messages": [_assistant(_briefs("x", tid="b1"))], "session_facts": {},
+             "cascades": 99}
+    out = graph._orchestrator_node(state, _config())
+    # It RAN (and found nothing, with no db) rather than being refused.
+    assert _result_for(out, "b1")["nothing_worked"] is True
+
+
+def test_the_first_cascade_of_a_turn_is_never_refused(monkeypatch):
+    monkeypatch.setattr("app.config.MAX_CASCADES_PER_TURN", 2)
+    state = {"messages": [_assistant(_briefs("x", tid="b1"))], "session_facts": {},
+             "cascades": 0}
+    out = graph._orchestrator_node(state, _config())
+    assert "answer the customer" not in json.dumps(out["messages"][0]["content"]).lower()
+
+
 def test_a_tool_called_alongside_briefs_is_refused_not_run():
     state = {
         "messages": [_assistant(_tool_use("get_showrooms", "a"), _briefs("x", tid="b"))],
@@ -188,12 +243,12 @@ def test_findings_are_threaded_back_as_the_tool_result(monkeypatch):
 def test_session_entities_are_passed_as_known():
     """'book it for Saturday' must not be blocked on a Sales step for a car the
     customer chose ten turns ago."""
-    assert graph._known_entities({"session_facts": {"vehicle_id": 7}}) == {"vehicle_id"}
+    assert graph._known_entities({"session_facts": {"vehicle_id": 7}}) == {"vehicle_id": 7}
 
 
 def test_unrelated_facts_are_not_treated_as_entities():
     known = graph._known_entities({"session_facts": {"name": "Ahmed", "mobile": "050..."}})
-    assert known == set()
+    assert known == {}
 
 
 def test_a_booking_the_anchor_already_names_counts_as_known(db, monkeypatch):
@@ -214,10 +269,19 @@ def test_a_booking_the_anchor_already_names_counts_as_known(db, monkeypatch):
     assert "booking_ref" in known
 
 
+def test_a_known_entity_carries_its_value_to_the_specialist():
+    """Found live, 2026-08-31. Names alone unblocked Finance and then handed it
+    an empty context: asked for the instalment on a trim it had never been told,
+    it called no tool at all. _fold_cascade_facts fixed the ordering half; this
+    is the half that was missing."""
+    known = graph._known_entities({"session_facts": {"variant_id": 12}})
+    assert known == {"variant_id": 12}, "the value must travel, not just the name"
+
+
 def test_no_db_leaves_the_ordering_exactly_as_it_was():
     """The read is an anchor, not a dependency: without a session it degrades to
     session_facts alone rather than failing the turn."""
-    assert graph._known_entities({"session_facts": {"vehicle_id": 7}}, {}) == {"vehicle_id"}
+    assert graph._known_entities({"session_facts": {"vehicle_id": 7}}, {}) == {"vehicle_id": 7}
 
 
 def test_a_broken_read_never_costs_the_turn(db, monkeypatch):
@@ -229,7 +293,7 @@ def test_a_broken_read_never_costs_the_turn(db, monkeypatch):
         {"session_facts": {"vehicle_id": 7}, "customer_id": 6},
         {"db": db, "session_id": "s1"},
     )
-    assert known == {"vehicle_id"}
+    assert known == {"vehicle_id": 7}
 
 
 # --------------------------------------------------------------------------- #
@@ -608,7 +672,7 @@ def test_the_node_returns_session_facts(monkeypatch):
 def test_the_next_turn_can_see_it():
     """_known_entities is what order.resolve consults; close the loop."""
     facts = graph._fold_cascade_facts({"session_facts": {}}, _result_with({"vehicle_id": 7}))
-    assert graph._known_entities({"session_facts": facts}) == {"vehicle_id"}
+    assert graph._known_entities({"session_facts": facts}) == {"vehicle_id": 7}
 
 
 # --------------------------------------------------------------------------- #

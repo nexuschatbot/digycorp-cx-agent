@@ -185,6 +185,59 @@ def _proposal_args(raw: dict) -> dict:
     return out
 
 
+# A MOVE NEEDS THE SLOT HELD FIRST, and the card says so ("lock the slot with
+# lock_slot, then call reschedule_booking"). Measured live 2026-08-31: the
+# specialist asked for the reschedule alone, the service guard refused it —
+# "the new slot is not held by this conversation" — Aisha apologised, tried
+# again, and the second attempt asked for both. The customer waited 35 seconds
+# for a move that could have gone in one pass.
+#
+# COMPLETING THE ASK, NOT INVENTING ONE. The slot is the one the customer
+# picked and the specialist named; the hold is the step the card already
+# describes and the card already permits (`proposes: [hold_slot, ...]`). This
+# reads the two-step action out of a one-step request the same way
+# _harvest_entities reads ids out of tool results — deterministically, once,
+# rather than by asking the model again.
+#
+# ORDER MATTERS AND write.execute_all HONOURS IT: proposals run in sequence and
+# stop at the first refusal, so a hold that fails cannot leave a booking moved
+# to a slot nobody owns.
+_NEEDS_HELD_SLOT = {"reschedule_booking": "new_slot_id", "create_booking": "slot_id"}
+
+
+def _with_required_hold(db, session_id: str, agent: str, proposals: list[dict]) -> list[dict]:
+    """Prepend the hold a move or a booking needs, when the slot is not held yet."""
+    if not proposals or "hold_slot" not in set(_proposes(agent)) or db is None:
+        return proposals
+    try:
+        from app.services import slots as _slots
+
+        held = _slots.held_by_session(db, session_id=session_id) or {}
+        held_id = held.get("slot_id")
+    except Exception:  # noqa: BLE001 — never let this cost the step its proposal
+        log.warning("could not read the held slot; leaving proposals as asked", exc_info=True)
+        return proposals
+
+    out: list[dict] = []
+    for item in proposals:
+        key = _NEEDS_HELD_SLOT.get(item.get("action") or "")
+        wanted = (item.get("args") or {}).get(key) if key else None
+        if wanted is not None and wanted != held_id:
+            already = any(
+                p.get("action") == "hold_slot"
+                and (p.get("args") or {}).get("slot_id") == wanted
+                for p in out
+            )
+            if not already:
+                log.info(
+                    "%s asked to %s slot %s without holding it; asking for the hold first",
+                    agent, item.get("action"), wanted,
+                )
+                out.append({"action": "hold_slot", "args": {"slot_id": wanted}})
+        out.append(item)
+    return out
+
+
 def _validate_proposals(agent: str, raw: list[dict]) -> list[dict]:
     """Keep only what this agent's card actually permits it to ask for.
 
@@ -473,7 +526,14 @@ def run_step(
         rounds += 1
         response = client.messages.create(
             model=model,
-            # 400, DOWN FROM 1024 (2026-08-29). A tool round needs ~50 tokens of
+            # 256, DOWN FROM 400 (2026-08-31), which was down from 1024. Measured
+            # on a live run: the largest legitimate findings reply was 821 chars
+            # of JSON — about 205 tokens — with a 154-char note beside it. 256
+            # clears that and binds only on the blowouts this ceiling exists for.
+            # Truncation stays safe by construction: _harvest_entities reads the
+            # ids out of the tool RESULTS and `_evidence` carries those results to
+            # Aisha whole, so a cut-off JSON costs a note, not a fact.
+            # A tool round needs ~50 tokens of
             # arguments; the findings round needs ids and one note — yet Haiku
             # was measured spending ~6s of an 11s cascade writing 1,156 tokens
             # of JSON it had been told not to write, copying tool results the
@@ -481,7 +541,7 @@ def run_step(
             # brevity; this enforces it. Entities still thread even through a
             # truncated reply: _harvest_entities reads them from the raw tool
             # results, not from the model's JSON.
-            max_tokens=400,
+            max_tokens=256,
             # CACHED, AND IT WAS NOT (found live, 2026-08-29). A card body is
             # 7-10k tokens and this loop re-sent every one of them, uncached,
             # on every round — while the single agent had cached its prefix
@@ -555,6 +615,7 @@ def run_step(
                 seen_keys.add(key)
                 deduped.append(item)
             if deduped:
+                deduped = _with_required_hold(db, session_id, step.agent, deduped)
                 kept = _validate_proposals(step.agent, deduped)
                 if kept:
                     findings["_proposals"] = kept

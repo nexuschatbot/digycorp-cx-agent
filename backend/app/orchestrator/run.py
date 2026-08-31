@@ -118,6 +118,26 @@ def plan_turn(
     steps: list[_order.Step] = []
     unroutable: list[StepResult] = []
 
+    # SELECTION IS PER BRIEF AND THE BRIEFS DO NOT KNOW ABOUT EACH OTHER, so
+    # asking about them one at a time spends a judge round trip per brief before
+    # a single specialist has started. Measured 2026-08-31: ~1.3s each, serial,
+    # in front of the whole cascade.
+    #
+    # PURE AND INDEPENDENT: select() reads the cards (cached), embeds the brief,
+    # and may call the judge. It touches no database and no shared state, which
+    # is what makes this safe where run.execute needed a session factory first.
+    #
+    # Only widened for more than one brief — a pool for a single brief is pure
+    # overhead, and six of every ten cascades measured carried exactly one.
+    if len(briefs) > 1:
+        texts = [(item.get("brief") or "").strip() for item in briefs]
+        with ThreadPoolExecutor(
+            max_workers=min(len(texts), 4), thread_name_prefix="select"
+        ) as pool:
+            chosen_for = list(pool.map(lambda t: _select.select(t, judge=judge), texts))
+    else:
+        chosen_for = None
+
     for i, item in enumerate(briefs):
         text = (item.get("brief") or "").strip()
         # A booking reference IN THE BRIEF is an entity the customer supplied,
@@ -127,7 +147,7 @@ def plan_turn(
         carries = (
             frozenset({"booking_ref"}) if _BOOKING_REF_RE.search(text) else frozenset()
         )
-        chosen = _select.select(text, judge=judge)
+        chosen = chosen_for[i] if chosen_for is not None else _select.select(text, judge=judge)
         if chosen.agent is None:
             unroutable.append(
                 StepResult(
@@ -173,7 +193,24 @@ def execute(
     """
     plan, unroutable = plan_turn(briefs, known=known, judge=judge)
     result = TurnResult(steps=list(unroutable), disagreements=plan.disagreements)
-    result.entities = {k: None for k in (known or ())}
+    # WHAT WE KNOW, AND WHAT IT IS (found live, 2026-08-31). `known` used to be
+    # a set of NAMES and every value here was seeded None — so the ordering said
+    # "variant_id is established" and unblocked Finance, while run_step filtered
+    # the Nones out and handed it an empty context. Asked for the instalment on
+    # a trim it was never told, Finance called no tool at all (`tools=[none]`,
+    # twice) or flailed at search_knowledge (three times). Aisha then re-briefed
+    # until it happened to work: five attempts, 33 seconds, and it read as the
+    # sub-agent ignoring its own tools.
+    #
+    # _fold_cascade_facts exists precisely so entities survive between turns and
+    # it fixed the ORDERING half; this is the half that was missing. A Mapping
+    # threads the values, a bare iterable still means "known, value unavailable"
+    # — which is what the live bookings read wants, since a booking reference
+    # can go stale between turns and only the name is safe to assert.
+    try:
+        result.entities = {k: (known or {}).get(k) for k in (known or ())}
+    except AttributeError:
+        result.entities = {k: None for k in (known or ())}
 
     # A step that can never run is reported with WHAT IT NEEDED, so Aisha can
     # ask the one question that unblocks it instead of apologising vaguely.

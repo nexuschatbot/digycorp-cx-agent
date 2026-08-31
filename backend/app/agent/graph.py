@@ -249,6 +249,13 @@ class AgentState(TypedDict):
     # wide open and the composer must stay live; it is only the generation loop
     # that has nothing left to add. Per-turn control, reset by the caller.
     options_offered: bool
+    # HOW MANY CASCADES THIS TURN HAS ALREADY RUN. Per-turn control, reset by
+    # the caller exactly like `iterations` and `closed` — "how many times have
+    # we gone back on THIS turn", never a property of the session. Counted
+    # rather than bounded by MAX_ITERATIONS because the orchestrator node
+    # deliberately does not advance that (it calls no model of its own), so a
+    # re-briefing spiral is invisible to the loop bound that exists to stop it.
+    cascades: int
     # The date-anchor pattern applied to IDENTITY (2026-07-24). A small dict of
     # confirmed facts about THIS conversation — { customer_id, name, title, mobile,
     # vehicle_id, vehicle_name, showroom_name, daypart }, all optional — computed
@@ -1320,7 +1327,12 @@ def _known_entities(state: AgentState, cfg: dict | None = None) -> set[str]:
     producible: set[str] = set()
     for agent in ("sales", "testdrive", "finance"):
         producible |= _order.produces(agent)
-    known = {k for k in producible if facts.get(k) is not None}
+    # NAME -> VALUE, not just the names (found live, 2026-08-31). Seeding the
+    # ordering with names alone unblocked Finance and then handed it an empty
+    # context, so it was asked to price a trim it had never been told. See
+    # run.execute. `order.resolve` iterates this for its names exactly as it
+    # did when this was a set, so the ordering is unchanged.
+    known = {k: facts[k] for k in producible if facts.get(k) is not None}
 
     cfg = cfg or {}
     db = cfg.get("db")
@@ -1328,16 +1340,22 @@ def _known_entities(state: AgentState, cfg: dict | None = None) -> set[str]:
         return known
     try:
         customer_id = state.get("customer_id")
+        # NAMES ONLY FOR THESE TWO, deliberately, and the None is the point: a
+        # booking can be moved or cancelled by the console, a reminder tap or
+        # the WhatsApp handoff, so the VALUE read here can be stale by the time
+        # a specialist reads it. Asserting the name unblocks the ordering; the
+        # value still comes from the step that looks it up. setdefault so a
+        # fresher value already folded into session_facts is never overwritten.
         if (
             "booking_ref" in producible
             and customer_id is not None
             and booking.for_customer(db, customer_id=customer_id)
         ):
-            known.add("booking_ref")
+            known.setdefault("booking_ref", None)
         if "slot_id" in producible and slots.held_by_session(
             db, session_id=cfg.get("session_id", "")
         ):
-            known.add("slot_id")
+            known.setdefault("slot_id", None)
     except Exception:  # noqa: BLE001 — an anchor must not be able to break a turn
         log.exception(
             "could not read live bookings for the ordering — continuing without them "
@@ -1503,6 +1521,7 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     import dataclasses
     import json as _json
 
+    from app import config as _config
     from app.agent import profile as _profile
     from app.db import SessionLocal
     from app.orchestrator import run as _turn_run
@@ -1525,6 +1544,38 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
         max(deadline - time.monotonic(), 1.0) if deadline is not None
         else float(AGENT_DEADLINE_SECONDS)
     )
+
+    # THE CEILING (2026-08-31). See config.MAX_CASCADES_PER_TURN for the
+    # measurement. Checked BEFORE anything is dispatched, so a refused round
+    # costs nothing but the generation that asked for it.
+    #
+    # IT IS A TOOL_RESULT, NOT AN ERROR, and the wording matters: Aisha has an
+    # answer in hand from the earlier round(s) and the right move is to give it,
+    # not to apologise for a limit the customer cannot see. Telling her the
+    # findings are already above her is what makes that possible — the evidence
+    # from the first cascade is still in her context.
+    cascades_so_far = state.get("cascades") or 0
+    if _config.MAX_CASCADES_PER_TURN and cascades_so_far >= _config.MAX_CASCADES_PER_TURN:
+        log.info(
+            "cascade ceiling reached (%d) — refusing a further round, session=%s",
+            cascades_so_far, session_id,
+        )
+        body = {
+            "findings": [], "unavailable": [], "partial": False,
+            "nothing_worked": False,
+            "detail": (
+                "You have already asked the specialists on this turn and their "
+                "findings are above. Answer the customer from what you have "
+                "now. If something is genuinely missing, say so plainly or ask "
+                "them one short question — do not look it up again."
+            ),
+        }
+        return {"messages": [{"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": b.get("id"),
+             "content": _json.dumps(body if b is block else CALLED_ALONGSIDE_ERROR,
+                                    default=str)[:16000]}
+            for b in tool_uses
+        ]}]}
 
     payload: dict
     facts: dict | None = None
@@ -1603,7 +1654,13 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     # per-step budget and iteration ceiling. Counting the cascade against
     # Aisha's loop bound would cost her the composition turn it exists to
     # protect.
-    out: dict = {"messages": [{"role": "user", "content": results}]}
+    out: dict = {
+        "messages": [{"role": "user", "content": results}],
+        # Counted here rather than in the edge, so a cascade that FAILED still
+        # counts: a turn that cannot reach the specialists must not be free to
+        # keep trying, which is the spiral in its other costume.
+        "cascades": cascades_so_far + 1,
+    }
     if facts is not None:
         out["session_facts"] = facts
     return out

@@ -58,6 +58,7 @@ MIN_MARGIN = 0.02
 MIN_SCORE = 0.70
 
 _cards: dict | None = None
+_card_vectors = None
 
 
 @dataclass(frozen=True)
@@ -95,13 +96,32 @@ def cards() -> dict[str, str]:
 
 
 def _vectors():
-    """Embedded cards, or None when the model is unavailable."""
+    """Embedded cards, or None when the model is unavailable. Cached per process.
+
+    CACHED FOR THE SAME REASON `cards()` IS, and it was the expensive half that
+    was not. Measured 2026-08-31: embedding the three card paragraphs took
+    206-432ms and was ~85% of score_brief's cost — re-run on EVERY brief, on the
+    orchestrating thread, before any specialist starts, for three paragraphs
+    that cannot change inside a process. The query embedding beside it is 18-47ms
+    and genuinely per-brief.
+
+    Keyed on nothing because `cards()` is already the cache key: reset() drops
+    both together, so a prompt-version change in-process re-embeds exactly as it
+    re-reads.
+    """
+    global _card_vectors
+    if _card_vectors is not None:
+        return _card_vectors
     from app.retrieval import embed
 
     texts = list(cards().values())
     if not all(texts):
         return None
-    return embed.embed_passages(texts)
+    # Not memoised on failure: embed returns None when the model is unavailable,
+    # and caching that would keep the fast lane dead for the life of the process
+    # even after the asset is fixed.
+    _card_vectors = embed.embed_passages(texts)
+    return _card_vectors
 
 
 def score_brief(brief: str) -> list[tuple[str, float]]:
@@ -187,6 +207,9 @@ def select(brief: str, *, judge=None) -> Selection:
 
 
 def reset() -> None:
-    """Drop the cached cards. Tests, and a prompt-version change in-process."""
-    global _cards
+    """Drop the cached cards AND their vectors. Tests, and a prompt-version
+    change in-process — the two must go together or the fast lane would score
+    new card text against old vectors."""
+    global _cards, _card_vectors
     _cards = None
+    _card_vectors = None

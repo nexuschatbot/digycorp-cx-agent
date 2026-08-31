@@ -409,6 +409,10 @@ def run_turn(
                 # Per-turn like `closed` (C-options, 2026-08-14): "did chips go
                 # up on THIS turn", never a sticky property of the session.
                 "options_offered": False,
+                # Per-turn like the two above (2026-08-31): how many times this
+                # turn has already gone back to the specialists. Reset here,
+                # enforced in _orchestrator_node against MAX_CASCADES_PER_TURN.
+                "cascades": 0,
                 # Rule 3 (see the comment above build_config): drives the
                 # system-prompt anchor. Per-turn, reset like `iterations`.
                 "turn_lang": turn_lang,

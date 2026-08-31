@@ -139,3 +139,63 @@ def test_the_step_reports_the_request_not_a_failure(db, booked, monkeypatch):
 
     assert [s.status for s in result.steps] == ["ok"]
     assert result.steps[0].proposals[0]["action"] == "reschedule_booking"
+
+
+def test_a_move_asks_for_the_hold_it_needs(db, booked, monkeypatch):
+    """Measured live, 2026-08-31, AFTER the interception landed. The specialist
+    asked only for the reschedule; reschedule_booking's service guard refuses a
+    slot the conversation does not hold, so Aisha apologised, briefed again, and
+    the second attempt asked for both. 35 seconds for a one-pass move.
+
+    The card already says "lock the slot with lock_slot, then call
+    reschedule_booking" and already lists hold_slot under `proposes`. The
+    two-step action is read out of the one-step ask."""
+    # This session holds NOTHING — booked.new was released for this test.
+    from app.tools import TOOL_FNS
+    TOOL_FNS["release_slot"] if False else None
+    booked.new.status = SlotStatus.open
+    booked.new.locked_by_session = None
+    booked.new.locked_at = None
+    db.commit()
+
+    client = _Client([
+        [_Block(type="tool_use", name="reschedule_booking", id="u1",
+                input={"ref": "TD-2026-7QHB", "new_slot_id": booked.new.id})],
+        [_Block(type="text", text='{"findings": {}}')],
+    ])
+    monkeypatch.setattr(subagent, "_client", lambda: client)
+
+    findings = subagent.run_step(
+        Step(brief="move TD-2026-7QHB to the evening slot", agent="testdrive", index=0),
+        {}, db=db, session_id="s1", customer_id=1,
+    )
+
+    # The hold comes FIRST — execute_all runs in order and stops at a refusal.
+    assert [p["action"] for p in findings["_proposals"]] == [
+        "hold_slot", "reschedule_booking",
+    ]
+    assert findings["_proposals"][0]["args"] == {"slot_id": booked.new.id}
+
+    results = write.execute_all(
+        db, "s1", [write.Proposal(**p) for p in findings["_proposals"]],
+        customer_id=1, allow={"hold_slot", "reschedule_booking"},
+    )
+    db.commit()
+    assert [r.status for r in results] == ["executed", "executed"], [r.detail for r in results]
+    db.refresh(booked.booking)
+    assert booked.booking.slot_id == booked.new.id
+
+
+def test_a_slot_already_held_is_not_asked_for_twice(db, booked, monkeypatch):
+    """The fixture already holds booked.new, so no extra hold is needed."""
+    client = _Client([
+        [_Block(type="tool_use", name="reschedule_booking", id="u1",
+                input={"ref": "TD-2026-7QHB", "new_slot_id": booked.new.id})],
+        [_Block(type="text", text='{"findings": {}}')],
+    ])
+    monkeypatch.setattr(subagent, "_client", lambda: client)
+    findings = subagent.run_step(
+        Step(brief="move it", agent="testdrive", index=0),
+        {}, db=db, session_id="s1", customer_id=1,
+    )
+    assert [p["action"] for p in findings["_proposals"]] == ["reschedule_booking"]

@@ -88,6 +88,30 @@ AGENT_MODEL: str = ANTHROPIC_MODEL if USE_DIRECT_ANTHROPIC else CLAUDE_MODEL
 # parameter and fall back to the provider default.
 AGENT_EFFORT: str = os.getenv("AGENT_EFFORT", "medium").strip().lower()
 
+# HOW MANY TIMES AISHA MAY GO BACK TO THE SPECIALISTS IN ONE TURN.
+#
+# MEASURED, NOT GUESSED (2026-08-31, a 15-turn conversation on a clean db). One
+# question about Islamic finance and the on-road price ran THREE cascades back
+# to back — 5,333ms, 3,470ms, 3,220ms — and the turn took 33 seconds. Answering
+# a consent chip ran two, for 22 seconds. Eleven cascades across fifteen turns.
+#
+# HER PROMPT ALREADY FORBIDS THIS, word for word: "Do not send a brief, read
+# what comes back, and then send another: each round trip is another wait the
+# customer sits through, and three of them in a row is half a minute of
+# nothing." She does it anyway, which is the lesson agent/sanitise.py records
+# about rule 17 and subagent.py records about the ids — asking harder is not
+# the fix, enforcing is.
+#
+# TWO, NOT ONE, and the difference is the point. Her prompt permits going back
+# "for something the answers themselves revealed", and that is a real case; a
+# ceiling of one would trade seconds for thinner answers. Two kills the spiral
+# and keeps the legitimate follow-up.
+#
+# A NUMBER, NOT A CONSTANT, because whether this costs answer quality is an
+# open question that only a re-run can settle. Raise it, or set it to 0 to
+# disable the ceiling entirely, without a deploy.
+MAX_CASCADES_PER_TURN: int = _get_int("MAX_CASCADES_PER_TURN", 2)
+
 # Write the cached prompt prefix once at startup, so the first customer reads
 # the cache instead of paying to create it. Costs ONE live API call per boot,
 # which is why it is OFF by default: a dev restarting uvicorn all day should not

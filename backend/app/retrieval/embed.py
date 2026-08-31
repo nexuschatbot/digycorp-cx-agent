@@ -48,6 +48,19 @@ DIMENSIONS = 384
 # One session per process, built once. The model is stateless, so a session per
 # call would pay ~200ms of load for ~10ms of work.
 _lock = threading.Lock()
+# THE TOKENIZER IS SHARED MUTABLE STATE AND IS NOT THREAD-SAFE (found 2026-08-31
+# the moment two briefs were embedded at once). `tokenizers.Tokenizer` is a Rust
+# object with interior mutability: `enable_padding()` mutates it, and a second
+# thread inside `encode_batch` raises "RuntimeError: Already borrowed". The
+# except-clause below then swallows it into a None, so the caller sees "the
+# embedding model is unavailable" and silently falls back — a race that reads as
+# a configuration problem.
+#
+# Serialised rather than made per-thread: encoding is 4-47ms, so the contention
+# costs nothing worth measuring, and one shared session is the whole reason
+# _load exists. This also covers the parallel wave in orchestrator/run.py, where
+# two sub-agents can reach search_knowledge at the same time.
+_encode_lock = threading.Lock()
 _state: dict = {}
 
 
@@ -140,8 +153,9 @@ def _encode(texts: list[str], batch_size: int = 16):
         out = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            tok.enable_padding()
-            enc = tok.encode_batch(batch)
+            with _encode_lock:
+                tok.enable_padding()
+                enc = tok.encode_batch(batch)
             ids = np.array([e.ids for e in enc], dtype=np.int64)
             mask = np.array([e.attention_mask for e in enc], dtype=np.int64)
             feed = {"input_ids": ids, "attention_mask": mask}
