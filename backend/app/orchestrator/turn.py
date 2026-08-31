@@ -189,8 +189,17 @@ def execute(
                 return
             forward_events(parent_writer, agent)(kind, payload)
 
+    # CARDS FOR THESE ARE CHOSEN AFTER THE CASCADE, not per call — see
+    # graph._select_cards. A specialist answering a three-part question runs a
+    # search per clause, and forwarding each one drew a row per query: nine
+    # cards for one question, under a reply describing three. The results still
+    # reach Aisha in full through `evidence`; only the DRAWING is deferred.
+    CURATED = {"search_vehicles"}
+
     def _queue_emit(agent: str):
         def _emit(kind: str, payload: dict) -> None:
+            if kind == "tool_event" and (payload or {}).get("tool") in CURATED:
+                return
             events.put((kind, dict(payload or {}), agent))
         return _emit
 

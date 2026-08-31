@@ -1604,6 +1604,79 @@ def _fold_cascade_facts(state: AgentState, result) -> dict | None:
     return facts if facts != (state.get("session_facts") or {}) else None
 
 
+
+# HOW MANY VEHICLE CARDS ONE ANSWER DRAWS. Mirrors runner._MAX_RECOMMENDATION_
+# CARDS and cards.ts — the three must agree, and this is now the one that
+# decides; the other two cap a payload that already fits.
+MAX_CARDS = 3
+
+
+def _select_cards(result) -> list[dict]:
+    """The vehicles this answer shows, chosen ONCE from everything it searched.
+
+    FOUND LIVE, 2026-08-31. Asked for "one with seven seats, one that is fuel
+    efficient, and one that can go off-road", the specialist ran a search per
+    clause and every result drew its own row — nine cards for one question. Two
+    fixes narrowed it and neither reached the cause:
+
+      the row trim  dropped cars a later row repeated. But a later search
+                    RETURNS THE EARLIER CARS AT THE TOP ("trimming row [7,5,9]
+                    to [9]"), so what survived was each search's TAIL — its
+                    answer to its own clause was deleted as a duplicate.
+      the strip cap  then took the first three of what was left, which came
+                    entirely from search one. The other clauses got nothing.
+
+    Together they showed X70 FL Plus, T1 i-DM and X50 under a reply naming X70
+    FL Plus, T1 i-DM and T2 i-DM.
+
+    ROUND-ROBIN, AND DEDUPE AFTERWARDS. Each search answers a different part of
+    the question, so each gets its top hit before any gets a second. On that
+    turn it yields 7, 5, 3 — X70 FL Plus, T1 i-DM, T2 i-DM — which is exactly
+    what Aisha named. Not luck: she and the ranker read the same evidence and
+    answer the same clauses, and it was the dedupe running BEFORE the selection
+    that pulled them apart.
+
+    CHOSEN HERE, WHERE THE ANSWER IS COMPOSED, not in the renderer. The strip
+    used to be decided in the frontend, so by the time it had three Aisha had
+    already written about a different three and could not have known. Selecting
+    here lets the same list reach her prose (see compose_input's `cards_shown`)
+    and the screen, so they cannot disagree.
+
+    SELECTED, NEVER INVENTED. Entries are the tool's own rows, in the tool's own
+    order — the same operation runner._without_drawn performs within one result.
+    """
+    per_search: list[list[dict]] = []
+    for step in result.steps:
+        if not step.ok:
+            continue
+        for item in step.evidence or []:
+            if item.get("tool") != "search_vehicles":
+                continue
+            out = item.get("result")
+            if not isinstance(out, dict):
+                continue
+            rows = out.get("matches")
+            if not isinstance(rows, list) or not rows:
+                rows = out.get("nearest_alternatives")
+            if isinstance(rows, list) and rows:
+                per_search.append([r for r in rows if isinstance(r, dict)])
+
+    chosen: list[dict] = []
+    seen: set = set()
+    for rank in range(max((len(rows) for rows in per_search), default=0)):
+        for rows in per_search:
+            if rank >= len(rows):
+                continue
+            vid = rows[rank].get("vehicle_id")
+            if vid is None or vid in seen:
+                continue
+            seen.add(vid)
+            chosen.append(rows[rank])
+            if len(chosen) >= MAX_CARDS:
+                return chosen
+    return chosen
+
+
 def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
     """Answer an emit_briefs call by running the cascade (T5.1-T5.6).
 
@@ -1710,6 +1783,23 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                 parent_writer=_stream_sink(_safe_writer()),
             )
             payload = _turn.compose_input(result)
+            # THE STRIP, DECIDED ONCE (see _select_cards). Emitted here rather
+            # than per search, and named in the payload so her prose and the
+            # screen are anchored to the same three cars. Ahead of the compose
+            # generation, so the row is queued before her first token — which is
+            # when the UI commits it, so this costs nothing on the clock.
+            _cards = _select_cards(result)
+            if _cards:
+                payload["cards_shown"] = [
+                    {"vehicle_id": v.get("vehicle_id"), "name": v.get("name")}
+                    for v in _cards
+                ]
+                _w = _safe_writer()
+                if _w:
+                    _w({
+                        "type": "tool_event", "tool": "search_vehicles",
+                        "input": {}, "output": {"matches": _cards},
+                    })
             payload["actions"], _write_facts = _execute_proposals(result, state, cfg)
             facts = _fold_cascade_facts(state, result)
             if _write_facts:
