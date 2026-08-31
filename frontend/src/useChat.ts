@@ -21,7 +21,7 @@ import {
 import { extractBookingCards, toBookingCard, type BookingCard } from './bookings'
 import { cardFromDetail, extractCards, extractInteriorImages, extractSearchCards, type VehicleCard } from './cards'
 import type { CardVariant } from './components/VehicleCards'
-import { CALL_END_LINES, LIFECYCLE_LINES, VOICE_LABELS, callSummaryLine } from './i18n'
+import { CALL_END_LINES, LIFECYCLE_LINES, TAKEOVER_LINES, VOICE_LABELS, callSummaryLine } from './i18n'
 import { isRtl } from './rtl'
 import {
   extractNearestShowroomChoices,
@@ -32,7 +32,11 @@ import { extractSlotChips, type SlotChip } from './slots'
 import { extractOptionChips, type OptionChip } from './options'
 import { extractComparison, type Comparison } from './compare'
 
-export type Role = 'user' | 'agent' | 'error' | 'system'
+// 'staff' (human takeover, 2026-08-31): a person from the back office typing in
+// this thread after a takeover. Styled like the agent side of the conversation
+// but labelled with the person's name, and NEVER offered read-aloud — these are
+// not Aisha's words (the same rule that keeps 'system' lines out of her voice).
+export type Role = 'user' | 'agent' | 'error' | 'system' | 'staff'
 
 // Rule 19: a conversation is live, or it has ended. Frontend-owned state — the
 // backend runs NO server-side timer and holds no session status; it acts only on
@@ -69,7 +73,10 @@ const IDLE_CLOSE_MS = 10 * 60 * 1000
 function conversationLang(messages: ChatMessage[]): Lang {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
-    if (m.kind === 'text' && (m.role === 'user' || m.role === 'agent')) return m.lang
+    // 'staff' counts: once a human holds the thread, theirs are the turns that
+    // say which language this conversation is being had in.
+    if (m.kind === 'text' && (m.role === 'user' || m.role === 'agent' || m.role === 'staff'))
+      return m.lang
   }
   return 'en'
 }
@@ -176,11 +183,14 @@ function redeemHandoffOnce(token: string): Promise<HandoffResult> {
 // rebuildTurns); SLOT CHIPS are still never replayed — a rehydrated chip pins a
 // slot_id that may since have been booked, and they regenerate on the next
 // relevant turn.
-function turnToMessage(t: TranscriptTurn, sessionId: string): TextMessage {
+function turnToMessage(t: TranscriptTurn, sessionId: string, staffName?: string): TextMessage {
   return {
     id: crypto.randomUUID(),
     kind: 'text',
-    role: t.speaker === 'customer' ? 'user' : 'agent',
+    role: t.speaker === 'customer' ? 'user' : t.speaker === 'staff' ? 'staff' : 'agent',
+    // The transcript stores speaker 'staff' but not the name — one takeover per
+    // session (first admin wins), so the session's holder names every staff turn.
+    ...(t.speaker === 'staff' && staffName ? { staffName } : {}),
     text: t.text,
     streaming: false,
     lang: t.lang,
@@ -219,7 +229,11 @@ function turnToMessage(t: TranscriptTurn, sessionId: string): TextMessage {
 // returns null on a 404 or a network failure; that card is simply absent. The
 // text bubble above it still stands on its own, which is the honest degradation —
 // far better than a shell card with a blank name.
-async function rebuildTurns(turns: TranscriptTurn[], sessionId: string): Promise<ChatMessage[]> {
+async function rebuildTurns(
+  turns: TranscriptTurn[],
+  sessionId: string,
+  staffName?: string,
+): Promise<ChatMessage[]> {
   const anchors = turns.flatMap((t) => t.cards ?? [])
   // `?? []` on BOTH arms: an anchor carries vehicle_ids OR booking_refs, so each
   // list is absent on the other's rows. Reading them unguarded is the obvious
@@ -287,7 +301,7 @@ async function rebuildTurns(turns: TranscriptTurn[], sessionId: string): Promise
         })
       }
     } else if (t.text.trim() || t.audio_id) {
-      out.push(turnToMessage(t, sessionId))
+      out.push(turnToMessage(t, sessionId, staffName))
     }
     for (const row of rows) {
       const dir = t.lang === 'ar' ? 'rtl' : 'ltr'
@@ -347,6 +361,10 @@ export interface TextMessage {
   // speaker icon appears. It is what the client points at to have the message
   // read: the server looks Aisha's words up itself rather than being sent them.
   turnId?: number
+  // Who typed this, on role 'staff' only (human takeover, 2026-08-31) — the
+  // admin's display name, shown as a small caption on the bubble so the
+  // customer always knows which person they are talking to.
+  staffName?: string
 }
 /** What `send` needs to know about a turn that was SPOKEN rather than typed.
  *  `failed` means the recording stored fine but nothing could be transcribed —
@@ -657,6 +675,26 @@ export function useChat(): UseChat {
   // delete the wrong one. Null whenever no check-in is showing.
   const nudgeIdRef = useRef<string | null>(null)
 
+  // --- human takeover (2026-08-31) ----------------------------------------- #
+  // request_human_callback fired on this session. STATE because the idle-ladder
+  // effect keys on it (a customer waiting for a person is not an abandoned
+  // chat), plus a ref for synchronous reads inside callbacks; the socket effect
+  // below opens the takeover listener the moment it flips true.
+  const [escalated, setEscalated] = useState(false)
+  const escalatedRef = useRef(false)
+  // A person holds this session. REFS, not state: everything the customer sees
+  // (the joined line, the staff bubbles) lives in `messages`, so nothing
+  // re-renders off this flag — but `send` must read it synchronously to route
+  // a message to the socket instead of the agent.
+  const takeoverRef = useRef(false)
+  const takeoverNameRef = useRef<string | null>(null)
+  const takeoverWsRef = useRef<WebSocket | null>(null)
+  const wsRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Typed while the socket was down (it drops, or the first send races the
+  // handshake): held here and flushed on open, so the customer's words are
+  // never silently lost to a reconnect window.
+  const pendingTakeoverRef = useRef<string[]>([])
+
   // ONE session id per conversation, PERSISTED PER TAB (sessionStorage) so a
   // reload resumes the same conversation — same id means the same checkpointer
   // thread, so the agent keeps its full context, not just the visible text.
@@ -720,9 +758,27 @@ export function useChat(): UseChat {
         // fetches take a moment, and an unmount (or StrictMode) in that window
         // must not paint. The session id goes along because booking detail is
         // viewer-scoped — see fetchBooking.
-        const rebuilt = await rebuildTurns(convo.turns, sessionId.current)
+        const rebuilt = await rebuildTurns(
+          convo.turns,
+          sessionId.current,
+          // The holder's name labels every rebuilt staff bubble — the turn rows
+          // store the speaker, the takeover row stores who (see api.ts).
+          convo.takeover?.admin_name ?? undefined,
+        )
         if (cancelled) return
         setMessages(rebuilt)
+        // Human takeover survives a reload (2026-08-31): the takeover refs come
+        // back so `send` keeps routing to the socket, and `escalated` re-opens
+        // the listener (the connect effect) and keeps the idle ladder held. No
+        // joined-line here — the transcript already shows the person's turns.
+        if (convo.takeover?.taken_over) {
+          takeoverRef.current = true
+          takeoverNameRef.current = convo.takeover.admin_name ?? null
+        }
+        if (convo.escalated && convo.status !== 'closed') {
+          escalatedRef.current = true
+          setEscalated(true)
+        }
         if (convo.status === 'closed') {
           // Resume a closed conversation VISIBLY: the customer sees what they
           // did and the "New chat" control is right there. Silently discarding
@@ -789,6 +845,18 @@ export function useChat(): UseChat {
       void closeConversation(sessionId.current)
     }
     setStatus('closed')
+    // A closed chat has no live channel left to hold open: the takeover
+    // listener (if the session was escalated) dies with the conversation, and
+    // statusRef above is what stops its onclose from reconnecting.
+    if (wsRetryRef.current) {
+      clearTimeout(wsRetryRef.current)
+      wsRetryRef.current = null
+    }
+    try {
+      takeoverWsRef.current?.close()
+    } catch {
+      // already dead
+    }
   }, [])
 
   // The 2-minute check-in. Deliberately does NOT stamp lastActivityAt: the nudge
@@ -821,6 +889,155 @@ export function useChat(): UseChat {
     })
   }, [])
 
+  // --- human takeover: the customer side of WS /api/takeover ---------------- #
+  // Opened as a LISTENER the moment the escalation tool fires (the customer is
+  // then waiting for a person, holding no request open — SSE cannot reach
+  // them), and it becomes the message channel itself once a takeover starts.
+  // The AI is gone from that point (the runner gate refuses it server-side);
+  // there is no hand-back, so the socket lives until the conversation closes.
+  const connectTakeover = useCallback(() => {
+    if (takeoverWsRef.current) return
+    const forSession = sessionId.current
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(
+      `${proto}//${window.location.host}/api/takeover/${encodeURIComponent(forSession)}?role=customer`,
+    )
+    takeoverWsRef.current = ws
+    ws.onopen = () => {
+      // Anything typed while the socket was down goes out now, in order.
+      const held = pendingTakeoverRef.current.splice(0)
+      for (const text of held) ws.send(JSON.stringify({ type: 'message', text }))
+    }
+    ws.onmessage = (ev) => {
+      let frame: { type?: string; [k: string]: unknown }
+      try {
+        frame = JSON.parse(ev.data as string)
+      } catch {
+        return
+      }
+      if (frame.type === 'takeover_started') {
+        // A person just joined, live — announce it. Guarded so a reconnect's
+        // repeat of the frame cannot say it twice.
+        if (!takeoverRef.current) {
+          takeoverRef.current = true
+          takeoverNameRef.current = (frame.admin_name as string) ?? null
+          setMessages((prev) => {
+            const lang = conversationLang(prev)
+            return [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                kind: 'text',
+                role: 'system',
+                text: TAKEOVER_LINES[lang].joined((frame.admin_name as string) || 'Elite'),
+                streaming: false,
+                lang,
+              },
+            ]
+          })
+        }
+      } else if (frame.type === 'state') {
+        // The connect snapshot. NO announcement here, deliberately: this path
+        // fires on reload and reconnect, when the thread already shows the
+        // human's messages — repeating "X has joined" on every refresh would
+        // read as the person joining again.
+        if (frame.taken_over && !takeoverRef.current) {
+          takeoverRef.current = true
+          takeoverNameRef.current = (frame.admin_name as string) ?? null
+        }
+      } else if (frame.type === 'message') {
+        // The OTHER side's message (never an echo — the server excludes the
+        // sender, and this client appends its own sends locally). 'customer'
+        // here means another tab of the same session.
+        const lang: Lang = frame.lang === 'ar' ? 'ar' : 'en'
+        const staff = frame.speaker === 'staff'
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            kind: 'text',
+            role: staff ? 'staff' : 'user',
+            text: (frame.text as string) ?? '',
+            streaming: false,
+            lang,
+            ...(staff && frame.admin_name ? { staffName: frame.admin_name as string } : {}),
+          },
+        ])
+      } else if (frame.type === 'closed') {
+        // The person ended the conversation from the console. 'signoff', not
+        // 'idle': the server already closed it and the human said their own
+        // goodbye — no canned line, same as when Aisha signs off.
+        closeChat('signoff')
+      }
+      // 'error' frames are data for this client's own bad sends; nothing to
+      // render — the composer state cannot produce them in normal use.
+    }
+    ws.onclose = () => {
+      if (takeoverWsRef.current === ws) takeoverWsRef.current = null
+      // Reconnect while the socket still matters: session unchanged, still
+      // escalated, conversation still open. A closed chat lets it die.
+      if (
+        escalatedRef.current &&
+        statusRef.current === 'active' &&
+        sessionId.current === forSession
+      ) {
+        wsRetryRef.current = setTimeout(connectTakeover, 2000)
+      }
+    }
+    ws.onerror = () => {
+      try {
+        ws.close()
+      } catch {
+        // closing an already-dead socket is fine
+      }
+    }
+  }, [closeChat])
+
+  // Everything takeover-related back to zero — "New chat" and unmount. The
+  // escalated ref drops FIRST so the socket's onclose sees a world where
+  // reconnecting is pointless.
+  const teardownTakeover = useCallback(() => {
+    escalatedRef.current = false
+    setEscalated(false)
+    if (wsRetryRef.current) {
+      clearTimeout(wsRetryRef.current)
+      wsRetryRef.current = null
+    }
+    const ws = takeoverWsRef.current
+    takeoverWsRef.current = null
+    try {
+      ws?.close()
+    } catch {
+      // already dead
+    }
+    takeoverRef.current = false
+    takeoverNameRef.current = null
+    pendingTakeoverRef.current = []
+  }, [])
+
+  // Open the listener whenever an open conversation is escalated. Keyed on
+  // state rather than called inline so BOTH discoverers — the live tool_event
+  // and the reload's `escalated` flag — converge on one connect path.
+  useEffect(() => {
+    if (!escalated || status === 'closed') return
+    connectTakeover()
+  }, [escalated, status, connectTakeover])
+
+  // Unmount: kill the retry timer and the socket. Session-scoped cleanup is
+  // teardownTakeover's job (newChat); this is only the component going away.
+  useEffect(
+    () => () => {
+      if (wsRetryRef.current) clearTimeout(wsRetryRef.current)
+      escalatedRef.current = false // stop onclose from scheduling a reconnect
+      try {
+        takeoverWsRef.current?.close()
+      } catch {
+        // already dead
+      }
+    },
+    [],
+  )
+
   // The idle clock — a two-rung ladder: check in at 2 minutes, close at 3.
   // Keyed on lastActivityAt, NOT fire-and-forget setTimeouts: every stamp re-runs
   // this effect, whose cleanup clears the previous timers, so the countdown
@@ -851,9 +1068,16 @@ export function useChat(): UseChat {
   // entire time by definition, and the ladder cannot see speech. `callEnded`
   // stamps the anchor, so hanging up re-arms the full ladder rather than
   // counting the call's minutes as silence.
+  // NOR ONCE ESCALATED (human takeover, 2026-08-31). A customer who asked for
+  // a person and is waiting for one is not an abandoned chat — and the idle
+  // close would end the very session the Handoffs queue is about to pick up,
+  // making takeover a race against this timer. The same suppression the open
+  // mic and the live call already get, for the same reason: presence the
+  // ladder cannot see. Non-escalated conversations keep the ladder unchanged.
   useEffect(() => {
     if (status === 'closed' || streaming || recording || transcribing || speaking || inCall)
       return
+    if (escalated) return
     if (messages.length === 0) return // nothing said yet; nothing to close
     const elapsed = Date.now() - lastActivityAt
     const timers: ReturnType<typeof setTimeout>[] = []
@@ -869,6 +1093,7 @@ export function useChat(): UseChat {
     transcribing,
     speaking,
     inCall,
+    escalated,
     lastActivityAt,
     messages.length,
     closeChat,
@@ -1052,6 +1277,15 @@ export function useChat(): UseChat {
         patchAgent((m) => ({ ...m, text: m.text + e.text, lang: langOf(m.text + e.text) }))
       },
       onToolEvent: (e) => {
+        // HUMAN ESCALATION (2026-08-31). The agent just promised a person, and
+        // this event is how the client learns it: flip `escalated`, which opens
+        // the takeover listener and holds the idle ladder — a customer waiting
+        // for a human must not be auto-closed out of the very session the
+        // Handoffs queue is about to pick up. Renders nothing itself.
+        if (e.tool === 'request_human_callback') {
+          escalatedRef.current = true
+          setEscalated(true)
+        }
         // Two customer-facing tool_events render cards (rule 18 / FR-BK-10):
         //   get_vehicle_details -> FULL card(s) ("the one you're looking at")
         //   search_vehicles     -> up to 3 COMPACT cards ("here are options")
@@ -1271,6 +1505,37 @@ export function useChat(): UseChat {
         setMessages((prev) => prev.filter((m) => m.id !== nudgeId))
       }
 
+      // HUMAN MODE (2026-08-31). A person holds this session: the message goes
+      // over the takeover socket, and the agent is never called — the runner
+      // gate refuses it server-side anyway; this is the client keeping honest
+      // with that. Appended locally at once (the server broadcasts to the OTHER
+      // side only), and held for the reconnect flush when the socket is down,
+      // so nothing typed is ever lost to a dropped connection. A voice-note
+      // transcript routes here too, as plain text — the human reads words, and
+      // the player-only niceties belong to the agent path.
+      if (takeoverRef.current) {
+        if (!text) return // a failed voice note has no words to pass a person
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            kind: 'text',
+            role: 'user',
+            text,
+            streaming: false,
+            lang: langOf(text),
+          },
+        ])
+        const ws = takeoverWsRef.current
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'message', text }))
+        } else {
+          pendingTakeoverRef.current.push(text)
+          connectTakeover()
+        }
+        return
+      }
+
       // COMMIT vs BROWSE — the rule for tappable options, do NOT merge these:
       //   • A tap that SENDS A CHOICE (a slot chip) settles its row: the chosen
       //     chip is marked SELECTED and its siblings die. That is here.
@@ -1377,7 +1642,7 @@ export function useChat(): UseChat {
         abortRef.current = null
       })
     },
-    [streaming, createAgentTurn],
+    [streaming, createAgentTurn, connectTakeover],
   )
 
   // REDEEM A WHATSAPP HANDOFF LINK. Runs once, only when the URL carried `?h=`.
@@ -1678,6 +1943,9 @@ export function useChat(): UseChat {
     // previous conversation's business, and it must never delay this one
     // starting (the lock TTL remains the backstop if the request fails).
     void closeConversation(sessionId.current)
+    // Human-takeover state is per-session: the socket, the holder, the held
+    // idle ladder all belong to the conversation being left behind.
+    teardownTakeover()
     rotateSession()
     statusRef.current = 'active'
     nudgedRef.current = false
@@ -1688,7 +1956,7 @@ export function useChat(): UseChat {
     setStreaming(false)
     setHydrating(false)
     setLastActivityAt(Date.now())
-  }, [rotateSession])
+  }, [rotateSession, teardownTakeover])
 
   // The live showroom offer: the NEWEST showrooms row, and only while nothing has
   // been picked from it. Derived, not stored — see the UseChat comment.

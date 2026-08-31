@@ -80,6 +80,12 @@ export function MessageBubble({
         dir={dir}
         lang={message.lang}
       >
+        {/* Human takeover (2026-08-31): a person's bubble carries their name,
+            every time — the customer should never have to scroll up to recall
+            who they are talking to. Absent on every other role. */}
+        {message.role === 'staff' && (
+          <span className="staff-name">{message.staffName ?? 'Elite'}</span>
+        )}
         {message.audioSrc && (
           <VoicePlayer
             src={message.audioSrc}

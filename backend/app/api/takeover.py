@@ -62,9 +62,20 @@ MAX_MESSAGE_CHARS = 4000
 _hub: dict[str, set[WebSocket]] = {}
 
 
-async def _broadcast(session_id: str, frame: dict) -> None:
-    """Send one frame to every socket on the session, dropping the dead."""
+async def _broadcast(
+    session_id: str, frame: dict, *, exclude: WebSocket | None = None
+) -> None:
+    """Send one frame to every socket on the session, dropping the dead.
+
+    `exclude` skips the sender for message frames: each client appends its own
+    message locally the moment it sends (no round-trip lag, no echo to dedupe),
+    so the broadcast's job is only to reach the OTHER side — and any second tab.
+    Lifecycle frames (takeover_started, closed) go to everyone including the
+    sender: they change mode, and every view must change together.
+    """
     for ws in list(_hub.get(session_id, ())):
+        if ws is exclude:
+            continue
         try:
             await ws.send_json(frame)
         except Exception:
@@ -219,6 +230,7 @@ async def takeover_ws(ws: WebSocket, session_id: str) -> None:
                         # lookup. Null on customer frames.
                         "admin_name": holder if role == "admin" else None,
                     },
+                    exclude=ws,
                 )
 
             elif kind == "close" and role == "admin":

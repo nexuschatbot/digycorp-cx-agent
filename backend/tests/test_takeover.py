@@ -277,16 +277,16 @@ def test_ws_full_takeover_exchange_then_close(db, client):
             joined = cust.receive_json()
             assert joined == {"type": "takeover_started", "admin_name": "Sara"}
 
+            # No echo to the sender — each client appends its own message
+            # locally on send; the broadcast reaches only the other side.
             admin.send_json({"type": "message", "text": "Hi, Sara here — how can I help?"})
             staff_frame = cust.receive_json()
             assert staff_frame["type"] == "message"
             assert staff_frame["speaker"] == "staff"
             assert staff_frame["admin_name"] == "Sara"
-            assert admin.receive_json()["speaker"] == "staff"  # echoed to sender too
 
             cust.send_json({"type": "message", "text": "About that discount..."})
             assert admin.receive_json()["speaker"] == "customer"
-            assert cust.receive_json()["speaker"] == "customer"
 
             # Both messages are ordinary transcript turns.
             db.expire_all()

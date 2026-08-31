@@ -322,6 +322,21 @@ html, body, #root { height: 100%; }
 .bubble--user { max-width: 78%; background: var(--color-bubble-user); color: var(--ink-on-action); border-bottom-right-radius: var(--radius-bubble-tail); }
 .bubble--agent { background: var(--color-bubble-agent); color: var(--color-bubble-text); border: 1px solid var(--line-hairline); border-bottom-left-radius: var(--radius-bubble-tail); }
 .bubble--error { background: color-mix(in srgb, var(--color-error) 10%, var(--color-bg)); color: var(--color-error); border: 1px solid color-mix(in srgb, var(--color-error) 35%, transparent); }
+/* Human takeover (2026-08-31): a person's bubble sits on Aisha's side of the
+   thread but must never be mistaken for her — same ground, with a primary
+   accent edge and the person's name captioned above the text. */
+.row--staff { justify-content: flex-start; }
+.bubble--staff {
+  background: var(--color-bubble-agent); color: var(--color-bubble-text);
+  border: 1px solid var(--line-hairline);
+  border-inline-start: 3px solid var(--color-primary, #1a1a1a);
+  border-bottom-left-radius: var(--radius-bubble-tail);
+}
+.staff-name {
+  display: block; font-size: 0.75rem; font-weight: 600;
+  color: var(--color-text-muted); margin-bottom: 4px;
+  letter-spacing: 0.02em;
+}
 .bubble--system {
   background: transparent; color: var(--color-text-muted);
   font-size: 0.85rem; font-style: italic; text-align: center; max-width: 90%;

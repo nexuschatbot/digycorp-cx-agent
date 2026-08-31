@@ -195,7 +195,8 @@ export interface TranscriptTurn {
   turn_id?: number
   /** 'system' (2026-07-29): a marker turn nobody spoke — today only the
    *  voice-call summary row ("call:<seconds>"), rendered as a muted line. */
-  speaker: 'customer' | 'agent' | 'system'
+  /** 'staff' (2026-08-31): a human operator's turn during a takeover. */
+  speaker: 'customer' | 'agent' | 'system' | 'staff'
   lang: Lang
   text: string
   ts: string | null
@@ -210,6 +211,16 @@ export interface Conversation {
   session_id: string
   status: 'active' | 'closed'
   turns: TranscriptTurn[]
+  /** Human takeover (2026-08-31): request_human_callback fired on this session.
+   *  A reload uses it to reopen the takeover socket and hold the idle ladder —
+   *  the live path learns the same fact from the tool_event. Optional so a
+   *  backend predating the field still parses. */
+  escalated?: boolean
+  /** Who holds this session, if a person has taken it over. Also how a reload
+   *  labels the staff bubbles: the transcript stores speaker 'staff' but not the
+   *  name — one takeover per session (first admin wins), so the holder here
+   *  names every staff turn. */
+  takeover?: { taken_over: boolean; admin_name: string | null; ts: string | null }
 }
 
 /** This session's transcript + status, for rehydrating the thread after a page
