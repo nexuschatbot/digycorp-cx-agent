@@ -374,7 +374,7 @@ def forget(
 
     profile = _get(db, customer_id)
 
-    if not (confirmed is True):
+    if confirmed is not True:
         # Deliberately strict: only a real True confirms. A string, a 1, or a
         # truthy stray must not be enough to trigger an irreversible delete.
         summary = _profile_dict(db, profile) if profile is not None else None

@@ -420,7 +420,7 @@ def _far_t2_slots(db, n):
 
 def test_reschedule_then_cancel_journey_end_to_end(slots):
     db = slots
-    from app.models import Notification, NotificationStatus, Slot
+    from app.models import Notification, NotificationStatus
     from app.services import booking as booking_service
     from app.services import customers as customers_service
     from app.services import slots as slots_svc
@@ -557,7 +557,7 @@ def test_reschedule_then_cancel_journey_end_to_end(slots):
 # --------------------------------------------------------------------------- #
 def test_office_at_9am_constraint_reaches_the_query_no_9am_in_tool_event(slots):
     db = slots
-    from app.models import LocationType, Showroom, Slot, VehicleModel
+    from app.models import Showroom, Slot, VehicleModel
 
     x70fl = db.scalar(select(VehicleModel).where(VehicleModel.name.like("%X70 FL%")))
     alquoz = db.scalar(select(Showroom).where(Showroom.name.like("%Al Quoz%")))

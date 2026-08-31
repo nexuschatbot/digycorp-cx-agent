@@ -1,0 +1,34 @@
+# Ruff configuration for the backend.
+#
+# WHY THIS FILE EXISTS AT ALL (open decision 3, settled 2026-08-31). Neither
+# this repo nor Elite's source had a ruff config, and the source was never
+# linted — so when this repo's CI added `ruff check .` over a wholesale port of
+# somebody else's application, it inherited 278 findings on day one and the
+# Lint step has failed every run since. A red lint blocks the merge, and a
+# blocked merge is a blocked deploy.
+#
+# NOTHING IS SELECTED OR IGNORED HERE, DELIBERATELY. The default rule set
+# (E4, E7, E9, F) stays exactly as it was; every one of the 27 findings in
+# app/, tests/ and evals/ was fixed rather than silenced. Suppressing a rule
+# repo-wide to clear a red build hides the next real finding too, and the
+# unused imports this cleared were real.
+
+# The ONE exclusion, and it is not application code.
+#
+# `salesforce-setup/` is thirteen one-off scripts that provision objects,
+# fields, layouts and list views in a Salesforce org. They are run BY HAND,
+# against an org that is currently dormant (`SF_ENABLED=false`), and nothing in
+# `app/` imports them — they are closer to a runbook than to a module.
+#
+# They carried 251 of the 278 findings, and essentially all of them are style:
+# E701/E702, one-line `if x: sys.exit(1)` and semicolon-joined statements, in
+# scripts written to be read top-to-bottom in one sitting. Reformatting them
+# would be re-authoring ported code that works, for no behavioural gain and
+# against rule zero, and it would put ~250 lines of noise in front of whoever
+# reviews the next real change.
+#
+# IF THESE SCRIPTS EVER BECOME IMPORTABLE CODE, DELETE THIS LINE. The exemption
+# is for hand-run provisioning, not for the Salesforce integration itself —
+# `app/services/salesforce.py` is linted like everything else and stays that way
+# through S8b's rewrite.
+exclude = ["salesforce-setup"]

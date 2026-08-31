@@ -150,7 +150,7 @@ def _enquiry(db, session: str) -> None:
 
 def test_dashboard_counts_escalations_and_reasons(db):
     """The handoffs block is measured now, not a hardcoded zero."""
-    c1, c2 = _customer(db, "+971501111111"), _customer(db, "+971502222222")
+    c1, _ = _customer(db, "+971501111111"), _customer(db, "+971502222222")
     # Two enquiries, one handed off (twice, same reason -> still one).
     _enquiry(db, "conv-a")
     _enquiry(db, "conv-b")

@@ -218,7 +218,7 @@ against a 400ms first-audio budget makes the free pre-filter/sticky exits
 |---|---|---|---|
 | 1 | **Agent roster** — `TestDrive + BookingManagement` (proposed) vs doc's `Sales + Bookings` | S4, S5, S7 | **open** |
 | 2 | Deploy model — source ships 4 containers (incl. Postgres + sf-sync); target is rsync + systemd + nginx, room for one service | S2, S9 | open |
-| 3 | `ruff check .` — 12 errors in ported tests, more expected across `app/`. Fix, or add a config matching how the source was linted? | CI | open |
+| 3 | `ruff check .` — the count was **278**, not 12, and it had failed CI's Lint step on every run since S1, blocking every merge | CI, **deploys** | ✅ **closed 31 Aug** — 27 fixed by hand in `app/`/`tests/`/`evals/`; `salesforce-setup/` (251, hand-run scripts for a dormant org) excluded in `backend/ruff.toml`. No rule selected or ignored. |
 | 4 | Python — source dev runs 3.14, this repo's CI pins 3.12 | CI | open |
 | 5 | `tests/test_health.py` vs the ported `main.py` — which turned out to be **every deploy failing its health gate**, not a naming mismatch | S1, deploys | ✅ **closed 31 Aug** — `/health`, `/` and `/api/health` all served; service name is `digycorp-cx-agent`, product title unchanged. [OPEN-ISSUES.md #6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate) |
 | 6 | `psycopg[binary]` left unpinned — not installed in the source venv, so no production version to copy | — | noted |
@@ -309,6 +309,32 @@ system, all of it found by asking "who calls this?" rather than by a failing tes
 - **"Forget me" was a partial delete that looked complete** — `turn_trace` was
   never swept.
 - The **retention windows had been declared and never read** by anything.
+
+### The deploy was blocked twice, and neither was visible from the code
+
+Found on 31 August while making the health route deployable. CI runs **Lint
+before Test**, so the second gate below never even ran:
+
+| gate | asked for | got | since |
+|---|---|---|---|
+| `ci.yml` Lint — `ruff check .` | 0 findings | **278** | S1 |
+| `remote-deploy.sh:46` — `curl -sf /health` | 200 | **404**, then `exit 1` | S1 |
+
+Both have the same cause and it is not a bug in anyone's code: **S1 replaced
+`app/` wholesale with an application ported from another repo, and the
+scaffold's CI and deploy scripts stayed pointed at the scaffold.** Every
+individual file was correct. Nothing connected them, and nobody ran a deploy.
+
+The lint number had also been recorded wrong — open decision 3 said "12 errors
+in ported tests, more expected across `app/`". It was 278, and 251 of them were
+in `salesforce-setup/`, thirteen hand-run Salesforce provisioning scripts for an
+org that is dormant. Those are excluded in `backend/ruff.toml`; the other 27
+were fixed, and **no rule is selected or ignored**, so the next real finding
+still fails the build.
+
+Guarded by `tests/test_health.py::test_the_paths_the_deploy_scripts_poll_are_served`,
+which reads the polled paths out of the deploy scripts and asserts the app routes
+each one — verified to fail when the route is removed.
 
 ### Post-wiring hardening — 31 August 2026
 

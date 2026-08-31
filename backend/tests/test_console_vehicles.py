@@ -10,9 +10,8 @@ Offline: the seeded `db`, no HTTP, no vendor.
 
 from __future__ import annotations
 
-from sqlalchemy import event, select
+from sqlalchemy import event
 
-from app.models import VehicleModel
 from app.services import console
 
 

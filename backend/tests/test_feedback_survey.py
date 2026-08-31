@@ -37,7 +37,6 @@ from app.models import (
     AuditEvent,
     AuditType,
     Booking,
-    BookingAttendance,
     Customer,
     FeedbackStatus,
     FeedbackSurvey,

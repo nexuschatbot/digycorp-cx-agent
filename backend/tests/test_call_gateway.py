@@ -22,7 +22,6 @@ What matters here beyond the happy path:
 from __future__ import annotations
 
 import functools
-import threading
 
 import pytest
 from fastapi.testclient import TestClient

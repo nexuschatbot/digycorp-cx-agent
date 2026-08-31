@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.models import Showroom, Stock, VehicleModel, VehicleVariant
+from app.models import VehicleModel, VehicleVariant
 from app.services import stock
 
 AL_QUOZ, DEIRA, ABU_DHABI, AL_AIN, AJMAN = 1, 3, 4, 5, 6

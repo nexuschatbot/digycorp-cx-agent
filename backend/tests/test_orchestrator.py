@@ -362,7 +362,9 @@ def test_a_bare_yes_is_a_confirmation_before_it_is_a_follow_up():
     """THE CASE THAT FORCES THE ORDER. Sticky would hand "yes" to whichever
     read-only agent spoke last, where it can do nothing — the thing being
     confirmed is a WRITE, and writes are the orchestrator's."""
-    pending = lambda m: "a hold on Saturday 10:00" if m.lower() == "yes" else None
+    def pending(m):
+        return "a hold on Saturday 10:00" if m.lower() == "yes" else None
+
     path = cascade.decide("yes", current_agent="testdrive", pending_confirmation=pending)
     assert path.kind == "confirmation"
 
@@ -371,7 +373,9 @@ def test_a_new_question_is_not_swallowed_just_because_something_is_pending():
     """An earlier version asked only "is anything pending?" and claimed every
     turn while a hold was open — so "and Sunday?" was read as a confirmation
     when it is plainly a new question about a different day."""
-    pending = lambda m: "a hold" if m.lower() == "yes" else None
+    def pending(m):
+        return "a hold" if m.lower() == "yes" else None
+
     path = cascade.decide("and Sunday?", current_agent="testdrive", pending_confirmation=pending)
     assert path.kind != "confirmation"
 

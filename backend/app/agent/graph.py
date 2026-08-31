@@ -47,7 +47,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.prompt import SYSTEM_PROMPT, system_prompt, system_prompt_parts
+from app.agent.prompt import SYSTEM_PROMPT, system_prompt_parts
 from app.agent.sanitise import MarkdownStripper
 from app.agent.tool_node import tool_node
 # Read-only, for the bookings anchor built in _agent_node. The agent node reads

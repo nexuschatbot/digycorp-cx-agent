@@ -13,7 +13,6 @@ import struct
 import wave
 from pathlib import Path
 
-import pytest
 
 from app.config import CALL_VAD_SILENCE_MS
 from app.services import speech_gate as sg

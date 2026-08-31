@@ -205,7 +205,7 @@ _PROMPT_BODY = _loader.single_agent_body()
 # get_available_slots. Nothing to convert, nothing to get wrong. The rule
 # generalises: when the model must restate an injected fact in a different
 # format, inject that format too rather than trusting it to transform.
-from app.agent.prompts.anchors import (  # noqa: F401  (re-exported: callers and tests read these off prompt)
+from app.agent.prompts.anchors import (  # noqa: F401, E402  (re-exported below a comment that explains the placement)
     _BOOKINGS_ANCHOR,
     _COMPARE_ANCHOR,
     _COUNT_WORDS,

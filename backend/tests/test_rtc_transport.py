@@ -305,7 +305,7 @@ def test_real_peer_pair_over_loopback(db):
     """A REAL negotiation: browser-side simulated by a second aiortc peer.
     Audio flows both ways over loopback UDP — mic frames reach on_pcm at
     24 kHz mono, and the server track's frames reach the far side."""
-    aiortc = pytest.importorskip("aiortc")
+    pytest.importorskip("aiortc")
     from aiortc import RTCPeerConnection
     from aiortc.mediastreams import AudioStreamTrack
 

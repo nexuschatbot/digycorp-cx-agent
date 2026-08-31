@@ -16,7 +16,6 @@ The four properties this module exists to guarantee:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select

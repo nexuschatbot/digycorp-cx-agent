@@ -259,7 +259,7 @@ def test_empty_effort_omits_the_parameter(monkeypatch):
 
 # --- the momentum predictor and the proactive note --------------------------
 
-from app.agent.graph import _momentum_mismatch
+from app.agent.graph import _momentum_mismatch  # noqa: E402  (imported here, under its own section heading)
 
 
 def test_momentum_mismatch_detects_a_switch_to_english():

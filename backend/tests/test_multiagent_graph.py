@@ -148,7 +148,8 @@ def test_the_car_the_customer_HELD_beats_the_car_search_led_with(db):
     slot = Slot(location_type=LocationType.showroom, showroom_id=1, vehicle_id=8,
                 start=start, end=start + timedelta(minutes=90),
                 status=SlotStatus.open)
-    db.add(slot); db.commit()
+    db.add(slot)
+    db.commit()
 
     step = _run.StepResult(
         brief="hold it", agent="testdrive", status="ok",

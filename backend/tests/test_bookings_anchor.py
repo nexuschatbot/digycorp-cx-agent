@@ -20,7 +20,7 @@ in-memory DB fixture. No model, no vendor call.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
 

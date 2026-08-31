@@ -30,7 +30,6 @@ PROTOCOL: LEAVE-ONE-OUT. Each utterance is scored against card representations
 built WITHOUT it, so nothing can match itself. That measures generalisation
 rather than memorisation, which is the only thing a threshold can be set on.
 """
-import itertools
 import numpy as np
 import yaml
 from pathlib import Path

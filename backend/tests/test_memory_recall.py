@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from app.agent import build_config, build_graph, new_sqlite_checkpointer
 from app.models import AuditEvent, AuditType, MemoryProfile
-from app.services import consent, customers, memory
+from app.services import consent, customers
 from app.tools.memory_tools import FORGET_ME_SCHEMA, SAVE_MEMORY_SCHEMA
 
 MOBILE = "+971505550103"  # Ravi — the seeded returning customer (S-07)

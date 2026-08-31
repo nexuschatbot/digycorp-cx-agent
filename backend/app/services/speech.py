@@ -40,7 +40,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Callable
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import (

@@ -721,7 +721,6 @@ def generate(
 
     showrooms = list(db.scalars(select(Showroom).order_by(Showroom.id)).all())
     vehicles = list(db.scalars(select(VehicleModel).order_by(VehicleModel.id)).all())
-    by_id = {v.id: v for v in vehicles}
 
     created: list[Slot] = []
 
