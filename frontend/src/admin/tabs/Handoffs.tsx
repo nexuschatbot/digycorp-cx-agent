@@ -34,7 +34,7 @@ import Typography from '@mui/material/Typography'
 import { fetchHandoffs, type HandoffRow } from '../adminApi'
 import { useList } from '../useList'
 import { CardSkeletons, EmptyState, ErrorState, TopBar } from '../components/ui'
-import TakeoverDrawer from '../components/TakeoverDrawer'
+import TakeoverDialog from '../components/TakeoverDialog'
 
 /** Elapsed time, in the words an operator would use. */
 function ageOf(ts: string | null): { label: string; hours: number } {
@@ -63,7 +63,7 @@ export default function Handoffs() {
   const filters = useMemo(() => ({ reason }), [reason])
   const list = useList<HandoffRow>(fetchHandoffs, filters, 25)
   const pageCount = Math.ceil(list.total / list.limit)
-  // The row whose live-chat drawer is open (human takeover, 2026-08-31).
+  // The row whose live-chat dialog is open (human takeover, 2026-08-31).
   const [takingOver, setTakingOver] = useState<HandoffRow | null>(null)
 
   return (
@@ -183,7 +183,7 @@ export default function Handoffs() {
       )}
 
       {takingOver && (
-        <TakeoverDrawer
+        <TakeoverDialog
           row={takingOver}
           onClose={() => setTakingOver(null)}
           onChanged={list.reload}

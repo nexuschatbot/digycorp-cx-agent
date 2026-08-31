@@ -1,9 +1,11 @@
-// TakeoverDrawer — the live chat behind the Handoffs queue's "Take over" button
-// (human takeover, 2026-08-31).
+// TakeoverDialog — the live chat behind the Handoffs queue's "Take over" button
+// (human takeover, 2026-08-31). A centred modal, not a side drawer: taking a
+// conversation over is the operator's whole task while it lasts, and a modal
+// says so — the queue behind it can wait.
 //
 // WHAT IT IS. The moment an operator takes a session over, the AI is out of it
 // for good (the backend's runner gate refuses every later agent turn) and this
-// drawer IS the conversation: full transcript above so the operator can read
+// dialog IS the conversation: full transcript above so the operator can read
 // what happened before they arrived, live messages below, one exit — "End &
 // close chat", which runs the same close service as every other ending.
 //
@@ -22,7 +24,7 @@ import { useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
-import Drawer from '@mui/material/Drawer'
+import Dialog from '@mui/material/Dialog'
 import IconButton from '@mui/material/IconButton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -54,14 +56,14 @@ const REFUSALS: Record<string, string> = {
   admin_name_required: 'Enter your name first — the customer sees who joined.',
 }
 
-export default function TakeoverDrawer({
+export default function TakeoverDialog({
   row,
   onClose,
   onChanged,
 }: {
   row: HandoffRow
   onClose: () => void
-  /** The queue behind this drawer changed (a takeover started or the chat was
+  /** The queue behind this dialog changed (a takeover started or the chat was
    *  closed) — reload it so the row wears its new state. */
   onChanged: () => void
 }) {
@@ -120,7 +122,7 @@ export default function TakeoverDrawer({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [lines])
 
-  // The socket dies with the drawer — but the takeover does NOT: the state is
+  // The socket dies with the dialog — but the takeover does NOT: the state is
   // server-side, so closing this panel and reopening it rejoins the same hold.
   useEffect(
     () => () => {
@@ -209,11 +211,15 @@ export default function TakeoverDrawer({
   }
 
   return (
-    <Drawer
-      anchor="right"
+    <Dialog
       open
       onClose={onClose}
-      slotProps={{ paper: { sx: { width: { xs: '100%', sm: 560 }, display: 'flex' } } }}
+      fullWidth
+      maxWidth="sm"
+      // A FIXED height, deliberately: a chat that grows with its messages
+      // walks the composer down the screen; pinned, the thread scrolls inside
+      // and the input stays put — same shape as the customer's chat.
+      slotProps={{ paper: { sx: { height: 'min(720px, 90vh)', display: 'flex' } } }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider', bgcolor: '#fafbfc' }}>
         <Flex direction="row" align="center" justify="space-between">
@@ -354,6 +360,6 @@ export default function TakeoverDrawer({
           </Flex>
         )}
       </Box>
-    </Drawer>
+    </Dialog>
   )
 }
