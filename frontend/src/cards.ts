@@ -154,3 +154,33 @@ export function extractSearchCards(output: unknown): VehicleCard[] {
   const source = matches.length > 0 ? matches : alternatives
   return source.slice(0, MAX_RECOMMENDATION_CARDS).map(toCard)
 }
+
+/** Fold `incoming` into `existing`, keeping the first sighting of each car.
+ *
+ *  ONE QUESTION SHOULD DRAW ONE STRIP. A specialist answering "something with
+ *  seven seats, something efficient, something off-road" issues a search per
+ *  clause, and each result used to become its own row — so one question drew
+ *  three narrow strips, and before the backend started trimming them they also
+ *  repeated cars across rows. The backend now guarantees each car reaches the
+ *  UI once (runner._without_drawn); this is what stops the survivors being
+ *  scattered over several rows.
+ *
+ *  KEYED ON vehicleId, with `id` as the fallback — a card whose payload carried
+ *  no catalogue id still has a React key, and two of those must not collapse
+ *  into one just because neither can be identified.
+ *
+ *  ORDER IS FIRST-SEEN and nothing is reordered: the first search is the one the
+ *  agent led with, so its ranking is the one the customer reads first.
+ */
+export function mergeCards(existing: VehicleCard[], incoming: VehicleCard[]): VehicleCard[] {
+  const keyOf = (c: VehicleCard) => (c.vehicleId != null ? `v${c.vehicleId}` : `k${c.id}`)
+  const seen = new Set(existing.map(keyOf))
+  const out = [...existing]
+  for (const card of incoming) {
+    const key = keyOf(card)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(card)
+  }
+  return out
+}

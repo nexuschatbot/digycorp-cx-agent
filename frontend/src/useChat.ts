@@ -19,7 +19,7 @@ import {
   type TranscriptTurn,
 } from './api'
 import { extractBookingCards, toBookingCard, type BookingCard } from './bookings'
-import { cardFromDetail, extractCards, extractInteriorImages, extractSearchCards, type VehicleCard } from './cards'
+import { cardFromDetail, extractCards, extractInteriorImages, extractSearchCards, mergeCards, type VehicleCard } from './cards'
 import type { CardVariant } from './components/VehicleCards'
 import { CALL_END_LINES, LIFECYCLE_LINES, VOICE_LABELS, callSummaryLine } from './i18n'
 import { isRtl } from './rtl'
@@ -260,6 +260,9 @@ async function rebuildTurns(turns: TranscriptTurn[], sessionId: string): Promise
 
   const out: ChatMessage[] = []
   for (const [turnIndex, t] of turns.entries()) {
+    // Where THIS turn's messages start in `out` — the cards fold below must not
+    // reach back into an earlier turn and merge two turns' strips together.
+    const turnStart = out.length
     const rows = t.cards ?? []
     // A VOICE NOTE COUNTS AS CONTENT even with no text. A recording we could not
     // transcribe is stored as an empty turn carrying only its audio_id, and the
@@ -306,11 +309,23 @@ async function rebuildTurns(turns: TranscriptTurn[], sessionId: string): Promise
         .map((id) => resolved.get(id))
         .filter((c): c is VehicleCard => c != null)
       if (cards.length === 0) continue
+      const variant = row.variant ?? 'compact'
+      // THE SAME FOLD THE LIVE PATH DOES, and it has to be here or a refresh
+      // would re-scatter what the turn showed as one strip. Bounded to THIS
+      // turn's messages: `out` accumulates across turns, and folding into an
+      // earlier turn's strip would move cards up the thread.
+      const openRow = out
+        .slice(turnStart)
+        .find((m): m is CardsMessage => m.kind === 'cards' && m.variant === variant)
+      if (openRow) {
+        openRow.cards = mergeCards(openRow.cards, cards)
+        continue
+      }
       out.push({
         id: crypto.randomUUID(),
         kind: 'cards',
         cards,
-        variant: row.variant ?? 'compact',
+        variant,
         // From the turn's OWN language, which is more faithful than the live
         // path's turnDirRef (a ref stamped at send time): a reloaded thread that
         // switched EN->AR mid-conversation gets each row's direction right.
@@ -1018,6 +1033,22 @@ export function useChat(): UseChat {
     let pendingActiveOptionsId: string | null = null
     const queueRow = (row: ChatMessage | null, activeSlots = false) => {
       if (!row) return
+      // ONE QUESTION, ONE STRIP. A specialist answering a multi-part question
+      // issues a search per clause and each result arrives as its own
+      // tool_event, so one question drew three narrow rows. Rows queued in the
+      // same turn are still uncommitted here — they all land together on the
+      // first token — so folding a cards row into the pending one of the same
+      // variant is invisible to everything downstream. The reload path does the
+      // same fold (see rebuildTurns) so a refresh shows what the turn showed.
+      if (row.kind === 'cards') {
+        const into = pendingRows.find(
+          (r): r is CardsMessage => r.kind === 'cards' && r.variant === row.variant,
+        )
+        if (into) {
+          into.cards = mergeCards(into.cards, row.cards)
+          return
+        }
+      }
       pendingRows.push(row)
       if (activeSlots) pendingActiveSlotsId = row.id
       // An option row is ALWAYS the live one when it lands — offer_options ends
