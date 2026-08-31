@@ -98,6 +98,12 @@ else.
 
 Only propose what the request actually asked for, and leave `proposals` out \
 entirely when it asked for nothing.
+
+IF THE BRIEF ASKS FOR AN ACTION AND YOU ARE NOT PROPOSING IT, SAY WHY in your \
+note — "the customer has not chosen a slot yet", "the slot named in the brief \
+is no longer free". An action you describe without proposing does not happen: \
+prose about booking is not a booking, and a step that was asked to act and \
+neither proposes nor explains is an incomplete answer.
 """
 
 

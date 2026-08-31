@@ -685,6 +685,113 @@ def test_a_step_with_evidence_and_no_summary_is_not_a_gap():
     assert payload["evidence"], "the evidence is the answer here"
 
 
+# --------------------------------------------------------------------------- #
+# A write-capable step that narrated instead of proposing (2026-08-31)
+# --------------------------------------------------------------------------- #
+def test_a_write_capable_step_that_only_narrated_is_named_as_a_gap():
+    """The live failure: testdrive had the slot, wrote 1,098 characters ABOUT
+    booking it, proposed nothing — and the step was `ok` with a note, so no
+    list named anything wrong. Aisha re-briefed into the cascade ceiling."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+    from app.orchestrator.run import StepResult
+
+    narrated = StepResult(
+        brief="b", agent="testdrive", status="ok",
+        findings={"_note": "I will go ahead and book slot 12 for Saturday."},
+    )
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[narrated]))
+
+    assert len(payload["unavailable"]) == 1
+    gap = payload["unavailable"][0]
+    assert gap["agent"] == "testdrive"
+    assert gap["status"] == "no_action"
+    assert "NOT happened" in gap["detail"]
+    assert "Re-brief once" in gap["detail"]
+
+
+def test_a_write_capable_step_with_evidence_and_no_proposal_is_named():
+    """Round two of the same live turn: it called get_available_slots and again
+    proposed nothing. Evidence without an action is still an unanswered ask."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+
+    step = _step_with_evidence(agent="testdrive")
+    step.findings = {}
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[step]))
+
+    assert [u["status"] for u in payload["unavailable"]] == ["no_action"]
+
+
+def test_a_read_only_agent_narrating_is_not_a_no_action_gap():
+    """Finance and sales propose nothing by contract — a prose-only answer from
+    them must not be reported as a missing write."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+    from app.orchestrator.run import StepResult
+
+    narrated = StepResult(
+        brief="b", agent="finance", status="ok",
+        findings={"_note": "indicative figures only"},
+    )
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[narrated]))
+
+    assert payload["unavailable"] == []
+
+
+def test_a_write_capable_step_that_answered_with_data_is_left_alone():
+    """Structured findings are a read answer — 'what times on Sunday' proposing
+    nothing is correct, not incomplete."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+    from app.orchestrator.run import StepResult
+
+    answered = StepResult(
+        brief="b", agent="testdrive", status="ok",
+        findings={"slot_id": 12},
+    )
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[answered]))
+
+    assert payload["unavailable"] == []
+
+
+def test_a_write_capable_step_that_proposed_is_left_alone():
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+    from app.orchestrator.run import StepResult
+
+    proposed = StepResult(
+        brief="b", agent="testdrive", status="ok",
+        findings={"_note": "asked for the hold"},
+        proposals=[{"action": "hold_slot", "args": {"slot_id": 12}}],
+    )
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[proposed]))
+
+    assert payload["unavailable"] == []
+
+
+def test_a_step_with_nothing_at_all_stays_the_empty_gap():
+    """The total-silence case keeps its existing name — one gap, not two."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+    from app.orchestrator.run import StepResult
+
+    empty = StepResult(brief="b", agent="testdrive", status="ok")
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[empty]))
+
+    assert [u["status"] for u in payload["unavailable"]] == ["empty"]
+
+
+def test_the_proposals_clause_demands_a_reason_for_inaction():
+    """The contract half of the same fix: a specialist not proposing an asked
+    action must say why in its note."""
+    from app.orchestrator import subagent as sub
+
+    clause = sub._proposals_clause("testdrive")
+    assert "SAY WHY" in clause
+    assert "does not happen" in clause
+
+
 def test_a_failed_step_is_reported_once_not_twice():
     from app.orchestrator import run as run_mod
     from app.orchestrator import turn as turn_mod
