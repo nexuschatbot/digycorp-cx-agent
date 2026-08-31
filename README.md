@@ -2,6 +2,21 @@
 
 Customer-experience agent. FastAPI backend, React frontend.
 
+> ## 🔴 New here? Start from `test`.
+>
+> **`test` is the base branch for all work.** Branch from it, PR back into it.
+>
+> ```bash
+> git checkout test && git pull origin test
+> git checkout -b fix/your-change
+> ```
+>
+> `elite-prod` and `general-prod` are release targets, not places to develop —
+> they only ever receive a promotion PR from `test`.
+>
+> Full pipeline, and the failures it has already produced:
+> **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
 ```
 backend/    FastAPI service  (app/, tests/, requirements.txt)
 frontend/   React + Vite SPA (src/, package.json)
@@ -26,9 +41,15 @@ feature branch  →  test  →  elite-prod
 
 Branch from `test`, open a PR back into `test`. After QA verifies the test VM,
 a release approver promotes `test` into a production branch. Production never
-receives a PR from anywhere but `test` — CI enforces this.
+receives a PR from anywhere but `test` — `branch-policy.yml` enforces this.
 
-Full workflow, including the exact commands: [CONTRIBUTING.md](CONTRIBUTING.md).
+**Nothing enforces the base automatically.** `branch-policy.yml` guards the
+production branches; no check verifies your feature branch was cut from `test`.
+The PR template asks you to confirm it — please actually confirm it, because a
+branch cut from anywhere else is cut from code nobody has watched run.
+
+Full workflow and commands: [CONTRIBUTING.md](CONTRIBUTING.md).
+Deployment pipeline: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Local development
 
