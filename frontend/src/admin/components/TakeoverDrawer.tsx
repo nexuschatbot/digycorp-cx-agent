@@ -326,16 +326,29 @@ export default function TakeoverDrawer({
             This conversation has ended. The transcript stays in the Conversations tab.
           </Typography>
         ) : phase === 'refused' ? null : (
-          <Flex direction="row" spacing={1} align="center">
+          <Flex direction="row" spacing={1} align="flex-start">
+            {/* flex-start + a fixed 40px button: the helper text makes the
+                field taller than the button, and centring against that total
+                height sank the button below the input line. Top-aligned, the
+                button sits level with the input box and the helper hangs
+                below alone. */}
             <TextField
               size="small"
               label="Your name"
               helperText="Shown to the customer on every message you send."
               value={name}
               onChange={(e) => setName(e.target.value)}
-              sx={{ minWidth: 220 }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') takeOver()
+              }}
+              sx={{ minWidth: 220, flex: 1 }}
             />
-            <Button variant="contained" onClick={takeOver} disabled={!name.trim() || phase === 'reading'}>
+            <Button
+              variant="contained"
+              onClick={takeOver}
+              disabled={!name.trim() || phase === 'reading'}
+              sx={{ height: 40, flexShrink: 0, whiteSpace: 'nowrap' }}
+            >
               {holder ? 'Rejoin chat' : 'Take over chat'}
             </Button>
           </Flex>
