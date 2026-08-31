@@ -100,8 +100,14 @@ if [ -d "${NGINX_SRC}" ]; then
   # an `ssl_certificate` that does not exist, and certbot's HTTP-01 challenge
   # needs nginx already up — so a fresh box comes up on HTTP, gets its
   # certificate through that, and gains HTTPS on the next deploy.
+  # `sudo test`, NOT `[ -f ]`. This script runs as the deploy user, and
+  # certbot makes /etc/letsencrypt/live and /archive mode 0700 root — so a
+  # plain existence check is FALSE for a certificate that is plainly there.
+  # Found by shipping it: the first run printed "No certificate yet" on a box
+  # already serving HTTPS and installed the HTTP-only config over a working
+  # TLS one, taking the site off 443 while reporting success.
   CERT_DIR="/etc/letsencrypt/live/digycorp-cx-test.uaenorth.cloudapp.azure.com"
-  if [ -f "${CERT_DIR}/fullchain.pem" ]; then
+  if sudo test -f "${CERT_DIR}/fullchain.pem"; then
     echo "==> Certificate present — enabling HTTPS"
     cat "${NGINX_SRC}/site-http.conf" "${NGINX_SRC}/site-tls.conf" \
       | sudo tee /etc/nginx/sites-available/digycorp-cx-agent >/dev/null
