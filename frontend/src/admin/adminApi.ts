@@ -191,6 +191,9 @@ export interface HandoffRow {
    *  shows a claimed row as claimed — and by whom. */
   taken_over_by: string | null
   taken_over_ts: string | null
+  /** The conversation is still open. A closed chat has nobody in it to talk
+   *  to, so the queue offers no live takeover on it — callback only. */
+  session_active: boolean
 }
 
 /** One step of one multi-agent turn. Mirrors orchestrator/run.trace_steps. */

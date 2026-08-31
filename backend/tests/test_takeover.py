@@ -174,6 +174,19 @@ def test_handoff_queue_shows_who_holds_the_session(db):
     row = next(r for r in rows if r["session"] == SESSION)
     assert row["taken_over_by"] == "Sara"
     assert row["taken_over_ts"] is not None
+    assert row["session_active"] is True
+
+
+def test_handoff_queue_marks_a_closed_session_inactive(db):
+    """A closed chat has nobody in it to talk to — the queue must say so, so the
+    UI can withhold the live 'Take over' and leave the row callback-only."""
+    _escalate(db)
+    conversation_service.close(db, session_id=SESSION, actor=Actor.customer)
+    db.commit()
+    row = next(
+        r for r in console.list_handoffs(db)["rows"] if r["session"] == SESSION
+    )
+    assert row["session_active"] is False
 
 
 # --------------------------------------------------------------------------- #

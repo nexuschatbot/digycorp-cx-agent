@@ -158,20 +158,33 @@ export default function Handoffs() {
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>
                       {/* Human takeover (2026-08-31): step into the chat as a
                           person — the AI is refused from that moment on. A row
-                          someone holds says who; opening it again rejoins. */}
+                          someone holds says who; opening it again rejoins.
+                          THE BUTTON IS EARNED, NOT DEFAULT: only a chat that is
+                          still open AND where the customer explicitly asked for
+                          a person (reason explicit_request) offers a live
+                          takeover. Every other row — closed chats, and
+                          escalations Aisha raised herself for price, finance or
+                          a complaint — is a callback promise, and showing a
+                          dead-end button on those would only invite refusals. */}
                       {h.taken_over_by ? (
                         <Chip
                           size="small"
-                          color="success"
+                          color={h.session_active ? 'success' : 'default'}
                           variant="outlined"
-                          label={`Held by ${h.taken_over_by}`}
+                          label={h.session_active
+                            ? `Held by ${h.taken_over_by}`
+                            : `Closed — was ${h.taken_over_by}'s`}
                           onClick={() => setTakingOver(h)}
                         />
-                      ) : (
+                      ) : h.session_active && h.reason === 'explicit_request' ? (
                         <Button size="small" variant="outlined"
                                 onClick={() => setTakingOver(h)}>
                           Take over
                         </Button>
+                      ) : (
+                        <Typography variant="caption" color="text.disabled">
+                          {h.session_active ? 'callback only' : 'chat closed'}
+                        </Typography>
                       )}
                     </TableCell>
                   </TableRow>
