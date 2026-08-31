@@ -186,6 +186,11 @@ export interface HandoffRow {
   customer_id: number | null
   customer_name: string | null
   customer_mobile: string | null
+  /** Human takeover (2026-08-31): who holds this conversation live, if anyone.
+   *  Null until an admin takes it over; then their display name, so the queue
+   *  shows a claimed row as claimed — and by whom. */
+  taken_over_by: string | null
+  taken_over_ts: string | null
 }
 
 /** One step of one multi-agent turn. Mirrors orchestrator/run.trace_steps. */

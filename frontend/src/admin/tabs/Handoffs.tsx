@@ -18,6 +18,7 @@
 
 import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import MenuItem from '@mui/material/MenuItem'
 import Pagination from '@mui/material/Pagination'
@@ -33,6 +34,7 @@ import Typography from '@mui/material/Typography'
 import { fetchHandoffs, type HandoffRow } from '../adminApi'
 import { useList } from '../useList'
 import { CardSkeletons, EmptyState, ErrorState, TopBar } from '../components/ui'
+import TakeoverDrawer from '../components/TakeoverDrawer'
 
 /** Elapsed time, in the words an operator would use. */
 function ageOf(ts: string | null): { label: string; hours: number } {
@@ -61,6 +63,8 @@ export default function Handoffs() {
   const filters = useMemo(() => ({ reason }), [reason])
   const list = useList<HandoffRow>(fetchHandoffs, filters, 25)
   const pageCount = Math.ceil(list.total / list.limit)
+  // The row whose live-chat drawer is open (human takeover, 2026-08-31).
+  const [takingOver, setTakingOver] = useState<HandoffRow | null>(null)
 
   return (
     <Box>
@@ -103,6 +107,7 @@ export default function Handoffs() {
                 <TableCell>Reason</TableCell>
                 <TableCell>What they asked about</TableCell>
                 <TableCell>Session</TableCell>
+                <TableCell>Live chat</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -150,12 +155,39 @@ export default function Handoffs() {
                         </Typography>
                       </Tooltip>
                     </TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                      {/* Human takeover (2026-08-31): step into the chat as a
+                          person — the AI is refused from that moment on. A row
+                          someone holds says who; opening it again rejoins. */}
+                      {h.taken_over_by ? (
+                        <Chip
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          label={`Held by ${h.taken_over_by}`}
+                          onClick={() => setTakingOver(h)}
+                        />
+                      ) : (
+                        <Button size="small" variant="outlined"
+                                onClick={() => setTakingOver(h)}>
+                          Take over
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 )
               })}
             </TableBody>
           </Table>
         </Box>
+      )}
+
+      {takingOver && (
+        <TakeoverDrawer
+          row={takingOver}
+          onClose={() => setTakingOver(null)}
+          onChanged={list.reload}
+        />
       )}
 
       {pageCount > 1 && (
