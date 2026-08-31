@@ -60,6 +60,7 @@ from app.config import (
     AGENT_MODEL,
     ANTHROPIC_API_KEY,
     AZURE_FOUNDRY_API_KEY,
+    CLAUDE_MODEL,
     AZURE_FOUNDRY_RESOURCE,
     LANGSMITH_TRACING,
     USE_DIRECT_ANTHROPIC,
@@ -549,7 +550,7 @@ def _prefixes_to_warm() -> list[tuple[str, list]]:
     share one cache entry, and warming it twice would pay the write twice for
     nothing. Falls back to the full set if the binding module cannot enumerate.
     """
-    out: list[tuple[str, list]] = [("full", TOOL_SCHEMAS)]
+    out: list[tuple[str, list, object]] = [("full", TOOL_SCHEMAS, system_prompt_parts())]
     seen = {tuple(s["name"] for s in TOOL_SCHEMAS)}
     try:
         from app.agent import tool_binding
@@ -560,9 +561,55 @@ def _prefixes_to_warm() -> list[tuple[str, list]]:
             if key in seen:
                 continue
             seen.add(key)
-            out.append((agent, schemas))
+            out.append((agent, schemas, system_prompt_parts(agent=agent)))
     except Exception:  # noqa: BLE001 — a warm-up must never break a boot
         log.warning("could not enumerate per-agent tool bindings — warming the full set only")
+
+    # THE PREFIX A LIVE CHAT TURN ACTUALLY READS (found 2026-08-31). This
+    # function varied the TOOLS correctly and passed system_prompt_parts() with
+    # no arguments for every one of them — the un-routed single-agent body. Since
+    # S7 the router picks a journey body and T5.1 appends DELEGATING, so the
+    # three prefixes hashed differently and NOT ONE of them was what a live turn
+    # sent. The warm-up spent an API call per boot writing an entry nothing could
+    # read, and every first customer still paid the cold write it exists to
+    # avoid.
+    try:
+        from app.orchestrator import turn as _turn
+        from app.tools import aisha_schemas as _aisha_schemas
+
+        if _turn.enabled():
+            for journey in ("testdrive", "bookingmanagement"):
+                out.append((
+                    f"aisha:{journey}",
+                    _aisha_schemas(),
+                    system_prompt_parts(agent=journey, multi_agent=True),
+                ))
+    except Exception:  # noqa: BLE001
+        log.warning("could not enumerate the multi-agent prefixes", exc_info=True)
+
+    # AND THE SPECIALISTS' OWN. Measured 2026-08-31: a sub-agent step on a cold
+    # prefix ran 5,368ms against 3,458ms warm — ~1.9s, paid by the first customer
+    # to reach each agent in any hour. Their prompt is the card body plus a
+    # DATE-granular anchor, exactly what run_step assembles, so warming it here
+    # writes the same key that loop will read.
+    try:
+        from datetime import date as _date
+
+        from app.agent.prompt import _DATE_ANCHOR, _relative_dates
+        from app.agents import loader as _loader
+        from app.orchestrator import subagent as _sub
+
+        for agent in ("sales", "testdrive", "finance"):
+            body = (
+                _loader.body_for(agent)
+                + _DATE_ANCHOR.format(**_relative_dates(_date.today()))
+                + "\n\n"
+                + _sub.FINDINGS_INSTRUCTION
+                + _sub._proposals_clause(agent)
+            )
+            out.append((f"subagent:{agent}", _sub._schemas_for(agent), body))
+    except Exception:  # noqa: BLE001
+        log.warning("could not enumerate the sub-agent prefixes", exc_info=True)
     return out
 
 
@@ -590,21 +637,41 @@ def prewarm_cache() -> None:
     try:
         client = _build_client()
         warmed = 0
-        for label, schemas in _prefixes_to_warm():
+        for label, schemas, system in _prefixes_to_warm():
+          # ONE PREFIX AT A TIME. A single try around the whole loop meant the
+          # first failure abandoned every prefix after it — which is exactly
+          # what happened when the Haiku warms were added below: they 400'd and
+          # took the specialists' entries with them, silently, leaving the boot
+          # log looking like a partial success.
+          try:
+            model = CLAUDE_MODEL if label.startswith("subagent:") else AGENT_MODEL
+            # THE DIAL IS SONNET/OPUS ONLY, the same rule _stream_once applies
+            # and for the same measured reason: Haiku answers a request carrying
+            # `effort` with a 400, "This model does not support the effort
+            # parameter". Mirrored rather than shared because the shapes differ
+            # — that one is streaming with a writer, this one is max_tokens=0.
+            effort = "" if "haiku" in model else AGENT_EFFORT
             client.messages.create(
-                model=AGENT_MODEL,
+                # The specialists run on the cheap tier and a cache entry is
+                # per MODEL — warming theirs against the agent model would
+                # write a key their own calls can never read.
+                model=model,
                 max_tokens=0,
-                system=_system_blocks(system_prompt_parts()),
+                system=_system_blocks(system),
                 tools=schemas,
                 messages=[{"role": "user", "content": "warmup"}],
             # Mirror the live calls' effort (AGENT_EFFORT) so this warmup is
             # request-shaped exactly like the traffic it warms the cache for —
             # a shape difference here would risk writing an entry the real
             # calls cannot read, which is this function's entire purpose.
-                **({"output_config": {"effort": AGENT_EFFORT}} if AGENT_EFFORT else {}),
+                **({"output_config": {"effort": effort}} if effort else {}),
             )
             warmed += 1
-            log.info("prompt cache pre-warmed — binding=%s tools=%d", label, len(schemas))
+            log.info("prompt cache pre-warmed — binding=%s tools=%d model=%s",
+                     label, len(schemas), model)
+          except Exception:  # noqa: BLE001 — one prefix, never the boot
+            log.warning("could not pre-warm binding=%s; its first customer pays "
+                        "the cache write", label, exc_info=True)
         log.info(
             "prompt cache pre-warmed — %d prefix(es), model=%s effort=%s",
             warmed, AGENT_MODEL, AGENT_EFFORT or "default",

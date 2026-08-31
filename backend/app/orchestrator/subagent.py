@@ -388,6 +388,12 @@ def _parse_findings(text: str) -> dict:
     return out
 
 
+def _order_produces(agent: str) -> set:
+    from app.orchestrator.order import produces
+
+    return produces(agent)
+
+
 def run_step(
     step,
     context: dict,
@@ -648,6 +654,7 @@ def run_step(
 
         messages.append({"role": "assistant", "content": blocks})
         results = []
+        settle_after_tools = False
         for use in tool_uses:
             called.append(use.name)
             args_chars += len(json.dumps(dict(use.input or {}), default=str))
@@ -738,6 +745,58 @@ def run_step(
                 "content": json.dumps(result, default=str)[:8000],
             })
         messages.append({"role": "user", "content": results})
+
+        # THE SUMMARY ROUND, WHEN NOTHING READS IT (measured 2026-08-31 over 40
+        # live steps). A round costs ~2,187ms and 29 of those 40 took two: one
+        # to call the tool, one to write findings about what came back. That
+        # second round is a whole Haiku call for a paragraph the pipeline does
+        # not consult — _harvest_entities reads the ids out of the tool RESULTS,
+        # and `_evidence` hands Aisha those results in full. One step spent 821
+        # characters of JSON to deliver two keys; another wrote 327 characters
+        # and delivered none.
+        #
+        # TWO CONDITIONS, BOTH NECESSARY.
+        #
+        # `proposes` EMPTY. An agent that can ask for a write must see its tool
+        # results and then decide — TestDrive reads the free times and proposes
+        # a hold on one of them. Cutting its second round would cut the ask.
+        # Sales and Finance can ask for nothing, so for them the round is
+        # summary and nothing else.
+        #
+        # EVERY DECLARED ENTITY ALREADY HARVESTED. This is what keeps tool
+        # CHAINING intact: Sales legitimately searches, then looks up details on
+        # what it found, and a step that has not yet produced its vehicle_id has
+        # not finished working. Settling only once the card's `produces` are all
+        # in hand means an unfinished step still gets its next round.
+        #
+        # It therefore does not fire for Finance today, and that is correct
+        # rather than lucky: its card declares `produces: [emi_estimate,
+        # on_road_price]` while its tools return `on_road_aed` and `options`, so
+        # nothing is ever harvested from it. That mismatch is a real bug — it is
+        # why every finance step logs `entities=[]` — but it is a card fix, not
+        # something to paper over here.
+        if not proposable:
+            wanted = _order_produces(step.agent)
+            got = _harvest_entities(
+                step.agent, seen_results, [e["tool"] for e in evidence]
+            )
+            if wanted and wanted <= set(got) and not any(
+                isinstance(r, dict) and r.get("error") for r in seen_results
+            ):
+                settle_after_tools = True
+
+        if settle_after_tools:
+            findings = dict(got)
+            if evidence:
+                findings["_evidence"] = evidence
+            log.info(
+                "%s settled after its tool round in %d round(s), %dms — "
+                "model=%s tools=[%s] (no summary round: proposes nothing and "
+                "produced %s)",
+                step.agent, rounds, int((time.monotonic() - started) * 1000),
+                model, ", ".join(called) or "none", sorted(wanted),
+            )
+            return findings
 
     # ITERATIONS EXHAUSTED IS A FAILED STEP, not a silent empty one. A sub-agent
     # still looping after six rounds on one brief is lost, and the honest outcome

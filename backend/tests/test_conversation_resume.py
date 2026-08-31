@@ -250,6 +250,56 @@ def test_slot_chips_are_still_never_replayed(db):
 
 
 # --------------------------------------------------------------------------- #
+# _without_drawn — trims a row to the cars it actually adds (2026-08-31)
+# --------------------------------------------------------------------------- #
+def test_a_row_is_trimmed_to_the_cars_it_actually_adds():
+    """FOUND LIVE. One Sales brief fired three searches and each drew its own
+    row — [7,8,1], [8,6,7], [1,3,2]. Nine cards for one question, three cars
+    shown twice, under a reply that described three."""
+    from app.agent.runner import _card_anchor, _without_drawn
+
+    out = {"matches": [{"vehicle_id": 8}, {"vehicle_id": 6}, {"vehicle_id": 7}]}
+    trimmed = _without_drawn("search_vehicles", out, {7, 8, 1})
+    assert _card_anchor("search_vehicles", trimmed) == {
+        "vehicle_ids": [6], "variant": "compact"
+    }
+    # The ORIGINAL is untouched — the caller still owns what the tool returned.
+    assert len(out["matches"]) == 3
+
+
+def test_a_row_of_nothing_new_trims_to_nothing():
+    from app.agent.runner import _card_anchor, _without_drawn
+
+    out = {"matches": [{"vehicle_id": 7}, {"vehicle_id": 8}]}
+    assert _card_anchor("search_vehicles", _without_drawn(
+        "search_vehicles", out, {7, 8})) is None
+
+
+def test_trimming_never_invents_or_reorders():
+    """Entries are dropped, never added or moved, so what renders is still a
+    subset of what the tool returned."""
+    from app.agent.runner import _without_drawn
+
+    out = {"matches": [{"vehicle_id": 3}, {"vehicle_id": 9}, {"vehicle_id": 4}]}
+    kept = _without_drawn("search_vehicles", out, {9})["matches"]
+    assert [v["vehicle_id"] for v in kept] == [3, 4]
+
+
+def test_nothing_drawn_yet_leaves_the_payload_alone():
+    from app.agent.runner import _without_drawn
+
+    out = {"matches": [{"vehicle_id": 3}]}
+    assert _without_drawn("search_vehicles", out, set()) is out
+
+
+def test_a_tool_that_draws_no_vehicle_cards_is_untouched():
+    from app.agent.runner import _without_drawn
+
+    out = {"bookings": [{"booking_ref": "TD-2026-0142"}]}
+    assert _without_drawn("get_booking", out, {7, 8}) is out
+
+
+# --------------------------------------------------------------------------- #
 # _card_anchor — must mirror extractCards/extractSearchCards in the FE cards.ts
 # --------------------------------------------------------------------------- #
 def test_card_anchor_mirrors_the_frontend_extractors():

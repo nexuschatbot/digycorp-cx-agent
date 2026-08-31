@@ -184,6 +184,62 @@ def _card_anchor(tool: str, output: object) -> dict | None:
     return {"vehicle_ids": ids, "variant": variant} if ids else None
 
 
+
+# THE LISTS A VEHICLE CARD IS DRAWN FROM, per tool. Mirrors _card_anchor above
+# and extractSearchCards in the frontend's cards.ts — the three of them must
+# agree about where the cars live, or a filtered payload and its anchor drift.
+_VEHICLE_CARD_LISTS = {
+    "search_vehicles": ("matches", "nearest_alternatives"),
+    "get_vehicle_details": ("candidates",),
+}
+
+
+def _without_drawn(tool: str, output: object, drawn: set[int]) -> dict | None:
+    """`output` with cars already shown this turn removed, or None if none are left.
+
+    FOUND LIVE, 2026-08-31. One Sales brief fired three searches — "7 seater",
+    "family SUV", "5 seats" — and each result drew its own row: [7,8,1], [8,6,7],
+    [1,3,2]. Nine cards for one question, with three cars shown twice, under a
+    reply that described three. The customer was being shown the specialist's
+    SEARCHING rather than its answer.
+
+    The row-level guard could not help: it suppresses a row only when EVERY car
+    in it was already drawn, and the second row introduced one new car, so it
+    rendered whole and repeated two.
+
+    FILTERED ON BOTH SIDES, WHICH IS THE WHOLE POINT. runner.py warned that
+    "filtering cars out of a tool payload would redraw a different row on reload
+    than the turn showed live" — true when only one side is filtered. The
+    caller emits THIS payload and anchors the row re-derived from it, so screen
+    and reload are built from the same list and cannot disagree.
+
+    NOTHING IS INVENTED. Entries are dropped, never added or reordered, so what
+    renders is still what the tool returned — a subset of it.
+
+    A single-vehicle get_vehicle_details is left alone: it has one car and
+    nothing to filter, and the row-level guard already suppresses a repeat.
+    """
+    if not isinstance(output, dict) or not drawn:
+        return output if isinstance(output, dict) else None
+    keys = _VEHICLE_CARD_LISTS.get(tool)
+    if not keys:
+        return output
+    out = dict(output)
+    changed = False
+    for key in keys:
+        rows = out.get(key)
+        if not isinstance(rows, list):
+            continue
+        kept = [
+            v for v in rows
+            if not (isinstance(v, dict) and v.get("vehicle_id") in drawn)
+        ]
+        if len(kept) != len(rows):
+            changed = True
+            out[key] = kept
+    return out if changed else output
+
+
 @dataclass
 class TurnResult:
     """What a finished turn amounts to, for callers that need more than events.
@@ -484,6 +540,32 @@ def run_turn(
                             ids, chunk["tool"], session_id,
                         )
                         continue
+                    # A ROW THAT REPEATS SOME OF WHAT IS ALREADY ON SCREEN is
+                    # trimmed to the cars it actually adds (see _without_drawn).
+                    # The payload and the anchor are BOTH re-derived from the
+                    # filtered output, so a reload rebuilds exactly what the
+                    # customer saw.
+                    if ids and (set(ids) & drawn_vehicle_ids):
+                        trimmed = _without_drawn(
+                            chunk["tool"], chunk["output"], drawn_vehicle_ids
+                        )
+                        re_anchored = _card_anchor(chunk["tool"], trimmed)
+                        if re_anchored is None:
+                            log.info(
+                                "suppressing %s row — nothing left after trimming "
+                                "%s — session=%s", chunk["tool"], ids, session_id,
+                            )
+                            continue
+                        log.info(
+                            "trimming %s row %s to %s — session=%s",
+                            chunk["tool"], ids, re_anchored.get("vehicle_ids"),
+                            session_id,
+                        )
+                        chunk = {**chunk, "output": trimmed}
+                        anchor, ids = re_anchored, re_anchored.get("vehicle_ids")
+                        key = _json.dumps(anchor, sort_keys=True)
+                        if key in drawn_anchors:
+                            continue
                     drawn_vehicle_ids.update(ids or [])
                     drawn_anchors.add(key)
                     card_rows.append(anchor)

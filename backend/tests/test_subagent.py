@@ -332,6 +332,70 @@ def test_no_hold_means_no_booking_state_in_the_brief(patched, db):
     assert "held_slot_id" not in sent
 
 
+def test_a_lookup_agent_settles_without_a_summary_round(patched, db):
+    """MEASURED over 40 live steps, 2026-08-31: a round costs ~2,187ms and 29 of
+    40 took two — one to call the tool, one to write findings about the result.
+    Nothing reads that second round: _harvest_entities takes the ids from the
+    tool RESULTS and `_evidence` hands Aisha those results whole. One step spent
+    821 chars of JSON on two keys; another wrote 327 chars and delivered none.
+
+    Sales can propose nothing, so for it that round is summary and nothing else.
+    """
+    client = patched(
+        [[_use("search_vehicles", {"query": "7 seater"})]],
+        dispatch=lambda *a, **k: {"matches": [{"vehicle_id": 7, "variant_id": 13}]},
+    )
+    out = subagent.run_step(
+        Step(brief="a 7-seater for a family", agent="sales", index=0),
+        {}, db=db, session_id="s1",
+    )
+    # ONE model call, not two.
+    assert len(client.calls) == 1, f"took {len(client.calls)} rounds"
+    assert out["vehicle_id"] == 7 and out["variant_id"] == 13
+    assert out["_evidence"][0]["tool"] == "search_vehicles"
+
+
+def test_an_unfinished_lookup_still_gets_its_next_round(patched, db):
+    """THE GUARD ON TOOL CHAINING. Sales legitimately searches and then looks up
+    details on what it found; a step that has not produced its declared entities
+    has not finished working, so it must not be settled early."""
+    client = patched(
+        [[_use("search_vehicles", {"query": "x"})],
+         [_text('{"findings": {"vehicle_id": 7, "variant_id": 13}}')]],
+        dispatch=lambda *a, **k: {"matches": []},   # nothing harvestable yet
+    )
+    subagent.run_step(Step(brief="find one", agent="sales", index=0),
+                      {}, db=db, session_id="s1")
+    assert len(client.calls) == 2, "an unfinished step must get another round"
+
+
+def test_an_agent_that_can_propose_always_gets_its_second_look(patched, db):
+    """TestDrive reads the free times and THEN proposes a hold on one. Cutting
+    its second round would cut the ask."""
+    client = patched(
+        [[_use("get_available_slots", {"date_from": "2026-09-01"})],
+         [_text('{"findings": {}, "proposals": '
+                '[{"action": "hold_slot", "args": {"slot_id": 5}}]}')]],
+        dispatch=lambda *a, **k: {"slots": [{"slot_id": 5}], "booking_ref": "TD-1"},
+    )
+    out = subagent.run_step(Step(brief="times on Tuesday", agent="testdrive", index=0),
+                            {}, db=db, session_id="s1")
+    assert len(client.calls) == 2, "a proposing agent must keep its second round"
+    assert out["_proposals"][0]["action"] == "hold_slot"
+
+
+def test_a_tool_error_is_not_settled_early(patched, db):
+    """A step whose tool failed has not produced anything to settle on."""
+    client = patched(
+        [[_use("search_vehicles", {"query": "x"})],
+         [_text('{"findings": {}}')]],
+        dispatch=lambda *a, **k: {"error": "vehicle_not_found", "vehicle_id": 7},
+    )
+    subagent.run_step(Step(brief="find one", agent="sales", index=0),
+                      {}, db=db, session_id="s1")
+    assert len(client.calls) == 2
+
+
 def test_a_write_the_card_proposes_is_read_as_the_proposal(monkeypatch):
     """Found live, 2026-08-31, and this is the SECOND fix for it.
 
