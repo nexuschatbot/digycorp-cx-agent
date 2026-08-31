@@ -85,9 +85,19 @@ def history(db: Session, *, session_id: str) -> dict:
         .order_by(ConversationTurn.id)
     ).all()
 
+    # Human takeover (2026-08-31): a reload must rebuild human mode, not just
+    # the bubbles — `escalated` tells the client to reopen its takeover WS
+    # listener and hold the idle ladder; `takeover` tells it a person already
+    # holds the session (whose name the staff bubbles carry). Imported here
+    # rather than at module top: takeover imports this module for is_closed,
+    # and the late import keeps the cycle one-way at import time.
+    from app.services import takeover as takeover_service
+
     return {
         "session_id": session_id,
         "status": "closed" if is_closed(db, session_id=session_id) else "active",
+        "escalated": takeover_service.is_escalated(db, session_id=session_id),
+        "takeover": takeover_service.state(db, session_id=session_id),
         "turns": [
             {
                 # The handle read-aloud points at (2026-07-21). Exposed so the

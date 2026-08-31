@@ -12,6 +12,7 @@ from app.api.brochure import router as brochure_router
 from app.api.insights import router as insights_router
 from app.api.intents import router as intents_router
 from app.api.speech import router as speech_router
+from app.api.takeover import router as takeover_router
 from app.api.vehicles import router as vehicles_router
 from app.api.voice import router as voice_router
 from app.api.whatsapp import router as whatsapp_router
@@ -27,6 +28,7 @@ __all__ = [
     "insights_router",
     "intents_router",
     "speech_router",
+    "takeover_router",
     "vehicles_router",
     "voice_router",
     "whatsapp_router",

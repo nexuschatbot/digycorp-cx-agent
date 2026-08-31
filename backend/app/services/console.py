@@ -303,9 +303,16 @@ def list_vehicles(
 # "was this dealt with", and the first thing to go stale.
 
 
-def _handoff_row(event: AuditEvent, customer: Customer | None) -> dict:
+def _handoff_row(
+    event: AuditEvent, customer: Customer | None, takeover: dict | None = None
+) -> dict:
     payload = event.payload or {}
     return {
+        # Human takeover (2026-08-31): who holds this conversation live, if
+        # anyone — the first "later audit row saying a human acted" the derived
+        # DONE above anticipated. Null when nobody has taken it yet.
+        "taken_over_by": (takeover or {}).get("admin_name"),
+        "taken_over_ts": (takeover or {}).get("ts"),
         "audit_id": event.id,
         "ts": event.ts.isoformat() if event.ts else None,
         "session": event.session,
@@ -363,8 +370,37 @@ def list_handoffs(
         )
     }
 
+    # One query for every takeover on the page, not one per row — then the
+    # payload scan in Python, the same portable-JSON call state() itself makes.
+    from app.services.takeover import TAKEOVER_ACTION
+
+    sessions = {r.session for r in page}
+    takeovers: dict[str, dict] = {}
+    if sessions:
+        for ev in db.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.session.in_(sessions),
+                AuditEvent.type == AuditType.intent,
+            )
+            .order_by(AuditEvent.ts.asc(), AuditEvent.id.asc())
+        ).all():
+            p = ev.payload or {}
+            if p.get("action") == TAKEOVER_ACTION and ev.session not in takeovers:
+                takeovers[ev.session] = {
+                    "admin_name": p.get("admin_name"),
+                    "ts": ev.ts.isoformat() if ev.ts else None,
+                }
+
     return _envelope(
-        [_handoff_row(r, customers.get((r.payload or {}).get("customer_id"))) for r in page],
+        [
+            _handoff_row(
+                r,
+                customers.get((r.payload or {}).get("customer_id")),
+                takeovers.get(r.session),
+            )
+            for r in page
+        ],
         total,
         lim,
         off,
