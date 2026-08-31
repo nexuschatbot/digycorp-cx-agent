@@ -100,19 +100,55 @@ def test_aisha_binds_every_tool_her_card_declares():
     assert [s["name"] for s in aisha_schemas()] == _declared("aisha")
 
 
+# THE TWO LOOKUPS AISHA KEEPS, and the line is "does this need judgement"
+# (measured 2026-08-31). Across every live run that day, 57% of specialist round
+# trips wrapped a SINGLE tool call at a median of 3,704ms, with a ~1.3s routing
+# judge in front — to run a query that takes 0.3ms. Choosing a car does need
+# judgement: search_vehicles was called ten times in a day, three of them inside
+# one Sales brief, turning "a 7-seater for my family" into a ranked shortlist.
+# Asking which times are free at a branch does not.
+#
+# NAMED HERE RATHER THAN LOOSENED AWAY, so the guard below still fails the day
+# somebody hands her search_vehicles or a finance read.
+AISHA_KEEPS = {"get_available_slots", "get_booking"}
+
+
 def test_aisha_holds_emit_briefs_and_no_specialist_read():
-    """She delegates rather than looking things up herself.
+    """She delegates the JUDGEMENT rather than looking things up herself.
 
     If she kept a catalogue read she would answer from it instead of briefing,
-    and the fan-out would be dead code that still cost a generation.
+    and the fan-out would be dead code that still cost a generation. The two
+    exceptions above are lookups with nothing to decide — see AISHA_KEEPS.
     """
     bound = {s["name"] for s in aisha_schemas()}
     assert "emit_briefs" in bound
     for agent in SUBAGENTS:
-        specialist_reads = set(_declared(agent)) - {"search_knowledge"}
+        specialist_reads = set(_declared(agent)) - {"search_knowledge"} - AISHA_KEEPS
         assert bound & specialist_reads == set(), (
             f"Aisha holds {bound & specialist_reads}, which is {agent}'s work"
         )
+
+
+def test_the_catalogue_stays_with_sales():
+    """The exception is two named lookups, not a door. Choosing a car is the
+    judgement the fan-out exists for."""
+    bound = {s["name"] for s in aisha_schemas()}
+    for name in ("search_vehicles", "compare_vehicles", "get_vehicle_details"):
+        assert name not in bound, f"Aisha must not hold {name}"
+
+
+def test_aisha_still_holds_no_commercial_write():
+    """Holding a slot and making, moving or cancelling a booking remain the
+    orchestrator's, whatever reads she is given.
+
+    COMMERCIAL_WRITE_TOOLS, not WRITE_TOOLS: the split is by KIND, not by layer.
+    A write that is an act of dialogue — a consent, a licence acknowledgement, a
+    remembered preference, goodbye — belongs to whoever is talking, and only
+    Aisha talks. See orchestrator/write.py."""
+    from app.tools import COMMERCIAL_WRITE_TOOLS
+
+    bound = {s["name"] for s in aisha_schemas()}
+    assert not (bound & COMMERCIAL_WRITE_TOOLS), sorted(bound & COMMERCIAL_WRITE_TOOLS)
 
 
 def test_emit_briefs_has_a_schema_and_no_function():

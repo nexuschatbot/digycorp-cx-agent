@@ -1391,7 +1391,7 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
         for step in result.steps for p in (step.proposals or [])
     ]
     if not proposals:
-        return []
+        return [], {}
 
     db = cfg.get("db")
     session_id = cfg.get("session_id", "?")
@@ -1399,7 +1399,7 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
     if db is None:
         log.error("proposals with no db — refusing all (session=%s)", session_id)
         return [{"action": p.action, "status": "refused",
-                 "detail": "no database session"} for p in proposals]
+                 "detail": "no database session"} for p in proposals], {}
 
     try:
         machine = booking_state.read(db, session_id, customer_id=customer_id)
@@ -1408,7 +1408,7 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
         log.exception("could not read booking state — refusing writes (session=%s)", session_id)
         return [{"action": p.action, "status": "refused",
                  "detail": "could not establish where this booking had got to"}
-                for p in proposals]
+                for p in proposals], {}
 
     results = write.execute_all(
         db, session_id, proposals, customer_id=customer_id, allow=allowed,
@@ -1421,12 +1421,32 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
             log.exception("commit failed — rolling back (session=%s)", session_id)
             db.rollback()
             return [{"action": r.action, "status": "failed",
-                     "detail": "the change could not be saved"} for r in results]
+                     "detail": "the change could not be saved"} for r in results], {}
     else:
         # Nothing was written, but a refused proposal may still have left the
         # session dirty (a service that flushed before its guard said no).
         db.rollback()
 
+    # WHAT THE CUSTOMER ACTUALLY CHOSE (found live, 2026-08-31, and it cost a
+    # booking). session_facts held vehicle_id 7 — the X70 FL Plus, the car SALES
+    # LED WITH on the first turn — while the customer had gone on to pick the
+    # cheaper X70 FL, vehicle 8, and held a slot for it. Nothing ever corrected
+    # the note: _harvest_entities takes the FIRST vehicle_id out of a ranked
+    # search, which is "the one it recommended", and a customer changing their
+    # mind writes nothing.
+    #
+    # tool_node HAS ALWAYS DONE THIS RIGHT and the multi-agent path walked round
+    # it. _fold_session_facts calls slots.facts_for_slot on a successful
+    # lock_slot, reading the car off the locked Slot ROW — the authoritative
+    # record of what was chosen. But a hold reaches the DB through write.execute
+    # here, not through tool_node._dispatch, so that fold never ran and the
+    # stale note survived to be handed to a specialist as established fact.
+    #
+    # Read off the ROW, never from the proposal's arguments: the same rule 2
+    # grounding facts_for_slot was written for. A model that named the wrong
+    # slot cannot write the wrong car into the facts, because the row it landed
+    # on is what gets read.
+    write_facts: dict = {}
     out = []
     for r in results:
         row = {"action": r.action, "status": r.status, "detail": r.detail}
@@ -1448,14 +1468,27 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
                 row[key] = val
         out.append(row)
         # The booking event the UI draws its card from, same as tool_node emits.
+        # The slot a write settled on, whichever shape it came back in:
+        # lock_slot nests it under `slot`, the booking services under `booking`.
+        if r.ok:
+            nested = r.result.get("slot")
+            nested = nested if isinstance(nested, dict) else {}
+            slot_id = row.get("slot_id") or nested.get("slot_id")
+            if slot_id is not None:
+                try:
+                    write_facts.update(slots.facts_for_slot(db, slot_id) or {})
+                except Exception:  # noqa: BLE001 — a fact must not cost a write
+                    log.warning("could not read facts for slot %s", slot_id, exc_info=True)
+
         booked_ref = r.result.get("booking_ref") or inner.get("booking_ref")
         if r.ok and booked_ref:
             writer = _safe_writer()
             if writer:
                 writer({"type": "booking", "booking_ref": booked_ref})
-    log.info("orchestrator writes — session=%s %s", session_id,
-             [(r.action, r.status) for r in results])
-    return out
+    log.info("orchestrator writes — session=%s %s%s", session_id,
+             [(r.action, r.status) for r in results],
+             f" facts={sorted(write_facts)}" if write_facts else "")
+    return out, write_facts
 
 
 def _fold_cascade_facts(state: AgentState, result) -> dict | None:
@@ -1610,8 +1643,15 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                 parent_writer=_stream_sink(_safe_writer()),
             )
             payload = _turn.compose_input(result)
-            payload["actions"] = _execute_proposals(result, state, cfg)
+            payload["actions"], _write_facts = _execute_proposals(result, state, cfg)
             facts = _fold_cascade_facts(state, result)
+            if _write_facts:
+                # A HELD SLOT OUTRANKS A SEARCH RESULT, and that ordering is the
+                # whole fix. _fold_cascade_facts carries what the specialists
+                # LOOKED UP — for Sales, the first row of a ranked list, i.e.
+                # what it recommended. These are read off the row the customer
+                # actually landed on. When they disagree, the choice wins.
+                facts = {**(facts or state.get("session_facts") or {}), **_write_facts}
 
             # THE CASCADE'S OWN ROUTING, on its way to turn_trace.steps — which
             # was null on every row ever written because nothing carried it out

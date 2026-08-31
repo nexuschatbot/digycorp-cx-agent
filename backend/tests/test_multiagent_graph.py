@@ -126,6 +126,45 @@ def test_every_tool_use_gets_a_tool_result(monkeypatch):
     assert ids == {"a", "b"}
 
 
+def test_the_car_the_customer_HELD_beats_the_car_search_led_with(db):
+    """FOUND LIVE, 2026-08-31, and it cost a booking.
+
+    Sales led with the X70 FL Plus, so _harvest_entities wrote that vehicle_id
+    into session_facts — "the first row of a ranked list" is what it recommended.
+    The customer then chose the cheaper X70 FL and held a slot for it. Nothing
+    corrected the note. At booking time the specialist was handed the stale car
+    as established fact beside a brief naming the real one, could not tell which
+    was true, and proposed nothing — five times. Aisha escalated to the helpline
+    for a booking that had everything it needed.
+
+    tool_node has always folded facts_for_slot on a lock; the multi-agent write
+    path walked round it. The held slot is the customer's CHOICE and outranks
+    anything a search returned."""
+    from app.models import LocationType, Slot, SlotStatus
+    from datetime import datetime, timedelta
+    from app.orchestrator import run as _run
+
+    start = datetime(2026, 9, 3, 13, 0)
+    slot = Slot(location_type=LocationType.showroom, showroom_id=1, vehicle_id=8,
+                start=start, end=start + timedelta(minutes=90),
+                status=SlotStatus.open)
+    db.add(slot); db.commit()
+
+    step = _run.StepResult(
+        brief="hold it", agent="testdrive", status="ok",
+        proposals=[{"action": "hold_slot", "args": {"slot_id": slot.id},
+                    "agent": "testdrive"}],
+    )
+    rows, facts = graph._execute_proposals(
+        _run.TurnResult(steps=[step]),
+        # the stale note: sales led with vehicle 7
+        {"session_facts": {"vehicle_id": 7}, "customer_id": None},
+        {"db": db, "session_id": "s1"},
+    )
+    assert [r["status"] for r in rows] == ["executed"], rows
+    assert facts["vehicle_id"] == 8, "the held slot's car must win, not the search's"
+
+
 # --------------------------------------------------------------------------- #
 # The cascade ceiling (2026-08-31)
 # --------------------------------------------------------------------------- #
@@ -436,7 +475,7 @@ def _patch_state(monkeypatch, allowed):
 
 
 def test_no_proposals_means_no_writes():
-    assert graph._execute_proposals(_run.TurnResult(steps=[_step_with([])]), {}, {}) == []
+    assert graph._execute_proposals(_run.TurnResult(steps=[_step_with([])]), {}, {}) == ([], {})
 
 
 def test_a_proposal_reaches_write_execute_all(monkeypatch):
@@ -458,7 +497,7 @@ def test_a_proposal_reaches_write_execute_all(monkeypatch):
         _step_with([{"action": "create_booking", "args": {"slot_id": 5}, "agent": "testdrive"}])
     ])
     db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
-    out = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
+    out, _ = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
 
     assert seen["allow"] == {"create_booking"}
     assert seen["proposals"][0].action == "create_booking"
@@ -494,7 +533,7 @@ def test_the_reference_surfaces_from_the_nested_booking_result(monkeypatch):
         _step_with([{"action": "create_booking", "args": {"slot_id": 814}, "agent": "testdrive"}])
     ])
     db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
-    out = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
+    out, _ = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
 
     assert out[0]["booking_ref"] == "TD-2026-0002"
     assert out[0]["start_human"] == "Monday, 31 August, 1:00 pm"
@@ -511,7 +550,7 @@ def test_the_state_machine_gate_is_passed_through(monkeypatch):
     monkeypatch.setattr(graph, "_safe_writer", lambda: None)
     db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
     result = _run.TurnResult(steps=[_step_with([{"action": "create_booking", "args": {}}])])
-    out = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
+    out, _ = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
     assert out[0]["status"] == "refused"
     assert "not valid at this point" in out[0]["detail"]
 
@@ -549,7 +588,7 @@ def test_an_unreadable_booking_state_refuses_rather_than_guesses(monkeypatch):
 
     monkeypatch.setattr(booking_state, "read", _boom)
     db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
-    out = graph._execute_proposals(
+    out, _ = graph._execute_proposals(
         _run.TurnResult(steps=[_step_with([{"action": "create_booking"}])]),
         {}, {"db": db, "session_id": "s1"})
     assert out[0]["status"] == "refused"
@@ -663,7 +702,7 @@ def test_the_node_returns_session_facts(monkeypatch):
     from app.orchestrator import turn
 
     monkeypatch.setattr(turn, "execute", lambda *a, **k: _result_with({"vehicle_id": 7}))
-    monkeypatch.setattr(graph, "_execute_proposals", lambda *a, **k: [])
+    monkeypatch.setattr(graph, "_execute_proposals", lambda *a, **k: ([], {}))
     state = {"messages": [_assistant(_briefs("x", tid="b"))], "session_facts": {}}
     out = graph._orchestrator_node(state, _config(db=SimpleNamespace()))
     assert out["session_facts"]["vehicle_id"] == 7
