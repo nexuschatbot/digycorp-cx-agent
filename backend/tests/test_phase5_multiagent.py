@@ -27,13 +27,30 @@ def test_every_sub_agent_has_a_body_and_carries_base(agent):
 
 
 def test_the_sales_and_testdrive_prose_was_ported_not_written():
-    """Rule zero: port, don't re-author. Every section of these two is a
-    byte-for-byte slice of prose that already shipped."""
+    """Rule zero: port, don't re-author. Every PORTED section of these two is a
+    byte-for-byte slice of prose that already shipped.
+
+    A SECTION MAY BE NEW, BUT IT HAS TO SAY SO — the finance card's precedent,
+    and the reason this checks provenance rather than counting sections. The
+    single agent both talked to the customer and wrote the booking, so no
+    shipped prose ever had to explain that split; a sub-agent that only writes
+    needs it explained, and that paragraph has nowhere to be ported FROM.
+    Editing it into a port would be re-authoring; declaring it is not.
+    """
     aisha = loader.sections("aisha")
     for agent in ("sales", "testdrive"):
+        origins = loader.origins(agent)
         for name, text in loader.sections(agent).items():
-            assert name in aisha, f"{agent}/{name} is not from the shipped prompt"
-            assert text == aisha[name], f"{agent}/{name} was edited in the move"
+            if name in aisha:
+                assert text == aisha[name], f"{agent}/{name} was edited in the move"
+                continue
+            # Not in the shipped prompt: it must be marked as this agent's own
+            # (no `ported verbatim from` marker) and the file must say so.
+            assert origins[name] == agent, (
+                f"{agent}/{name} claims to be ported but matches nothing shipped"
+            )
+            raw = (loader.AGENTS_DIR / agent / "v1.md").read_text(encoding="utf-8")
+            assert "authored" in raw, f"{agent}/{name} is new and does not say so"
 
 
 def test_the_finance_body_is_new_and_says_so():

@@ -432,3 +432,66 @@ def test_a_reply_that_is_not_json_yields_no_findings_but_is_not_thrown_away():
     out = sub._parse_findings("I looked but found nothing useful")
     assert [k for k in out if not k.startswith("_")] == []
     assert out["_note"] == "I looked but found nothing useful"
+
+
+# --------------------------------------------------------------------------- #
+# The visit details, and the three places they can fall out (2026-08-31)
+# --------------------------------------------------------------------------- #
+def test_the_specialist_is_told_the_brief_is_its_view_of_the_conversation():
+    """FOUND LIVE. A customer said "my wife and two kids will come along, we'll
+    need a child seat", Aisha promised one, and the booking was written with
+    companions empty and child_seat false — the showroom would not have known.
+
+    The specialist was RIGHT to omit them by the letter of the schema: the
+    fields say "if they said", and it cannot see what anyone said. The card
+    told it to have a hospitality exchange it has no way to have."""
+    from app.agents import loader
+
+    card = loader.body_for("testdrive")
+    assert "THE BRIEF IS THE ONLY PART OF THAT CONVERSATION YOU CAN SEE" in card
+    assert "companions" in card and "child_seat" in card
+    # It lives in its OWN section, not edited into the ported prose — rule zero.
+    assert "THE_VISIT_DETAILS_ARE_IN_THE_BRIEF" in loader.sections("testdrive")
+    assert "MAKING_THE_VISIT_THEIRS" in loader.sections("testdrive")
+
+
+def test_create_booking_tells_a_briefed_caller_what_told_you_means():
+    from app.tools.booking_tools import CREATE_BOOKING_SCHEMA
+
+    text = CREATE_BOOKING_SCHEMA["description"]
+    assert "THE BRIEF IS" in text
+    # And the guard against the opposite failure survives: no guessing.
+    assert "Silence in the brief is still silence" in text
+    assert "do NOT fill companions or child_seat with a guess" in text
+
+
+def test_emit_briefs_tells_aisha_to_write_the_visit_details_down():
+    """She is the only one who hears them, and the brief is the only channel."""
+    from app.tools.brief_tools import EMIT_BRIEFS_SCHEMA
+
+    text = EMIT_BRIEFS_SCHEMA["description"]
+    assert "VISIT DETAILS" in text
+    assert "child seat" in text
+
+
+def test_the_booking_tool_still_accepts_what_the_card_now_promises():
+    """The prose is worthless if the field is not really there."""
+    from app.tools.booking_tools import CREATE_BOOKING_SCHEMA
+
+    props = CREATE_BOOKING_SCHEMA["input_schema"]["properties"]
+    assert props["companions"]["type"] == "string"
+    assert props["child_seat"]["type"] == "boolean"
+
+
+def test_a_proposal_carries_the_comfort_fields_through_to_the_write(db):
+    """The pipeline never dropped them — write.execute passes args whole. This
+    pins that, so a future filter cannot silently reintroduce the bug."""
+    from app.orchestrator import subagent as sub
+
+    kept = sub._validate_proposals("testdrive", [{
+        "action": "create_booking",
+        "args": {"vehicle_id": 7, "slot_id": 1401,
+                 "companions": "wife and two kids", "child_seat": True},
+    }])
+    assert kept[0]["args"]["companions"] == "wife and two kids"
+    assert kept[0]["args"]["child_seat"] is True
