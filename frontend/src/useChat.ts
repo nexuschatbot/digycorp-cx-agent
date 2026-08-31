@@ -19,7 +19,7 @@ import {
   type TranscriptTurn,
 } from './api'
 import { extractBookingCards, toBookingCard, type BookingCard } from './bookings'
-import { cardFromDetail, extractCards, extractInteriorImages, extractSearchCards, mergeCards, type VehicleCard } from './cards'
+import { cardFromDetail, extractCards, extractInteriorImages, extractSearchCards, mergeCards, MAX_RECOMMENDATION_CARDS, type VehicleCard } from './cards'
 import type { CardVariant } from './components/VehicleCards'
 import { CALL_END_LINES, LIFECYCLE_LINES, VOICE_LABELS, callSummaryLine } from './i18n'
 import { isRtl } from './rtl'
@@ -318,7 +318,11 @@ async function rebuildTurns(turns: TranscriptTurn[], sessionId: string): Promise
         .slice(turnStart)
         .find((m): m is CardsMessage => m.kind === 'cards' && m.variant === variant)
       if (openRow) {
-        openRow.cards = mergeCards(openRow.cards, cards)
+        openRow.cards = mergeCards(
+          openRow.cards,
+          cards,
+          variant === 'compact' ? MAX_RECOMMENDATION_CARDS : undefined,
+        )
         continue
       }
       out.push({
@@ -1045,7 +1049,15 @@ export function useChat(): UseChat {
           (r): r is CardsMessage => r.kind === 'cards' && r.variant === row.variant,
         )
         if (into) {
-          into.cards = mergeCards(into.cards, row.cards)
+          // The cap is the STRIP's, not the search's — three searches used to
+          // mean nine cards for one question. `full` cards are not
+          // recommendations ("the one you are looking at"), so they are not
+          // capped, exactly as they were not before.
+          into.cards = mergeCards(
+            into.cards,
+            row.cards,
+            row.variant === 'compact' ? MAX_RECOMMENDATION_CARDS : undefined,
+          )
           return
         }
       }

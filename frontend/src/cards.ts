@@ -142,7 +142,7 @@ export function extractInteriorImages(output: unknown): { name: string; images: 
 // same _vehicle_dict card data — image_url, name, null-safe price). price_unknown
 // is intentionally NOT carded — the agent handles that "price on request" nuance
 // in prose. Capped at 3 so recommendations don't swamp the thread.
-const MAX_RECOMMENDATION_CARDS = 3
+export const MAX_RECOMMENDATION_CARDS = 3
 
 export function extractSearchCards(output: unknown): VehicleCard[] {
   if (!output || typeof output !== 'object') return []
@@ -171,12 +171,26 @@ export function extractSearchCards(output: unknown): VehicleCard[] {
  *
  *  ORDER IS FIRST-SEEN and nothing is reordered: the first search is the one the
  *  agent led with, so its ranking is the one the customer reads first.
+ *
+ *  `max` CAPS THE STRIP, NOT THE SEARCH. extractSearchCards already trims each
+ *  result to three, which was the whole cap while one search meant one row —
+ *  three searches then meant nine cards for one question. The rationale
+ *  ("recommendations must not swamp the thread") was always about what the
+ *  customer ends up looking at, so it belongs here, where the strip is
+ *  assembled. Cards beyond the cap are dropped, never rotated in: the agent
+ *  describes what it led with, and a strip that disagreed with the prose would
+ *  be worse than a short one.
  */
-export function mergeCards(existing: VehicleCard[], incoming: VehicleCard[]): VehicleCard[] {
+export function mergeCards(
+  existing: VehicleCard[],
+  incoming: VehicleCard[],
+  max?: number,
+): VehicleCard[] {
   const keyOf = (c: VehicleCard) => (c.vehicleId != null ? `v${c.vehicleId}` : `k${c.id}`)
   const seen = new Set(existing.map(keyOf))
   const out = [...existing]
   for (const card of incoming) {
+    if (max != null && out.length >= max) break
     const key = keyOf(card)
     if (seen.has(key)) continue
     seen.add(key)
