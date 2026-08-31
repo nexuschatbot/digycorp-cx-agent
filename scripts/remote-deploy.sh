@@ -20,12 +20,54 @@ echo "==> Deploying to ${ENVIRONMENT} at ${DEPLOY_PATH}"
 
 cd "${DEPLOY_PATH}/backend"
 
+# THE INTERPRETER, AND WHY IT IS PINNED HERE (2026-08-31).
+#
+# This VM is Ubuntu 22.04, whose `python3` is 3.10. The application needs 3.12
+# — `.github/workflows/ci.yml` pins it, and 3.10 cannot resolve
+# `onnxruntime==1.28.0` at all: pip offers it nothing newer than 1.23.2 and the
+# install dies before a single file is written. Keep this in step with ci.yml;
+# two different Pythons testing and running the same code is how a green build
+# ships a broken server.
+REQUIRED_PY="3.12"
+PYTHON="python${REQUIRED_PY}"
+
+if ! command -v "${PYTHON}" >/dev/null 2>&1; then
+  echo "==> ${PYTHON} not present — installing it"
+  # deadsnakes is the only source of 3.12 for jammy; 24.04 would carry it
+  # natively, which is the better long-term answer (see docs/OPEN-ISSUES.md).
+  export DEBIAN_FRONTEND=noninteractive
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq software-properties-common
+  sudo add-apt-repository -y ppa:deadsnakes/ppa
+  sudo apt-get update -qq
+  # -venv is a SEPARATE package on Debian/Ubuntu and `python3.12 -m venv` fails
+  # without it; -dev is here for any sdist that has to compile.
+  sudo apt-get install -y -qq "${PYTHON}" "${PYTHON}-venv" "${PYTHON}-dev"
+fi
+
 # Virtualenv lives outside the rsync target so --delete never wipes it.
 VENV="${DEPLOY_PATH}/venv"
-if [ ! -d "${VENV}" ]; then
-  echo "==> Creating virtualenv at ${VENV}"
-  python3 -m venv "${VENV}"
-fi
+
+# REBUILT WHEN ITS INTERPRETER IS THE WRONG ONE, not merely when it is absent.
+# The venv on this box was created by a scaffold-era deploy and is 3.10; a
+# `[ ! -d ]` check leaves it in place forever and every deploy fails the same
+# way. A venv is disposable — requirements.txt is the source of truth — so
+# replacing it costs one slower deploy and nothing else.
+venv_py="$("${VENV}/bin/python" -V 2>/dev/null || true)"
+case "${venv_py}" in
+  *"${REQUIRED_PY}"*)
+    echo "==> Reusing virtualenv (${venv_py})"
+    ;;
+  *)
+    if [ -n "${venv_py}" ]; then
+      echo "==> Virtualenv is ${venv_py}, need ${REQUIRED_PY} — rebuilding"
+    else
+      echo "==> Creating virtualenv at ${VENV}"
+    fi
+    rm -rf "${VENV}"
+    "${PYTHON}" -m venv "${VENV}"
+    ;;
+esac
 
 echo "==> Installing backend dependencies"
 "${VENV}/bin/pip" install --quiet --upgrade pip
