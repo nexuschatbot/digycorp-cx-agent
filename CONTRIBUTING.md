@@ -1,5 +1,20 @@
 # Contributing
 
+> ## 🔴 The one rule: branch from `test`, PR into `test`.
+>
+> ```bash
+> git checkout test && git pull origin test
+> git checkout -b feat/your-feature
+> ```
+>
+> `test` is the only continuously deployed branch, which makes it the only one
+> whose code has been seen *running*. A branch cut from anywhere else is cut
+> from something nobody has observed working — and the defects that matter here
+> have consistently been ones no diff could show. See
+> [docs/DEPLOYMENT.md §5](docs/DEPLOYMENT.md#5-failures-this-pipeline-has-actually-produced).
+>
+> No automation checks where your branch came from. The PR template asks.
+
 ## Branches
 
 | Branch         | Purpose                              | Deploys to    |
@@ -40,7 +55,16 @@ to develop.
 
 5. CI must pass and the PR needs an approval before it can merge.
 
-6. On merge, `test` deploys automatically to the test VM.
+6. On merge, `test` deploys automatically to the test VM — see
+   [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). CI and Deploy are **independent**:
+   a red CI does not stop a deploy, so check both.
+
+   Two traps worth knowing before you trust a green CI tick:
+
+   - **Lint runs before tests.** A lint failure means the suite never ran.
+   - **A change touching neither `backend/**` nor `frontend/**` skips both jobs
+     and reports green.** A commit to `scripts/` or `docs/` gets a ✅ that means
+     nothing was checked.
 
 Never open a pull request from a feature branch straight into `elite-prod` or
 `general-prod`. Production only ever receives code that has already landed in

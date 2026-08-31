@@ -1,8 +1,11 @@
 # Open issues — carried out of `multi-agent-migration`
 
-> **One down.** #6 is fixed on `fix/health-route` — the entry is kept rather
-> than deleted, because how a route and a deploy script stayed individually
-> correct for months is the part worth remembering. Seven open.
+> **#6 is fixed**, and the entry is kept rather than deleted because how a route
+> and a deploy script stayed individually correct for months is the part worth
+> remembering. **Seven open here, plus five new ones in the deployment section
+> below**, all found on 31 Aug by putting the app on a real server for the first
+> time since the port. The pipeline itself is now green end to end —
+> [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Everything here was found by **running the cascade end to end in a browser** on
 31 August 2026, after the wiring work described in
@@ -349,3 +352,120 @@ a schema change.
 - **S8 and S9** — Postgres, Salesforce, Redis, pgvector, guardrails, infra —
   [MIGRATION.md](MIGRATION.md).
 - **Rotate the LangSmith key** — MIGRATION.md, Security.
+
+---
+
+# Deployment — found 31 August 2026
+
+The app reached the test VM for the first time since S1 replaced `app/`. Nine
+faults surfaced between the merge and a working page; **eight are fixed and in
+`test`**. What follows is what those left behind.
+
+Full pipeline description, and the table of all nine with causes, is
+[DEPLOYMENT.md §5](DEPLOYMENT.md#5-failures-this-pipeline-has-actually-produced).
+
+## 9. A green CI can mean nothing was checked
+
+**Symptom.** A ✅ on `test` that ran no tests.
+
+**Evidence.** `ci.yml` gates both build jobs on `dorny/paths-filter`:
+
+```yaml
+backend:   ['backend/**', '.github/workflows/**']
+frontend:  ['frontend/**', '.github/workflows/**']
+```
+
+A commit touching only `scripts/` or `docs/` matches neither, both jobs are
+skipped, and the run reports success. Four of today's merges were exactly that
+shape. **Two real test failures have been sitting latent behind those green
+ticks** — see #10.
+
+`ruff` running before `pytest` compounds it: a lint failure also produces a red
+build in which the suite never ran, which reads as "tests failed".
+
+**Where.** `.github/workflows/ci.yml`.
+
+**Why it was left.** The path filter is doing its job — it exists so a
+frontend-only PR does not pay for the backend suite. The fix is not to remove it
+but to make "skipped" legible: a required status check that distinguishes *passed*
+from *not run*. That is a branch-protection decision, not a code change.
+
+## 10. Two guardrail tests contradict the shipped handoff wording
+
+**Symptom.** None visible. They fail only when something in `backend/` changes,
+which is why four green runs went past them.
+
+**Evidence.**
+
+```
+FAILED test_phase6_guardrails.py::test_the_honest_version_is_supplied_not_just_the_ban
+       assert 'they will be in touch' in <aisha's rules>
+FAILED test_phase6_guardrails.py::test_the_rewrite_introduced_no_em_dashes_into_aishas_rules
+       AssertionError: Be careful what you promise
+```
+
+The human-takeover work rewrote the handoff paragraph to offer a live chat join
+*or* a callback. The new text no longer contains the literal `'they will be in
+touch'` one test pins, and it uses em dashes the other bans.
+
+**Where.** `backend/app/agents/aisha/v1.md` (or the prompt block carrying
+`Be careful what you promise`), `backend/tests/test_phase6_guardrails.py`.
+
+**Why it was left.** It is a genuine two-way decision and not mine to take: the
+prose is deliberate and reads better, and the tests are deliberate too — the
+em-dash ban exists because em dashes in Aisha's rules were a real regression
+once. Either the tests are updated to the new wording, or the wording moves back
+toward what they assert.
+
+## 11. The nginx config for the docker path and the VM path can still drift
+
+**Symptom.** A routing bug that appears in exactly one deployment shape.
+
+**Evidence.** This already happened, in the direction nobody expected:
+`frontend/nginx.conf` (docker) was correct for months while the VM's
+hand-written config silently 404ed every `/api` route. The VM config is now
+version-controlled in `deploy/nginx/`, which fixes *that* instance — but there
+are now **two** files describing the same routing, and nothing compares them.
+
+`frontend/nginx.conf`'s own comment predicted this class of failure and still
+names only one direction of it.
+
+**Where.** `frontend/nginx.conf`, `deploy/nginx/digycorp-app.conf`.
+
+**Why it was left.** The honest fix is one source of truth with the upstream and
+document root templated per environment, which means changing how the docker
+image is built. A cheaper interim: a test asserting the two files declare the
+same set of `location` blocks with the same `proxy_pass` trailing-slash
+behaviour.
+
+## 12. Redis is configured and absent
+
+**Symptom.** `retrieval cache unavailable — the index will be built in process`
+on every boot, and ~9s added to every restart while 228 chunks are re-embedded.
+
+**Evidence.** `.env` carries `REDIS_URL=redis://localhost:6379/0`; nothing is
+listening on 6379 on the VM. The fallback is graceful and correct — it just runs
+every time.
+
+**Where.** the VM, and `docs/INFRASTRUCTURE.md`'s service table.
+
+**Why it was left.** One `apt install redis-server` plus a systemd enable, but it
+is a new service on a 2 vCPU / 4 GB box that also holds a 118 MB model in
+process, so it wants measuring rather than assuming.
+
+## 13. The morning auto-start is still broken, and now masked
+
+**Symptom.** The VM will not come up on its own. Today it was found deallocated
+at 18:50 PKT, inside its documented 10:00–20:00 window.
+
+**Evidence.** The Automation Account's managed identity still lacks **Virtual
+Machine Contributor** on the resource group — the long-standing S9 item in
+`INFRASTRUCTURE.md`, which needs an Owner or User Access Administrator to grant.
+
+**Auto-shutdown is currently disabled**, so the VM stays up and this cannot
+bite — but it also means the box now bills around the clock, and the day
+somebody re-enables the shutdown, the morning start fails again.
+
+**Where.** Azure RBAC; command is in `INFRASTRUCTURE.md`.
+
+**Why it was left.** It needs a permission this project's account does not hold.

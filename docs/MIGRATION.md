@@ -4,6 +4,7 @@ Source: `/Users/themacstore/Desktop/Digycorp/Elite-group` (333 files)
 Target: this repo, branch `test`
 Architecture: [elite-multiagent-architecture.md](elite-multiagent-architecture.md)
 Carried-forward defects: [OPEN-ISSUES.md](OPEN-ISSUES.md)
+Deployment pipeline: [DEPLOYMENT.md](DEPLOYMENT.md)
 
 **Rule zero: port, don't re-author.** Prose, comments, anchors, tools and tests
 move verbatim. Only assembly code (prompt composer, router, tool binding) is new.
@@ -202,11 +203,21 @@ against a 400ms first-audio budget makes the free pre-filter/sticky exits
 - [ ] Egress: confirmations extended to reschedule/cancel
 - [ ] Degraded mode (phone: take a number, never dead air)
 - [ ] Cost + Salesforce quota alerts
-- [ ] Provision a database on the test VM (INFRASTRUCTURE.md: "No database. To be decided")
+- [x] **Database on the test VM** — SQLite at `backend/elite_demo.db`, seeded on
+      the box (5 showrooms, 9 models, 15 variants, 330 stock rows / 7,544 units,
+      3 banks, 5 accessories). Excluded from `rsync --delete`, so it survives
+      deploys. Postgres remains S8a.
 - [ ] Find a home for the background jobs: notification dispatcher (apscheduler),
       `sf-refresh` thread, cache prewarm, and the 3 `ops/` crons
-- [ ] TLS on the test environment (currently plain HTTP)
-- [ ] Check the VM holds it — `Standard_D2als_v7`, 2 vCPU / 4 GB
+- [x] **TLS on the test environment** — Let's Encrypt via
+      `certbot certonly --webroot`, expires 29 Nov 2026, auto-renewing. Not
+      optional as it turned out: `crypto.randomUUID` is secure-context-only and
+      threw at first render, so the app served a **blank page** over plain HTTP.
+      No redirect and no HSTS yet, both deliberate — [DEPLOYMENT.md §4](DEPLOYMENT.md#4-tls).
+- [x] **The VM holds it** — 1.1 GB of 3.9 GB resident with the 118 MB ONNX
+      model loaded and the retrieval index built; boot 40s cold, deploy 2m20s.
+      It needed Python 3.12 first: jammy ships 3.10, which cannot resolve
+      `onnxruntime==1.28.0`.
 - [ ] Fix the broken morning VM auto-start (managed identity needs
       Virtual Machine Contributor)
 
@@ -388,6 +399,39 @@ reason it needs a decision rather than a patch →
 **[OPEN-ISSUES.md](OPEN-ISSUES.md)**. The one to take first is a specialist that
 narrates instead of proposing the write — two of three live booking runs
 succeeded, and the third ended in a human handoff.
+
+### The first real deploy — 31 August 2026
+
+`test` reached the VM for the first time since S1 replaced `app/`, and the site
+is live over TLS with Aisha answering from seeded data.
+
+**Nine faults surfaced between the merge and a working page, and none of them
+was broken code.** Every one was two individually-correct things disagreeing:
+
+| | |
+|---|---|
+| a deploy script and a route | `remote-deploy.sh` polled `/health`; the ported app served `/api/health` |
+| CI and a linter nobody had run | 278 findings, 251 in hand-run `salesforce-setup/` scripts |
+| `actions/checkout` and Git LFS | a 118 MB model shipped as a 134-byte pointer, to CI *and* the server |
+| `rsync --delete` and `.gitignore` | would have deleted `.env` and both databases, exit 0 |
+| the VM's Python and the app's | 3.10 vs 3.12 |
+| a guard and a file it could not read | `[ -f /etc/letsencrypt/live/… ]` is false for the deploy user; the deploy went green and took the site off HTTPS |
+| a browser API and its context | `crypto.randomUUID` is secure-context-only — blank page under a 200 |
+| nginx and FastAPI | one trailing slash on `proxy_pass` 404ed every `/api` route |
+| a health timeout and a configured server | 40s boot against a 30s wait |
+
+Eight are fixed and in `test`. The ninth — CI reporting green when its path
+filter skipped both jobs — is [OPEN-ISSUES.md #9](OPEN-ISSUES.md#9-a-green-ci-can-mean-nothing-was-checked).
+
+**The two worst were false negatives in guards**, not failures: the certificate
+check could not see something present, the health timeout gave up before
+something arriving. Both reported success. A guard that fails safe still has to
+be able to see.
+
+**What made them invisible.** A test suite asserts one side of a disagreement,
+and a dev machine is the wrong shape to find them: `localhost` is a secure
+context, LFS files are real on disk, and `.env` is already there. The pipeline
+and how to read it are now written down in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 ---
 
