@@ -139,8 +139,15 @@ jobs:
           # drifted from the application without a single diff to show for it.
           # NO --delete: this directory is the source of truth for what it
           # installs, not for what else the box may keep alongside it.
+          # --rsync-path CREATES THE PARENT. rsync makes the final directory
+          # but not the ones above it, and $DEPLOY_PATH/deploy/ does not exist
+          # on a box provisioned before this directory did — the first run
+          # failed with `mkdir ".../deploy/nginx" failed: No such file or
+          # directory (code 11)`. `--mkpath` would also do it, but only on
+          # rsync >= 3.2.3 at both ends; this works everywhere.
           rsync -az \
             -e "ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes" \
+            --rsync-path="mkdir -p '$DEPLOY_PATH/deploy/nginx' && rsync" \
             deploy/nginx/ "$USER_NAME@$HOST:$DEPLOY_PATH/deploy/nginx/"
 
       - name: Run remote deploy
