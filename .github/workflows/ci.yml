@@ -40,7 +40,19 @@ jobs:
       run:
         working-directory: backend
     steps:
+      # lfs: true IS LOAD-BEARING, not a nicety. Twelve files are in LFS and
+      # every one is under backend/: the 118 MB int8 embedding model, its
+      # tokenizer, and ten brochure PDFs. Without this, checkout writes ~134
+      # byte pointer files in their place and three tests fail in ways that
+      # look like application bugs — onnxruntime cannot load the "model" so
+      # routing reports "no clear winner", and a brochure "PDF" starts with
+      # `version https://git-lfs.github.com/spec/v1` instead of `%PDF-`.
+      #
+      # Only this job takes the cost. `changes` reads paths, not contents, and
+      # nothing under frontend/ is in LFS.
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - uses: actions/setup-python@v5
         with:

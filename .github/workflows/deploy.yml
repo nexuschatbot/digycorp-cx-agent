@@ -16,7 +16,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # lfs: true, AND THIS ONE MATTERS MORE THAN CI'S. The rsync below ships
+      # backend/ wholesale to the VM, and all twelve LFS files live under it.
+      # Without this the deploy would copy a 134-byte pointer over the 118 MB
+      # embedding model and over all ten brochure PDFs — retrieval dead and
+      # every brochure corrupt ON THE SERVER, with a green deploy and nothing
+      # in the log to say so.
+      #
+      # It has never actually happened, only because no deploy has ever reached
+      # the rsync: the health gate failed first (see scripts/remote-deploy.sh),
+      # and before that the VM was unreachable.
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       # Maps the branch to its VM. Each target reads a distinct set of
       # repository secrets, so a misconfigured secret cannot cross environments.
@@ -88,10 +100,30 @@ jobs:
           USER_NAME: ${{ steps.cfg.outputs.user }}
           DEPLOY_PATH: ${{ steps.cfg.outputs.path }}
         run: |
+          # --delete REMOVES ANYTHING AT THE DESTINATION THAT IS NOT AT THE
+          # SOURCE, and the source is a git checkout — so every gitignored file
+          # the server owns is deleted unless it is excluded here.
+          #
+          # .env holds the server's secrets (ANTHROPIC_API_KEY and the rest).
+          # config.py calls load_dotenv() with no argument, which resolves from
+          # the working directory, so it lives at $DEPLOY_PATH/backend/.env —
+          # inside this target. Deleting it leaves a service that starts and
+          # cannot answer.
+          #
+          # *.db is the database. DATABASE_URL defaults to
+          # sqlite:///./elite_demo.db, again relative to backend/, and
+          # agent_checkpoints.db beside it holds every live conversation.
+          # Both are gitignored. Without these excludes a deploy silently
+          # destroys the customer data it was meant to ship code for.
+          #
+          # This has not bitten yet only because the two deploys that ever
+          # succeeded predate the port, when the scaffold owned neither file.
           rsync -az --delete \
             -e "ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes" \
             --exclude '.git' --exclude 'node_modules' --exclude '.venv' \
             --exclude 'frontend/node_modules' \
+            --exclude '.env' --exclude '.env.*' \
+            --exclude '*.db' --exclude '*.db-shm' --exclude '*.db-wal' \
             backend/ "$USER_NAME@$HOST:$DEPLOY_PATH/backend/"
 
           rsync -az --delete \
