@@ -643,3 +643,50 @@ def test_a_failed_step_contributes_no_evidence():
     bad.status = "failed"
     payload = turn_mod.compose_input(run_mod.TurnResult(steps=[bad]))
     assert payload["evidence"] == []
+
+
+# --------------------------------------------------------------------------- #
+# A step that succeeded and returned nothing (2026-08-31)
+# --------------------------------------------------------------------------- #
+def test_an_ok_step_that_returned_nothing_is_named_as_a_gap():
+    """It is `ok`, so `unavailable` skipped it; it has no findings, so the
+    findings list skipped it too — and Aisha saw a lookup that simply was not
+    there. She asked again, three times, for 22 seconds."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+    from app.orchestrator.run import StepResult
+
+    empty = StepResult(brief="b", agent="testdrive", status="ok")
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[empty]))
+
+    assert payload["findings"] == []
+    assert len(payload["unavailable"]) == 1
+    gap = payload["unavailable"][0]
+    assert gap["agent"] == "testdrive"
+    assert gap["status"] == "empty"
+    assert "Asking again" in gap["detail"]
+
+
+def test_a_step_with_evidence_and_no_summary_is_not_a_gap():
+    """The tool results are in front of her — calling that missing would make
+    her apologise for an answer she is holding."""
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+
+    step = _step_with_evidence()
+    step.findings = {}
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[step]))
+
+    assert payload["unavailable"] == []
+    assert payload["evidence"], "the evidence is the answer here"
+
+
+def test_a_failed_step_is_reported_once_not_twice():
+    from app.orchestrator import run as run_mod
+    from app.orchestrator import turn as turn_mod
+    from app.orchestrator.run import StepResult
+
+    bad = StepResult(brief="b", agent="finance", status="failed", detail="timed out")
+    payload = turn_mod.compose_input(run_mod.TurnResult(steps=[bad]))
+
+    assert [u["status"] for u in payload["unavailable"]] == ["failed"]

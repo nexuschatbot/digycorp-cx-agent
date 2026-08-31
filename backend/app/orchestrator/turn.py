@@ -325,6 +325,31 @@ def compose_input(result: run.TurnResult) -> dict:
                 "detail": s.detail or None,
             }
             for s in result.steps if not s.ok
+        ] + [
+            # A STEP THAT SUCCEEDED AND RETURNED NOTHING IS A GAP, AND IT HAS TO
+            # BE NAMED. It is `ok`, so it is not in `unavailable` above; it has
+            # no findings, so the list above it skips it too — and Aisha is left
+            # looking at a lookup that simply is not there, with no reason. What
+            # she does then is ask again: one live turn on 2026-08-31 briefed
+            # the same specialist three times and spent 22 seconds doing it,
+            # stopped only by MAX_CASCADES_PER_TURN. Saying "this came back
+            # empty" is what makes asking again pointless instead of tempting.
+            #
+            # NO EVIDENCE EITHER is part of the test. A step with evidence and
+            # no summary is still answerable — the tool results are in front of
+            # her — and calling that a gap would make her apologise for an
+            # answer she is holding.
+            {
+                "agent": s.agent,
+                "status": "empty",
+                "detail": (
+                    "This came back with nothing — no result and no reason. "
+                    "Asking again will not change it: answer from what you "
+                    "already have, or tell the customer you could not get it."
+                ),
+            }
+            for s in result.steps
+            if s.ok and not s.findings and not s.evidence
         ],
         # Set when SOME of the answer is missing — the case she needs wording
         # for, and the one a compose prompt will otherwise paper over.

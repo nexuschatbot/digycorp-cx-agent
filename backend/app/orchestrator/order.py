@@ -10,7 +10,7 @@ THE CHECK IS `requires` / `produces`, DECLARED IN EACH CARD:
 
     sales      requires []                          produces vehicle_id, variant_id
     testdrive  requires [vehicle_id|booking_ref]    produces slot_id, booking_ref
-    finance    requires [variant_id]                produces emi_estimate, on_road_price
+    finance    requires [variant_id]                produces on_road_aed
 
 A `|` in an entry names ALTERNATIVES — either member satisfies the group. The
 manage journey is why: a booking reference identifies the booking (and thereby

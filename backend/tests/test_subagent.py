@@ -199,12 +199,29 @@ def test_json_wrapped_in_a_sentence_is_still_read():
     assert out == {"vehicle_id": 3}
 
 
-def test_a_reply_with_no_json_returns_nothing_rather_than_guessing():
-    """An empty result is reported honestly as a step that found nothing. An
-    invented one is a fact nobody can trace."""
-    assert subagent._parse_findings("I could not find that.") == {}
+def test_a_reply_with_no_json_invents_no_findings():
+    """No fact is guessed at: an unparsed sentence yields no findings and no
+    entities, so nothing untraceable can reach the customer."""
+    for reply in ("I could not find that.", "{not json}", '"a bare string"'):
+        out = subagent._parse_findings(reply)
+        assert [k for k in out if not k.startswith("_")] == []
+
+
+def test_a_reply_with_no_json_is_carried_as_a_note_not_discarded():
+    """30% of live steps answered in prose and every byte was thrown away, which
+    left Aisha re-briefing the same specialist until the cascade ceiling."""
+    assert subagent._parse_findings("I could not find that.") == {
+        "_note": "I could not find that."
+    }
+    assert subagent._parse_findings("{not json}") == {"_note": "{not json}"}
+    # Nothing to carry stays nothing.
     assert subagent._parse_findings("") == {}
-    assert subagent._parse_findings("{not json}") == {}
+    assert subagent._parse_findings("   ") == {}
+
+
+def test_a_carried_note_is_capped():
+    out = subagent._parse_findings("x" * 9000)
+    assert len(out["_note"]) == subagent.PROSE_NOTE_MAX_CHARS
 
 
 def test_trusted_context_is_closed_over_not_passed_through(patched):
@@ -382,6 +399,105 @@ def test_an_agent_that_can_propose_always_gets_its_second_look(patched, db):
                             {}, db=db, session_id="s1")
     assert len(client.calls) == 2, "a proposing agent must keep its second round"
     assert out["_proposals"][0]["action"] == "hold_slot"
+
+
+def test_finance_settles_on_the_figure_its_tools_actually_return(patched, db):
+    """Its card declared `produces: [emi_estimate, on_road_price]` — two names
+    that exist nowhere in finance_tools.py — so nothing was ever harvested,
+    every finance step logged `entities=[]`, and all five measured on
+    2026-08-31 paid a second round to summarise what they already had."""
+    client = patched(
+        [[_use("get_finance_estimate", {"variant_id": 13})]],
+        dispatch=lambda *a, **k: {
+            "on_road_aed": 96500,
+            "options": [{"bank": "A", "monthly_aed": 2459}],
+        },
+    )
+    out = subagent.run_step(
+        Step(brief="monthly instalments on the T2", agent="finance", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) == 1, f"took {len(client.calls)} rounds"
+    assert out["on_road_aed"] == 96500
+
+
+def test_no_single_monthly_figure_is_threaded_as_the_instalment(patched, db):
+    """`options` is one entry per bank and the card says every one of them stays
+    visible. Harvesting the first would thread one lender's number as though it
+    were THE monthly payment."""
+    patched(
+        [[_use("get_finance_estimate", {"variant_id": 13})]],
+        dispatch=lambda *a, **k: {
+            "on_road_aed": 96500,
+            "options": [{"bank": "A", "monthly_aed": 2459},
+                        {"bank": "B", "monthly_aed": 2610}],
+        },
+    )
+    out = subagent.run_step(
+        Step(brief="monthly instalments on the T2", agent="finance", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert "monthly_aed" not in out
+    # The full panel still reaches Aisha, whole.
+    assert len(out["_evidence"][0]["result"]["options"]) == 2
+
+
+def test_calling_the_write_and_writing_the_proposal_is_one_ask(patched, db):
+    """FOUND LIVE 2026-08-31. The specialist both CALLED create_booking and
+    WROTE a proposal for the same booking, with different argument sets. Keyed
+    on the whole dict those were two keys, so both 'executed' and the customer
+    saw two identical booking cards under one reply."""
+    patched(
+        [[_use("create_booking", {"vehicle_id": 7, "slot_id": 1401,
+                                  "companions": "", "child_seat": False})],
+         [_text('{"findings": {}, "proposals": '
+                '[{"action": "create_booking", '
+                '"args": {"slot_id": 1401, "vehicle_id": 7}}]}')]],
+    )
+    out = subagent.run_step(
+        Step(brief="book it", agent="testdrive", index=0),
+        {}, db=db, session_id="s1",
+    )
+    books = [p for p in out["_proposals"] if p["action"] == "create_booking"]
+    assert len(books) == 1, out["_proposals"]
+    # The INTERCEPT wins: it is what the model actually tried to call, in full.
+    assert books[0]["args"]["companions"] == ""
+    # The hold the card requires is still prepended, and is its own ask.
+    assert [p["action"] for p in out["_proposals"]] == ["hold_slot", "create_booking"]
+
+
+def test_a_move_to_a_different_slot_is_a_different_ask(patched, db):
+    """The subject includes the slot, so two moves are not silently merged."""
+    patched(
+        [[_use("reschedule_booking", {"ref": "TD-1", "new_slot_id": 5})],
+         [_text('{"findings": {}, "proposals": '
+                '[{"action": "reschedule_booking", '
+                '"args": {"ref": "TD-1", "new_slot_id": 9}}]}')]],
+    )
+    out = subagent.run_step(
+        Step(brief="move it", agent="testdrive", index=0),
+        {}, db=db, session_id="s1",
+    )
+    moves = [p for p in out["_proposals"] if p["action"] == "reschedule_booking"]
+    assert len(moves) == 2, moves
+
+
+def test_hold_slot_and_lock_slot_are_one_action(patched, db):
+    """write.py maps hold_slot onto lock_slot; two names for one ask must not
+    survive as two proposals."""
+    assert subagent._proposal_key(
+        {"action": "hold_slot", "args": {"slot_id": 5}}
+    ) == subagent._proposal_key(
+        {"action": "lock_slot", "args": {"slot_id": 5}}
+    )
+
+
+def test_a_proposal_missing_its_subject_is_not_merged(patched, db):
+    """Merging two requests is worse than performing a duplicate one — the
+    service guards already make the duplicate safe."""
+    a = subagent._proposal_key({"action": "create_booking", "args": {"vehicle_id": 7}})
+    b = subagent._proposal_key({"action": "create_booking", "args": {"vehicle_id": 9}})
+    assert a != b
 
 
 def test_a_tool_error_is_not_settled_early(patched, db):

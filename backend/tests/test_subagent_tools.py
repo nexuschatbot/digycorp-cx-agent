@@ -421,8 +421,14 @@ def test_an_unwrapped_reply_cannot_smuggle_a_proposal():
     assert out.get("_proposals") == [{"action": "create_booking"}]
 
 
-def test_a_reply_that_is_not_json_still_yields_nothing():
-    """Tolerant, but never inventing — the existing contract."""
+def test_a_reply_that_is_not_json_yields_no_findings_but_is_not_thrown_away():
+    """Tolerant, but never inventing — nothing becomes a finding or an entity.
+
+    It is not DISCARDED either, and that half is newer: 14 of 47 live steps on
+    2026-08-31 answered in prose, every byte was binned, and the step came back
+    `ok` with nothing in it. Aisha re-briefed until the cascade ceiling."""
     from app.orchestrator import subagent as sub
 
-    assert sub._parse_findings("I looked but found nothing useful") == {}
+    out = sub._parse_findings("I looked but found nothing useful")
+    assert [k for k in out if not k.startswith("_")] == []
+    assert out["_note"] == "I looked but found nothing useful"

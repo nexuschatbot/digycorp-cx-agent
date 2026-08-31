@@ -173,6 +173,53 @@ _PROPOSAL_ALIASES = {"booking_ref": "ref", "reference": "ref"}
 _PROPOSAL_INTS = ("slot_id", "new_slot_id", "vehicle_id", "variant_id")
 
 
+# WHAT MAKES TWO ASKS THE SAME ASK — the SUBJECT of the write, not every
+# argument spelling. Found live 2026-08-31: a specialist both CALLED
+# create_booking (intercepted below, carrying the tool's full arguments) and
+# WROTE a proposal for the same booking (carrying fewer). Keyed on the whole
+# argument dict those are two different keys, so both survived, both
+# "executed", and the customer got two identical booking cards under one
+# reply. The DATA was never wrong — booking.create's guard 2 is idempotent and
+# returns the existing booking for the slot — but two `executed` actions draw
+# two cards, and a customer cannot tell a redraw from a double booking.
+#
+# THE SUBJECT IS WHAT THE WRITE ACTS ON. A slot holds at most one active
+# booking, which is the very thing that idempotency guard relies on, so two
+# create_bookings naming one slot cannot be two different intentions. A move to
+# a DIFFERENT slot has a different subject and is correctly kept as its own ask.
+_PROPOSAL_IDENTITY: dict[str, tuple[str, ...]] = {
+    "lock_slot": ("slot_id",),
+    "create_booking": ("slot_id",),
+    "reschedule_booking": ("ref", "new_slot_id"),
+    "cancel_booking": ("ref",),
+}
+
+
+def _proposal_key(item: dict) -> str:
+    """The dedupe key for one proposal: its action and what it acts on.
+
+    FALLS BACK TO THE WHOLE ARGUMENT DICT when the subject is not fully known.
+    A proposal missing its slot_id would otherwise collapse to a bare action
+    name and swallow a genuinely different ask — and merging two requests is a
+    worse failure than performing a duplicate one, which the service guards
+    already make safe.
+    """
+    from app.orchestrator.write import _ACTION_TO_TOOL
+
+    action = item.get("action")
+    args = item.get("args") or {}
+    # hold_slot and lock_slot are one action under two names; write.py already
+    # owns that mapping, so it is read from there rather than restated.
+    canonical = _ACTION_TO_TOOL.get(action, action)
+    subject = _PROPOSAL_IDENTITY.get(canonical or "")
+    if subject and all(args.get(key) is not None for key in subject):
+        return json.dumps(
+            [canonical, [args.get(key) for key in subject]],
+            sort_keys=True, default=str,
+        )
+    return json.dumps([canonical, args], sort_keys=True, default=str)
+
+
 def _proposal_args(raw: dict) -> dict:
     """One tool_use's input, in the shape write.execute will actually call with."""
     out: dict = {}
@@ -337,26 +384,55 @@ def _harvest_entities(
     return found
 
 
+# The longest prose reply measured across the 2026-08-31 runs was 1,088 chars.
+# Twice that, so the fallback below carries a whole answer and still cannot be
+# used to push an unbounded string into the composer's prompt.
+PROSE_NOTE_MAX_CHARS = 2000
+
+
+def _prose_note(text: str) -> dict:
+    """A reply with no usable JSON, kept as a note rather than thrown away.
+
+    MEASURED 2026-08-31, ACROSS 47 SUB-AGENT STEPS: 14 of them (30%) returned a
+    reply with no JSON object in it at all, and every byte was discarded here.
+    That produced a step marked `ok` with `findings={}` — which compose_input
+    puts in NEITHER `findings` (it is empty) nor `unavailable` (it succeeded).
+    Aisha therefore saw a lookup that returned nothing, with no reason given,
+    and did the only sensible thing: she asked again. One live turn spent 22
+    seconds briefing the same specialist three times, each round answering in
+    prose, each answer binned, until MAX_CASCADES_PER_TURN stopped it.
+
+    SO THE PROSE IS CARRIED, NOT PARSED. It rides `_note`, which already exists
+    for exactly this — free text the model wrote — and which DELEGATING already
+    tells Aisha to read as what a specialist ASKED FOR, never as what was done.
+    Nothing is promoted to a finding and no entity is invented: an unparsed
+    sentence is not a fact, and only `actions` marked executed are ever true.
+    """
+    text = (text or "").strip()
+    return {"_note": text[:PROSE_NOTE_MAX_CHARS]} if text else {}
+
+
 def _parse_findings(text: str) -> dict:
     """Pull the JSON object out of the reply. Tolerant, but never invents.
 
     A model that has just read a long conversational prompt sometimes wraps its
     JSON in a sentence. Extracting it is fine; GUESSING at findings when there is
-    no JSON is not — that returns an empty result and says so, so the step is
-    reported honestly rather than filled in.
+    no JSON is not — so a reply we cannot parse yields no findings and no
+    entities. It does not yield NOTHING, though: see _prose_note for the 22
+    seconds that distinction cost live.
     """
     text = (text or "").strip()
     if not text:
         return {}
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
-        return {}
+        return _prose_note(text)
     try:
         parsed = json.loads(text[start : end + 1])
     except Exception:  # noqa: BLE001
-        return {}
+        return _prose_note(text)
     if not isinstance(parsed, dict):
-        return {}
+        return _prose_note(text)
     findings = parsed.get("findings")
     if isinstance(findings, dict):
         out = dict(findings)
@@ -613,10 +689,16 @@ def run_step(
             deduped: list[dict] = []
             seen_keys: set[str] = set()
             for item in proposed:
-                key = json.dumps(
-                    [item.get("action"), item.get("args")], sort_keys=True, default=str
-                )
+                # FIRST WINS, AND THE INTERCEPTS ARE FIRST BY CONSTRUCTION. An
+                # intercepted tool_use carries the tool's own argument names,
+                # in full, as the model actually tried to call it; the JSON
+                # proposal is the same ask re-expressed and usually thinner.
+                key = _proposal_key(item)
                 if key in seen_keys:
+                    log.info(
+                        "%s asked for %s twice; keeping the first",
+                        step.agent, item.get("action"),
+                    )
                     continue
                 seen_keys.add(key)
                 deduped.append(item)
@@ -769,12 +851,12 @@ def run_step(
         # not finished working. Settling only once the card's `produces` are all
         # in hand means an unfinished step still gets its next round.
         #
-        # It therefore does not fire for Finance today, and that is correct
-        # rather than lucky: its card declares `produces: [emi_estimate,
-        # on_road_price]` while its tools return `on_road_aed` and `options`, so
-        # nothing is ever harvested from it. That mismatch is a real bug — it is
-        # why every finance step logs `entities=[]` — but it is a card fix, not
-        # something to paper over here.
+        # IT DID NOT FIRE FOR FINANCE UNTIL 2026-08-31, and the reason was a
+        # typo with a two-round price on it: the card declared `produces:
+        # [emi_estimate, on_road_price]` while its tools return `on_road_aed`,
+        # so nothing was ever harvested and every finance step logged
+        # `entities=[]`. Fixed where it belonged, in the card — see
+        # app/agents/finance/v1.md.
         if not proposable:
             wanted = _order_produces(step.agent)
             got = _harvest_entities(
