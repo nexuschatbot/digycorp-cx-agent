@@ -1,5 +1,9 @@
 # Open issues — carried out of `multi-agent-migration`
 
+> **One down.** #6 is fixed on `fix/health-route` — the entry is kept rather
+> than deleted, because how a route and a deploy script stayed individually
+> correct for months is the part worth remembering. Seven open.
+
 Everything here was found by **running the cascade end to end in a browser** on
 31 August 2026, after the wiring work described in
 [MIGRATION.md](MIGRATION.md#post-wiring-hardening--31-august-2026). Six defects
@@ -21,7 +25,7 @@ left**. Ordered by what it costs, not by how hard it is.
 | 3 | [`MAX_CASCADES_PER_TURN = 2` is an unproven guess](#3-max_cascades_per_turn--2-is-an-unproven-guess) | answer quality, unknown | one re-run |
 | 4 | [The card strip follows search rank, not the answer](#4-the-card-strip-follows-search-rank-not-the-answer) | wrong car on screen | design |
 | 5 | [`.env` leaks flags into pytest — 10 failures](#5-env-leaks-flags-into-pytest--10-failures) | CI trust | small |
-| 6 | [`/health` 404s, so **every deploy fails its health gate**](#6-health-404s-so-every-deploy-fails-its-health-gate) | deploys | one line |
+| ~~6~~ | [~~`/health` 404s, so every deploy fails its health gate~~](#6-health-404s-so-every-deploy-fails-its-health-gate) — **FIXED**, `fix/health-route` | deploys | done |
 | 7 | [Finance's CALLBACK prose instructs a write it cannot propose](#7-finances-callback-prose-instructs-a-write-it-cannot-propose) | a decided buyer stalls | decision |
 | 8 | [Accessories became reachable, and they have no Arabic](#8-accessories-became-reachable-and-they-have-no-arabic) | AR conversations | data |
 
@@ -209,8 +213,9 @@ would make a red build ambiguous. Do it alone, on a green tree.
 
 ## 6. `/health` 404s, so every deploy fails its health gate
 
-**Symptom.** A deploy to the test VM restarts the service, waits 30 seconds, and
-exits 1 with a page of journal logs — on a service that is running perfectly.
+**Symptom** (as filed). A deploy to the test VM restarts the service, waits 30
+seconds, and exits 1 with a page of journal logs — on a service that is running
+perfectly.
 
 **Evidence.** `@app.get("/api/health")` at `app/main.py:262` is the **only**
 app-level GET route in the file, so both `/health` and `/` 404. These are the two
@@ -239,13 +244,39 @@ ported `main.py` does not use — it is titled "Elite Test Drive Booking API".
 `/api` and `/health` to uvicorn"*), and the `<ENV>_HEALTH_URL` secret in
 `.github/workflows/deploy.yml`.
 
-**Why it was left.** This is **open decision 5** in MIGRATION.md and has been open
-since S1, filed then as a failing scaffold test. The deploy consequence was only
-noticed on 31 August, and it makes the decision urgent rather than cosmetic. It is
-still a two-way question — add a `/health` alias, or repoint the script, the test,
-the README and the secret at `/api/health` — and the alias is the smaller change
-only if nothing else already probes the real route. **Ask before changing either**;
-it touches deployment.
+**FIXED on `fix/health-route`, 31 August 2026.** Open decision 5 is closed with it.
+
+`main.py` now serves `/health` and `/` beside the existing `/api/health`, all
+three from one `_liveness()` helper. **Serving both paths was the fix, not
+choosing between them**, for a reason that only turned up on inspection: the two
+deploy scripts poll *different* paths and both are load-bearing —
+
+```
+scripts/remote-deploy.sh:46       /health       ← this repo's deploy
+deploy/inherited/deploy-core.sh   /api/health   ← Elite's, inherited at S2
+```
+
+— and the workflow's own gate reads `${ENV}_HEALTH_URL` from a repository
+secret, so no edit to a script could guarantee that gate points anywhere real.
+A route answering on both paths is correct whichever the secret names.
+
+Three further decisions taken, each recorded in the code:
+
+- **`status` was added to `/api/health`, nothing removed.** Elite's script reads
+  that body; `api` and `database` keep their exact meaning.
+- **Still always HTTP 200, including when the database is down.** Both gates
+  treat non-2xx as "roll back", and a DB outage is not a deployment fault — it
+  wants a different person. `status: degraded` carries the truth in the body.
+- **`_SERVICE_NAME = "digycorp-cx-agent"`** — the deployed service's name, not
+  the product's. `FastAPI(title="Elite Test Drive Booking API")` is untouched:
+  a machine asking what runs here gets the machine's answer, a person reading
+  `/docs` gets Elite's.
+
+**The guard matters more than the fix.** `test_the_paths_the_deploy_scripts_poll_are_served`
+reads the paths *out of the deploy scripts* and asserts the app routes each one.
+A hardcoded list would have been a second copy of the same fact, drifting
+silently — which is precisely how this happened: `remote-deploy.sh` and
+`main.py` were each individually correct for months.
 
 ---
 

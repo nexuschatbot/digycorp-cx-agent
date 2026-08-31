@@ -23,7 +23,9 @@ move verbatim. Only assembly code (prompt composer, router, tool binding) is new
   - [x] `app/` 179 files incl. `assets/silero_vad.onnx` (sha match)
   - [x] `seed/`, `salesforce-setup/`, `scripts/`
   - [x] **Suite green — 1016 passed**, 3m28s. The only 2 failures are the
-        scaffold's own `tests/test_health.py` (open decision 5).
+        scaffold's own `tests/test_health.py` (open decision 5). ✅ **Fixed 31 Aug**
+        — they were not a naming mismatch, they were every deploy failing its
+        health gate. See [OPEN-ISSUES.md #6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate).
 
 ---
 
@@ -218,18 +220,19 @@ against a 400ms first-audio budget makes the free pre-filter/sticky exits
 | 2 | Deploy model — source ships 4 containers (incl. Postgres + sf-sync); target is rsync + systemd + nginx, room for one service | S2, S9 | open |
 | 3 | `ruff check .` — 12 errors in ported tests, more expected across `app/`. Fix, or add a config matching how the source was linted? | CI | open |
 | 4 | Python — source dev runs 3.14, this repo's CI pins 3.12 | CI | open |
-| 5 | `tests/test_health.py` asserts `service == "digycorp-cx-agent"`; ported `main.py` is titled "Elite Test Drive Booking API" — **and the app serves `/api/health`, not `/health`, so `remote-deploy.sh` fails every deploy's health gate** ([OPEN-ISSUES.md #6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate)) | S1, **deploys** | open, now urgent |
+| 5 | `tests/test_health.py` vs the ported `main.py` — which turned out to be **every deploy failing its health gate**, not a naming mismatch | S1, deploys | ✅ **closed 31 Aug** — `/health`, `/` and `/api/health` all served; service name is `digycorp-cx-agent`, product title unchanged. [OPEN-ISSUES.md #6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate) |
 | 6 | `psycopg[binary]` left unpinned — not installed in the source venv, so no production version to copy | — | noted |
 
-Eight further defects, each with its live evidence, are in **[OPEN-ISSUES.md](OPEN-ISSUES.md)** — carried out of `multi-agent-migration` deliberately, to be fixed on their own branch.
+Eight further defects, each with its live evidence, are in **[OPEN-ISSUES.md](OPEN-ISSUES.md)** — carried out of `multi-agent-migration` deliberately, to be fixed on their own branches. **One is done**: #6, the health route, on `fix/health-route`.
 
 ## Multi-agent migration — Phases 0 to 8 (August 2026)
 
 Built and **connected**, on branch `multi-agent-migration`. **The single-agent
 path is untouched and still live**; everything new sits behind a flag, which is
-why the single-agent suite still passes against the old shape — **1,653 tests,
-12 failing as the dev `.env` stands** ([OPEN-ISSUES.md #5](OPEN-ISSUES.md#5-env-leaks-flags-into-pytest--10-failures)
-and [#6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate)).
+why the single-agent suite still passes against the old shape — **1,657 tests,
+all green** with the shipped flag defaults, for the first time since S1. Ten fail
+if the dev `.env` is left in place, and only for that reason
+([OPEN-ISSUES.md #5](OPEN-ISSUES.md#5-env-leaks-flags-into-pytest--10-failures)).
 
 > **This section said "Done" for a phase while the cascade was unreachable.**
 > Every module existed and was tested; nothing in `app/` imported

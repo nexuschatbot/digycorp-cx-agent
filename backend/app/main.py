@@ -1,7 +1,8 @@
 """FastAPI application — CORS, table creation on startup, and route assembly.
 
 Wires the chat SSE stream, the direct-path REST routes (conversation, vehicles,
-bookings, intents, voice, speech), the admin console, and GET /api/health.
+bookings, intents, voice, speech), the admin console, and the liveness routes
+GET /api/health, GET /health and GET / — see health_root for why there are three.
 """
 
 from __future__ import annotations
@@ -259,19 +260,87 @@ if _MEDIA_DIR.is_dir():
     app.mount("/media", StaticFiles(directory=str(_MEDIA_DIR)), name="media")
 
 
-@app.get("/api/health")
-def health() -> dict[str, str]:
+# THE NAME THIS SERVICE ANSWERS TO (open decision 5, settled 2026-08-31).
+#
+# Not a contradiction of `FastAPI(title="Elite Test Drive Booking API")` above:
+# that title is the human-facing label on the OpenAPI docs, and it names the
+# PRODUCT. This names the DEPLOYED SERVICE, and everything around it already
+# agrees — the repository, the deploy path, `digycorp-cx-test-vm`,
+# `digycorp-cx-test-rg`. A machine asking "what is running here" gets the
+# machine's answer; a person reading /docs gets Elite's.
+_SERVICE_NAME = "digycorp-cx-agent"
+
+
+def _liveness() -> dict[str, str]:
     """Report API liveness plus a real database round-trip.
 
     The DB check runs `SELECT 1` against a live session (not just "the engine
     exists"). Any failure is reported as an error state — the endpoint must not
     crash if the database is unreachable.
+
+    ALWAYS HTTP 200, INCLUDING WHEN THE DATABASE IS DOWN, which is the contract
+    this endpoint has always had and is deliberately not changed here. Both
+    deploy gates treat any non-2xx as "roll back": `remote-deploy.sh` with
+    `curl -sf`, the workflow by comparing against 200. Reporting a transient DB
+    blip as a failed deploy would turn a database problem into a deployment
+    problem, and the two want different people. `status` carries the honest
+    answer for anything that reads the body.
     """
     db = SessionLocal()
     try:
         db.execute(text("SELECT 1"))
-        return {"api": "ok", "database": "ok"}
+        return {"status": "ok", "api": "ok", "database": "ok"}
     except Exception as exc:  # noqa: BLE001 — surface any DB failure gracefully
-        return {"api": "ok", "database": "error", "detail": str(exc)}
+        return {
+            "status": "degraded",
+            "api": "ok",
+            "database": "error",
+            "detail": str(exc),
+        }
     finally:
         db.close()
+
+
+@app.get("/api/health")
+def health() -> dict[str, str]:
+    """Liveness, under /api with every other route.
+
+    `status` was ADDED here on 2026-08-31 and nothing was removed: Elite's
+    inherited `deploy/inherited/deploy-core.sh` polls this path and reads the
+    body, so `api` and `database` keep their meaning exactly.
+    """
+    return _liveness()
+
+
+@app.get("/health")
+def health_root() -> dict[str, str]:
+    """The same liveness check, at the bare path (added 2026-08-31).
+
+    TWO SCRIPTS POLL TWO DIFFERENT PATHS AND BOTH ARE LOAD-BEARING:
+
+        scripts/remote-deploy.sh:46        /health       ← this repo's deploy
+        deploy/inherited/deploy-core.sh    /api/health   ← Elite's, inherited
+
+    S1 replaced `app/` wholesale with Elite's ported application, which serves
+    its health route under `/api`. The scaffold's deploy script and its tests
+    survived that port; the scaffold's ROUTE did not. Nothing ran a deploy
+    afterwards, so nothing noticed — `remote-deploy.sh` retried fifteen times
+    and exited 1 on a service that had started perfectly.
+
+    SERVING BOTH IS THE FIX, NOT CHOOSING ONE. The workflow's own gate reads
+    `${ENV}_HEALTH_URL` from a repository secret (deploy.yml:47), so no change
+    to a script here can guarantee that gate points somewhere real. A route that
+    answers on both paths is correct whichever the secret names.
+    """
+    return _liveness()
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    """What is running here, for anything that asks the bare origin.
+
+    Nothing in the frontend calls this — the SPA is served by nginx, not by
+    FastAPI. It exists for the human and the uptime check that land on the
+    origin and currently get a 404 from a healthy service.
+    """
+    return {"service": _SERVICE_NAME, "status": "ok"}

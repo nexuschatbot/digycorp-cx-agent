@@ -48,7 +48,7 @@ cheapest family with both quota and capacity in the region.
 | Service | Role |
 | ------- | ---- |
 | `digycorp-api` | uvicorn on `127.0.0.1:8000` |
-| `nginx`        | serves `frontend/dist`, proxies `/api` and `/health` to uvicorn — **but uvicorn 404s `/health`; it serves `/api/health`. See [OPEN-ISSUES.md #6](OPEN-ISSUES.md#6-health-404s-so-every-deploy-fails-its-health-gate)** |
+| `nginx`        | serves `frontend/dist`, proxies `/api` and `/health` to uvicorn — both are served (`/api/health`, `/health` and `/` all report liveness) |
 
 ```bash
 sudo systemctl status digycorp-api

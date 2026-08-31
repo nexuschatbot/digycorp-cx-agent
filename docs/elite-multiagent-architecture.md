@@ -37,8 +37,9 @@ Alembic · ONNX embeddings · Redis (cache only)
 **The single agent is still the live path.** The multi-agent cascade is built,
 wired into the graph, and switched off behind `MULTI_AGENT_ENABLED`. Nothing was
 taken away to make room for it, which is why the single-agent suite still passes
-against the old shape — **1,653 tests, 12 failing as the dev `.env` stands**, ten
-of them *because* of it and two predating the port (OPEN-ISSUES.md #5 and #6).
+against the old shape — **1,657 tests, all green** with the shipped flag defaults
+(31 Aug, the first clean run since S1). Ten fail if the dev `.env` is left in
+place, and only for that reason (OPEN-ISSUES.md #5).
 
 Wired means specifically: Aisha holds an `emit_briefs` tool; a generation
 containing it routes to an `orchestrator` node instead of the tools node; that
