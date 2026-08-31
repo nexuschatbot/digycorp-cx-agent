@@ -63,6 +63,10 @@ from app.tools.booking_tools import (
 from app.tools.brief_tools import (
     EMIT_BRIEFS_SCHEMA,
 )
+from app.tools.accessory_tools import (
+    GET_ACCESSORIES_SCHEMA,
+    get_accessories,
+)
 from app.tools.catalogue_tools import (
     GET_SHOWROOMS_SCHEMA,
     GET_VARIANTS_SCHEMA,
@@ -303,6 +307,10 @@ SUBAGENT_ONLY: dict[str, dict] = {
     # are unreachable without it, which is why sales declares it.
     "get_variants": {"schema": GET_VARIANTS_SCHEMA, "fn": get_variants},
     "check_stock": {"schema": CHECK_STOCK_SCHEMA, "fn": check_stock},
+    # SEEDED AT T0.7 AND NEVER BOUND UNTIL 2026-08-31. The table held all five
+    # of Elite's accessories the whole time; nothing read it, so a customer who
+    # asked the price of the alloy wheel upgrade was told we did not have it.
+    "get_accessories": {"schema": GET_ACCESSORIES_SCHEMA, "fn": get_accessories},
     "get_on_road_price": {"schema": GET_ON_ROAD_PRICE_SCHEMA, "fn": get_on_road_price},
     "get_finance_estimate": {
         "schema": GET_FINANCE_ESTIMATE_SCHEMA,
@@ -310,7 +318,7 @@ SUBAGENT_ONLY: dict[str, dict] = {
     },
 }
 
-# What a sub-agent may reach: everything Aisha can read, plus the five above.
+# What a sub-agent may reach: everything Aisha can read, plus the six above.
 SUBAGENT_REGISTRY: dict[str, dict] = {**REGISTRY, **SUBAGENT_ONLY}
 SUBAGENT_TOOL_FNS = {name: entry["fn"] for name, entry in SUBAGENT_REGISTRY.items()}
 

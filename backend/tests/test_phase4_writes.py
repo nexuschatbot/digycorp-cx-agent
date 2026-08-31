@@ -23,7 +23,13 @@ from sqlalchemy import select
 from app.agent import session_guard
 from app.agents import loader
 from app.orchestrator import booking_state, write
-from app.tools import COMMERCIAL_WRITE_TOOLS, READ_TOOLS, REGISTRY, WRITE_TOOLS
+from app.tools import (
+    COMMERCIAL_WRITE_TOOLS,
+    READ_TOOLS,
+    REGISTRY,
+    SUBAGENT_REGISTRY,
+    WRITE_TOOLS,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -50,11 +56,17 @@ def test_no_sub_agent_card_holds_a_write_tool(agent):
 def test_every_tool_a_card_names_actually_exists(agent):
     """A card naming a tool the registry does not have is an instruction the
     agent cannot follow — the orphaned-rule defect, one level up."""
+    # CHECKED AGAINST THE BINDING A SUB-AGENT ACTUALLY GETS, which is
+    # SUBAGENT_REGISTRY — REGISTRY is the single agent's surface and has never
+    # been what these cards resolve against (subagent._schemas_for).
+    #
+    # This used to allow a hardcoded list of the SUBAGENT_ONLY names past a
+    # REGISTRY check, which is a copy of a set that already exists: adding
+    # get_accessories in 2026-08 failed here for no reason but the copy being
+    # stale. Naming the real registry is both stronger and unable to drift.
     tools = set(loader.frontmatter(agent).get("tools") or [])
-    unknown = tools - set(REGISTRY)
-    # search_knowledge is written but not registered until Phase 2 binds it.
-    assert unknown <= {"search_knowledge", "get_variants", "check_stock",
-                       "get_on_road_price", "get_finance_estimate"}, unknown
+    unknown = tools - set(SUBAGENT_REGISTRY)
+    assert not unknown, f"{agent} names tools that exist nowhere: {sorted(unknown)}"
 
 
 def test_commercial_writes_are_proposed_not_held():

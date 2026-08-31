@@ -125,23 +125,63 @@ def load(collection: str) -> tuple[list, object] | None:
     return built
 
 
+# SLOTS RESERVED PER COLLECTION before the global ranking fills the rest.
+#
+# TWO, NOT ONE, AND MEASURED (2026-08-31) over nine policy questions — four
+# topics, asked both bare and with a model named:
+#
+#     floor=1   7/9 reached the right document   1 of 5 slots spent
+#     floor=2   9/9                              2 of 5 slots spent
+#
+# The two that floor=1 missed were both promotions, and both lost INSIDE the
+# knowledge collection by less than 0.005 — noise on this model, not a
+# judgement. One slot represents a collection; two represent it reliably.
+#
+# THE COST IS CHEAPER THAN IT LOOKS. The slots it takes from a pure catalogue
+# question ("how many seats") were never the ones answering it: seats, engines
+# and trims come from search_vehicles and get_vehicle_details, and three
+# brochure chunks still reach the model.
+COLLECTION_FLOOR = 2
+
+
 def search(
     query: str,
     *,
     collections: tuple[str, ...] = KNOWLEDGE_COLLECTIONS,
     k: int = 5,
     include_gaps: bool = True,
+    floor: int = COLLECTION_FLOOR,
 ) -> list[tuple]:
     """The k best chunks for a question, best first, as (Chunk, score).
 
-    RANKED ACROSS COLLECTIONS, not per collection. A warranty question should
-    reach warranty.md whether the best chunk lives there or in a brochure, and
-    quotas per collection would only encode a guess about where facts live.
+    RANKED ACROSS COLLECTIONS — WITH A FLOOR (corrected 2026-08-31). This used
+    to be a pure global ranking, on the reasoning that a warranty question
+    should reach warranty.md wherever the best chunk lives and that a per
+    collection quota "would only encode a guess about where facts live". The
+    reasoning was sound and the premise was false, and measuring it says so:
 
-    NO SCORE THRESHOLD, deliberately — see embed.top_k. On this content every
-    similarity lands between 0.75 and 0.87, so any constant either admits
-    everything or nothing. The caller gets the ranking and the scores and can
-    compare them to EACH OTHER.
+        "warranty"                                 warranty.md at rank  1
+        "what warranty comes with the X70 FL Plus"  warranty.md at rank 39
+
+    NAMING THE CAR BURIES THE ANSWER. Every score on this content sits between
+    0.83 and 0.89, so nothing discriminates strongly — and a model name appears
+    on every page of that model's brochure while the topic word appears once.
+    The brochure wins on volume, takes all five slots, and the document that
+    actually answers the question is invisible. The same held for delivery,
+    registration and promotions: policy is cross-cutting, brochures are
+    numerous, and a customer almost always names the car.
+
+    THE FLOOR IS NOT A GUESS ABOUT WHERE FACTS LIVE. It reserves one slot for
+    each collection's OWN best chunk and lets the global ranking fill the rest,
+    so the answer to "which car" and the answer to "what is the policy" stop
+    competing on a scale that cannot tell them apart. It costs one slot of five
+    on a question that needed only brochures — cheap beside rank 39, and the
+    passage carries its `source` and `kind` for a reader to discard.
+
+    NO SCORE THRESHOLD, still, and for the original reason — see embed.top_k.
+    Any constant on a 0.75-0.87 spread either admits everything or nothing. A
+    floor needs no threshold: it asks each collection for its best, not for
+    anything above a number.
     """
     if not query or not query.strip():
         return []
@@ -149,20 +189,48 @@ def search(
     if qv is None:
         return []
 
-    hits: list[tuple] = []
+    per_collection: list[list[tuple]] = []
     for collection in collections:
         loaded = load(collection)
         if loaded is None:
             continue
         chunks, vectors = loaded
+        found: list[tuple] = []
         for i, score in embed.top_k(qv, vectors, k=k):
             c = chunks[i]
             if not include_gaps and c.kind == "gap":
                 continue
-            hits.append((c, score))
+            found.append((c, score))
+        found.sort(key=lambda h: -h[1])
+        per_collection.append(found)
 
-    hits.sort(key=lambda h: -h[1])
-    return hits[:k]
+    # RESERVE FIRST, THEN FILL. Identity is by position, not by Chunk equality:
+    # two chunks can carry the same text from different files and dropping one
+    # as a duplicate would silently lose a citation.
+    picked: list[tuple] = []
+    taken: set[tuple[int, int]] = set()
+    if floor > 0 and k >= len(per_collection):
+        for ci, found in enumerate(per_collection):
+            for hi in range(min(floor, len(found))):
+                if len(picked) >= k:
+                    break
+                picked.append(found[hi])
+                taken.add((ci, hi))
+
+    remaining = sorted(
+        ((ci, hi, hit)
+         for ci, found in enumerate(per_collection)
+         for hi, hit in enumerate(found)
+         if (ci, hi) not in taken),
+        key=lambda t: -t[2][1],
+    )
+    for ci, hi, hit in remaining:
+        if len(picked) >= k:
+            break
+        picked.append(hit)
+
+    picked.sort(key=lambda h: -h[1])
+    return picked[:k]
 
 
 def warm() -> dict:

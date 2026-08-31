@@ -266,6 +266,44 @@ def test_search_ranks_the_right_document_in_the_top_three():
 
 
 @needs_model
+def test_naming_the_car_does_not_bury_the_policy_document():
+    """THE CASE THE EVAL SET ABOVE MISSES, and why it missed it: every query in
+    it is bare ("what is the warranty on the Dashing" names a model the
+    brochures barely mention). Add a model with a full brochure and the
+    brochure takes every slot on volume alone — measured 2026-08-31,
+    warranty.md fell from rank 1 to rank 39 on the same question."""
+    cases = [
+        ("what warranty comes with the X70 FL Plus", "warranty"),
+        ("how long is the delivery time if I order an X70 FL Plus", "delivery"),
+        ("how long does registration take for my X50", "registration"),
+        # Both of these missed at floor=1, losing INSIDE the knowledge
+        # collection by under 0.005 — see index.COLLECTION_FLOOR.
+        ("any offers on the T2 i-DM this month", "promotions"),
+        ("is there a discount on the X70 FL Plus", "promotions"),
+    ]
+    for query, expected in cases:
+        sources = [c.source for c, _ in index.search(query, k=5)]
+        assert expected in sources, f"{query!r} -> {sources}"
+
+
+@needs_model
+def test_the_floor_costs_one_slot_and_no_more():
+    """A pure catalogue question still gets the brochures. The floor reserves
+    one slot per collection, not a half share."""
+    hits = index.search("how many seats does the X70 FL Plus have", k=5)
+    collections = [c.collection for c, _ in hits]
+    assert collections.count("brochures") == 3
+    assert collections.count("knowledge") == index.COLLECTION_FLOOR
+
+
+@needs_model
+def test_the_floor_never_pads_beyond_what_a_collection_has():
+    hits = index.search("what is the warranty", k=2)
+    assert len(hits) == 2
+    assert [s for _, s in hits] == sorted((s for _, s in hits), reverse=True)
+
+
+@needs_model
 def test_an_arabic_question_reaches_the_arabic_sections():
     """The whole reason a multilingual model was vendored over an English one
     5x smaller. If this ever fails, that decision stopped paying for itself."""
