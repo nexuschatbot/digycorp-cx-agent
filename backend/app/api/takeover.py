@@ -1,4 +1,4 @@
-"""WS /ws/takeover/{session_id} — the live channel for a human takeover.
+"""WS /api/takeover/{session_id} — the live channel for a human takeover.
 
 Once an admin takes an escalated session over, the AI is gone (the gate in
 runner.run_turn) and BOTH sides talk through this socket instead: the admin
@@ -22,6 +22,11 @@ WIRE PROTOCOL (JSON text frames, both directions):
           "lang", "ts", "turn_id", "admin_name"}      # one persisted turn
     out  {"type": "closed"}                           # conversation over
     out  {"type": "error", "error": "..."}            # refusal, as data
+
+UNDER /api DELIBERATELY, like the call gateway's WS: the Vite dev proxy and
+the nginx deploy both forward /api (with WS upgrade where configured), so a
+/ws/... path would work only when the browser talks straight to uvicorn — the
+worst kind of environment-only failure. See nginx.conf's /api/takeover/ block.
 
 Roles come from the query string (?role=admin&name=... | ?role=customer).
 There is no auth on either role — the same deliberate D1 demo relaxation as the
@@ -125,7 +130,7 @@ def _close_sync(session_id: str) -> dict:
         db.close()
 
 
-@router.websocket("/ws/takeover/{session_id}")
+@router.websocket("/api/takeover/{session_id}")
 async def takeover_ws(ws: WebSocket, session_id: str) -> None:
     role = ws.query_params.get("role", "customer")
     name = (ws.query_params.get("name") or "").strip()

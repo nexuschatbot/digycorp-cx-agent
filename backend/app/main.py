@@ -197,7 +197,7 @@ app.include_router(call_router)
 # The DIRECT path: same services as the agent's tools, no LLM in the loop.
 app.include_router(conversation_router)
 
-# WS /ws/takeover/{session_id} — human takeover of an escalated session
+# WS /api/takeover/{session_id} — human takeover of an escalated session
 # (2026-08-31). The second WebSocket after the call gateway, and for the same
 # reason SSE could not serve: a human reply must reach a customer who is only
 # waiting, holding no request open. No LLM anywhere on this path.

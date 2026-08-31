@@ -236,7 +236,7 @@ def client(db, monkeypatch):
 
 def _ws(client, role: str, name: str | None = None, session: str = SESSION):
     qs = f"role={role}" + (f"&name={name}" if name else "")
-    return client.websocket_connect(f"/ws/takeover/{session}?{qs}")
+    return client.websocket_connect(f"/api/takeover/{session}?{qs}")
 
 
 def test_ws_admin_refused_without_an_escalation(db, client):
