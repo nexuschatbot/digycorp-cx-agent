@@ -2,6 +2,7 @@
 // or business logic; the agent still speaks the minimal Stage-1 prompt).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { newId } from './id'
 
 import {
   audioUrl,
@@ -125,14 +126,14 @@ function readStoredSession(): { id: string; existing: boolean } {
 
     const stored = sessionStorage.getItem(SESSION_KEY)
     if (stored) return { id: stored, existing: true }
-    const id = crypto.randomUUID()
+    const id = newId()
     sessionStorage.setItem(SESSION_KEY, id)
     return { id, existing: false }
   } catch {
     // Private mode / storage disabled / blocked by policy. Degrade to an
     // in-memory session: the chat works perfectly, it just will not survive a
     // reload. Never let storage take the demo down.
-    return { id: crypto.randomUUID(), existing: false }
+    return { id: newId(), existing: false }
   }
 }
 
@@ -185,7 +186,7 @@ function redeemHandoffOnce(token: string): Promise<HandoffResult> {
 // relevant turn.
 function turnToMessage(t: TranscriptTurn, sessionId: string, staffName?: string): TextMessage {
   return {
-    id: crypto.randomUUID(),
+    id: newId(),
     kind: 'text',
     role: t.speaker === 'customer' ? 'user' : t.speaker === 'staff' ? 'staff' : 'agent',
     // The transcript stores speaker 'staff' but not the name — one takeover per
@@ -292,7 +293,7 @@ async function rebuildTurns(
       const call = /^call:(\d+)$/.exec(t.text.trim())
       if (call) {
         out.push({
-          id: crypto.randomUUID(),
+          id: newId(),
           kind: 'text',
           role: 'system',
           text: callSummaryLine(t.lang, Number(call[1])),
@@ -312,7 +313,7 @@ async function rebuildTurns(
           .map((ref) => resolvedBookings.get(ref))
           .filter((b): b is BookingCard => b != null)
         if (bookings.length === 0) continue // all cancelled/unresolvable — drop
-        out.push({ id: crypto.randomUUID(), kind: 'bookings', bookings, dir })
+        out.push({ id: newId(), kind: 'bookings', bookings, dir })
         continue
       }
 
@@ -321,7 +322,7 @@ async function rebuildTurns(
         .filter((c): c is VehicleCard => c != null)
       if (cards.length === 0) continue
       out.push({
-        id: crypto.randomUUID(),
+        id: newId(),
         kind: 'cards',
         cards,
         variant: row.variant ?? 'compact',
@@ -478,7 +479,7 @@ function buildCards(
   dir: 'rtl' | 'ltr',
 ): CardsMessage | null {
   if (cards.length === 0) return null
-  return { id: crypto.randomUUID(), kind: 'cards', cards, variant, dir }
+  return { id: newId(), kind: 'cards', cards, variant, dir }
 }
 
 // Build a slot-chip row, or null if there are no slots (empty -> nothing; the
@@ -488,7 +489,7 @@ function buildCards(
 // superseded slot_id.
 function buildSlots(slots: SlotChip[], dir: 'rtl' | 'ltr'): SlotsMessage | null {
   if (slots.length === 0) return null
-  return { id: crypto.randomUUID(), kind: 'slots', slots, dir }
+  return { id: newId(), kind: 'slots', slots, dir }
 }
 
 // Build a booking-card row, or null when the lookup found nothing. AN EMPTY LIST
@@ -501,17 +502,17 @@ function buildSlots(slots: SlotChip[], dir: 'rtl' | 'ltr'): SlotsMessage | null 
 // a broken one.
 function buildCompare(data: Comparison | null, dir: 'rtl' | 'ltr'): CompareMessage | null {
   if (!data) return null
-  return { id: crypto.randomUUID(), kind: 'compare', data, dir }
+  return { id: newId(), kind: 'compare', data, dir }
 }
 
 function buildOptions(options: OptionChip[], dir: 'rtl' | 'ltr'): OptionsMessage | null {
   if (options.length === 0) return null
-  return { id: crypto.randomUUID(), kind: 'options', options, dir }
+  return { id: newId(), kind: 'options', options, dir }
 }
 
 function buildBookings(bookings: BookingCard[], dir: 'rtl' | 'ltr'): BookingsMessage | null {
   if (bookings.length === 0) return null
-  return { id: crypto.randomUUID(), kind: 'bookings', bookings, dir }
+  return { id: newId(), kind: 'bookings', bookings, dir }
 }
 
 // Build a showroom-choice row, or null when the lookup found nothing. An EMPTY
@@ -535,7 +536,7 @@ function buildShowrooms(
   variant: 'choice' | 'nearest' = 'choice',
 ): ShowroomsMessage | null {
   if (showrooms.length === 0) return null
-  return { id: crypto.randomUUID(), kind: 'showrooms', showrooms, dir, variant }
+  return { id: newId(), kind: 'showrooms', showrooms, dir, variant }
 }
 
 export interface UseChat {
@@ -729,7 +730,7 @@ export function useChat(): UseChat {
   // mechanism: it is the checkpointer's thread_id, so a new id means a new
   // thread and the old conversation is never replayed into it.
   const rotateSession = useCallback(() => {
-    sessionId.current = crypto.randomUUID()
+    sessionId.current = newId()
     storeSession(sessionId.current)
     needsResume.current = false
   }, [])
@@ -821,7 +822,7 @@ export function useChat(): UseChat {
         return [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: newId(),
             kind: 'text',
             role: 'system',
             text: LIFECYCLE_LINES[lang].closing,
@@ -871,7 +872,7 @@ export function useChat(): UseChat {
     nudgedRef.current = true
     // Minted out here, not inside the updater, so `send` can find this exact
     // line again to remove it once the customer answers.
-    const id = crypto.randomUUID()
+    const id = newId()
     nudgeIdRef.current = id
     setMessages((prev) => {
       const lang = conversationLang(prev)
@@ -926,7 +927,7 @@ export function useChat(): UseChat {
             return [
               ...prev,
               {
-                id: crypto.randomUUID(),
+                id: newId(),
                 kind: 'text',
                 role: 'system',
                 text: TAKEOVER_LINES[lang].joined((frame.admin_name as string) || 'Elite'),
@@ -954,7 +955,7 @@ export function useChat(): UseChat {
         setMessages((prev) => [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: newId(),
             kind: 'text',
             role: staff ? 'staff' : 'user',
             text: (frame.text as string) ?? '',
@@ -1144,8 +1145,8 @@ export function useChat(): UseChat {
         return [
           ...marked,
           card
-            ? { id: crypto.randomUUID(), kind: 'bookings' as const, bookings: [card], dir }
-            : { id: crypto.randomUUID(), kind: 'booking' as const, ref, dir },
+            ? { id: newId(), kind: 'bookings' as const, bookings: [card], dir }
+            : { id: newId(), kind: 'booking' as const, ref, dir },
         ]
       })
     },
@@ -1171,7 +1172,7 @@ export function useChat(): UseChat {
     // instant a break happens, while React may run a queued updater later — an
     // updater that closed over the variable itself would patch whichever bubble
     // is live by the time it runs, not the one it was written for.
-    let liveId = crypto.randomUUID()
+    let liveId = newId()
     setMessages((prev) => [
       ...prev,
       { id: liveId, kind: 'text', role: 'agent', text: '', streaming: true, lang: 'en' },
@@ -1210,7 +1211,7 @@ export function useChat(): UseChat {
     // If the turn ends without another token, finalizeAgent drops it.
     const breakBubble = () => {
       const closing = liveId
-      const nextId = crypto.randomUUID()
+      const nextId = newId()
       liveId = nextId
       setMessages((prev) => [
         ...seal(prev, closing),
@@ -1430,7 +1431,7 @@ export function useChat(): UseChat {
           }
           return [
             ...prev.map((m) => (m.id === target && m.kind === 'text' ? { ...m, streaming: false } : m)),
-            { id: crypto.randomUUID(), kind: 'text', role: 'error', text: e.message, streaming: false, lang: 'en' },
+            { id: newId(), kind: 'text', role: 'error', text: e.message, streaming: false, lang: 'en' },
           ]
         })
       },
@@ -1518,7 +1519,7 @@ export function useChat(): UseChat {
         setMessages((prev) => [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: newId(),
             kind: 'text',
             role: 'user',
             text,
@@ -1572,7 +1573,7 @@ export function useChat(): UseChat {
         setMessages((prev) => [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: newId(),
             kind: 'text' as const,
             role: 'user' as const,
             text,
@@ -1791,7 +1792,7 @@ export function useChat(): UseChat {
             return [
               ...prev,
               {
-                id: crypto.randomUUID(),
+                id: newId(),
                 kind: 'text',
                 role: 'system',
                 text: VOICE_LABELS[lang].sendFailed,
@@ -1871,7 +1872,7 @@ export function useChat(): UseChat {
             return [
               ...prev,
               {
-                id: crypto.randomUUID(),
+                id: newId(),
                 kind: 'text',
                 role: 'system',
                 text: CALL_END_LINES[lang][reason as string] ?? line,

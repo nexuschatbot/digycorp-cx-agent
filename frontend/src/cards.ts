@@ -4,6 +4,7 @@
 // as no price line — never "None"/"null".
 
 import type { VehicleDetail } from './api'
+import { newId } from './id'
 
 export interface VehicleCard {
   id: string
@@ -71,7 +72,7 @@ export function priceLabel(v: VehicleDict): string | null {
 
 function toCard(v: VehicleDict): VehicleCard {
   return {
-    id: String(v.vehicle_id ?? v.name ?? crypto.randomUUID()),
+    id: String(v.vehicle_id ?? v.name ?? newId()),
     vehicleId: typeof v.vehicle_id === 'number' ? v.vehicle_id : null,
     name: v.name ?? 'Vehicle',
     imageUrl: typeof v.image_url === 'string' ? v.image_url : null,

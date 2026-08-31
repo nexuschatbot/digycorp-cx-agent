@@ -3,6 +3,8 @@
 // start_iso (the fact we localize from), and the location (showroom name or
 // doorstep service area). Nothing invented.
 
+import { newId } from './id'
+
 export interface SlotChip {
   id: string
   slotId: number
@@ -33,7 +35,7 @@ export function extractSlotChips(output: unknown): SlotChip[] {
     .map((s) => {
       const doorstep = s.location_type === 'doorstep'
       return {
-        id: String(s.slot_id ?? s.start_iso ?? crypto.randomUUID()),
+        id: String(s.slot_id ?? s.start_iso ?? newId()),
         slotId: Number(s.slot_id),
         startIso: String(s.start_iso ?? ''),
         locationType: doorstep ? 'doorstep' : 'showroom',

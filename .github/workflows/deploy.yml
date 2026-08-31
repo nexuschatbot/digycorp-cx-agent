@@ -134,6 +134,15 @@ jobs:
             -e "ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes" \
             scripts/remote-deploy.sh "$USER_NAME@$HOST:$DEPLOY_PATH/remote-deploy.sh"
 
+          # The nginx config. remote-deploy.sh installs it from here — it used
+          # to be hand-written on the box and versioned nowhere, which is how it
+          # drifted from the application without a single diff to show for it.
+          # NO --delete: this directory is the source of truth for what it
+          # installs, not for what else the box may keep alongside it.
+          rsync -az \
+            -e "ssh -i /tmp/deploy_key -o StrictHostKeyChecking=yes" \
+            deploy/nginx/ "$USER_NAME@$HOST:$DEPLOY_PATH/deploy/nginx/"
+
       - name: Run remote deploy
         env:
           HOST: ${{ steps.cfg.outputs.host }}

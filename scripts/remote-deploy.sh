@@ -80,8 +80,52 @@ echo "==> Installing backend dependencies"
 echo "==> Restarting ${API_SERVICE}"
 sudo systemctl restart "${API_SERVICE}"
 
-echo "==> Reloading ${WEB_SERVICE}"
-sudo systemctl reload "${WEB_SERVICE}" || sudo systemctl restart "${WEB_SERVICE}"
+# NGINX CONFIG IS DEPLOYED, NOT HAND-MAINTAINED (2026-08-31).
+#
+# It used to be hand-written on the box and version-controlled nowhere, so it
+# drifted from the application the moment `app/` was ported over the scaffold
+# and no diff could show it. What that cost, all of it invisible until someone
+# curled the server: `proxy_pass .../` with a trailing slash rewrote the prefix
+# away so EVERY /api route 404ed; no `proxy_buffering off` so SSE token
+# streaming stalled; no /media block so vehicle images rendered broken; no
+# WebSocket blocks so voice and human takeover died at the proxy; and nginx's
+# default 1 MB body limit rejected voice notes before the app could see them.
+NGINX_SRC="${DEPLOY_PATH}/deploy/nginx"
+if [ -d "${NGINX_SRC}" ]; then
+  echo "==> Installing nginx config"
+  sudo install -D -m 0644 "${NGINX_SRC}/digycorp-app.conf" \
+    /etc/nginx/snippets/digycorp-app.conf
+
+  # THE TLS BLOCK ONLY WHEN THERE IS A CERTIFICATE. nginx will not start with
+  # an `ssl_certificate` that does not exist, and certbot's HTTP-01 challenge
+  # needs nginx already up — so a fresh box comes up on HTTP, gets its
+  # certificate through that, and gains HTTPS on the next deploy.
+  CERT_DIR="/etc/letsencrypt/live/digycorp-cx-test.uaenorth.cloudapp.azure.com"
+  if [ -f "${CERT_DIR}/fullchain.pem" ]; then
+    echo "==> Certificate present — enabling HTTPS"
+    cat "${NGINX_SRC}/site-http.conf" "${NGINX_SRC}/site-tls.conf" \
+      | sudo tee /etc/nginx/sites-available/digycorp-cx-agent >/dev/null
+  else
+    echo "==> No certificate yet — HTTP only (run certbot, then redeploy)"
+    sudo install -m 0644 "${NGINX_SRC}/site-http.conf" \
+      /etc/nginx/sites-available/digycorp-cx-agent
+  fi
+
+  # TESTED BEFORE RELOADED. A bad config makes `nginx -t` fail and the running
+  # server keep serving; reloading blindly is how a config typo becomes an
+  # outage. Verified the hard way — `http2 on;` is nginx >= 1.25 and this box
+  # is 1.18, and only the test caught it.
+  if sudo nginx -t; then
+    echo "==> Reloading ${WEB_SERVICE}"
+    sudo systemctl reload "${WEB_SERVICE}" || sudo systemctl restart "${WEB_SERVICE}"
+  else
+    echo "!! nginx config rejected — leaving the running config in place" >&2
+    exit 1
+  fi
+else
+  echo "==> Reloading ${WEB_SERVICE}"
+  sudo systemctl reload "${WEB_SERVICE}" || sudo systemctl restart "${WEB_SERVICE}"
+fi
 
 echo "==> Waiting for the API to come up"
 for attempt in $(seq 1 15); do

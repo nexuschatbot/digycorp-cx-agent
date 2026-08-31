@@ -33,6 +33,7 @@ import SendRoundedIcon from '@mui/icons-material/SendRounded'
 
 import type { HandoffRow } from '../adminApi'
 import { Flex } from './ui'
+import { newId } from '../../id'
 
 // The operator's remembered display name. localStorage, per-browser: the admin
 // console is a desk, not a per-tab conversation, so the sessionStorage
@@ -97,7 +98,7 @@ export default function TakeoverDialog({
           (convo?.turns ?? [])
             .filter((t: { text: string }) => t.text?.trim())
             .map((t: { speaker: string; text: string; lang: string }) => ({
-              id: crypto.randomUUID(),
+              id: newId(),
               speaker: t.speaker,
               text: t.text,
               lang: t.lang,
@@ -169,7 +170,7 @@ export default function TakeoverDialog({
         setLines((prev) => [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: newId(),
             speaker: (frame.speaker as Line['speaker']) ?? 'customer',
             text: (frame.text as string) ?? '',
             lang: (frame.lang as string) ?? 'en',
@@ -199,7 +200,7 @@ export default function TakeoverDialog({
     ws.send(JSON.stringify({ type: 'message', text }))
     setLines((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), speaker: 'staff', text, lang: 'en', name: name.trim() },
+      { id: newId(), speaker: 'staff', text, lang: 'en', name: name.trim() },
     ])
     setDraft('')
   }
