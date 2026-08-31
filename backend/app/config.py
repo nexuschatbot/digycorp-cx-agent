@@ -350,6 +350,18 @@ CALL_TTS_INSTRUCTIONS: str = os.getenv(
 # cost to conversational judgement. A product trade, so it ships OFF.
 CALL_AGENT_MODEL: str = os.getenv("CALL_AGENT_MODEL", "").strip()
 
+# OPTIONAL faster model for SIMPLE chat turns (empty = off, the shipped
+# default). OPEN-ISSUES #2: the agent model's fixed cost is 2,401ms a call and
+# 20ms an output token, and a bare "hi" pays all of it. A turn is "simple" only
+# when a deterministic rule says so — today that is router/prefilter's bare
+# greeting and nothing else, because every other cheap-looking turn (an
+# affirmation, a consent answer) sits inside the booking sequence where
+# conversational judgement is the product. OFF BY DEFAULT for the same reason
+# CALL_AGENT_MODEL is: which model greets a customer is a product trade, and
+# the quality/latency numbers to decide it need the measured run the issue
+# calls for. Same trusted-flag shape as CALL_AGENT_MODEL above.
+SIMPLE_TURN_MODEL: str = os.getenv("SIMPLE_TURN_MODEL", "").strip()
+
 # Which engine answers a call (2026-07-27, developer decision after latency
 # testing — pros/cons recorded in the conversation and CLAUDE.md is to be
 # updated when this settles):

@@ -60,12 +60,14 @@ EMIT_BRIEFS_SCHEMA = {
         "them one wait instead of three. Come back a second time only for "
         "something the answers revealed, never for something you knew to ask "
         "at the start.\n\n"
-        "USE depends_on WHEN ONE BRIEF NEEDS ANOTHER'S ANSWER. 'What does the "
-        "T2 cost on the road' needs a specific trim first, so the pricing "
-        "brief depends on the trim brief. Give the INDEX of the brief it "
-        "depends on, counting from 0 in the list you are sending. Get this "
-        "right and the answers thread together; leave it out where it was "
-        "needed and the second brief comes back blocked.\n\n"
+        "AN ENTRY IS NORMALLY JUST THE QUESTION STRING ITSELF. Use the object "
+        "form {\"brief\": ..., \"depends_on\": [...]} only when one brief "
+        "needs another's answer: 'What does the T2 cost on the road' needs a "
+        "specific trim first, so the pricing brief depends on the trim brief. "
+        "Give the INDEX of the brief it depends on, counting from 0 in the "
+        "list you are sending. Get this right and the answers thread together; "
+        "leave it out where it was needed and the second brief comes back "
+        "blocked.\n\n"
         "DO NOT use it for anything you can do yourself: greeting, asking who "
         "someone is, recording consent, remembering a preference, saying "
         "goodbye, or offering choices. Those are yours, and going out to a "
@@ -113,28 +115,45 @@ EMIT_BRIEFS_SCHEMA = {
                     "One entry per question. Order matters only for "
                     "depends_on indices."
                 ),
+                # TWO SHAPES, AND THE STRING IS THE NORMAL ONE (OPEN-ISSUES
+                # #2). Every character here is output tokens Aisha types at
+                # 20ms each, invisible to the customer — so the wrapper object
+                # is reserved for the one thing only it can say: depends_on.
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "brief": {
+                    "anyOf": [
+                        {
                             "type": "string",
                             "description": (
                                 "The complete question, in your own words, "
                                 "with every constraint the customer gave."
                             ),
                         },
-                        "depends_on": {
-                            "type": "array",
-                            "description": (
-                                "Indices of briefs in THIS list whose answers "
-                                "this one needs. Usually omitted. Never use it "
-                                "for a fact you already hold — write that fact "
-                                "into this brief instead, so both run at once."
-                            ),
-                            "items": {"type": "integer"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "brief": {
+                                    "type": "string",
+                                    "description": (
+                                        "The complete question, in your own "
+                                        "words, with every constraint the "
+                                        "customer gave."
+                                    ),
+                                },
+                                "depends_on": {
+                                    "type": "array",
+                                    "description": (
+                                        "Indices of briefs in THIS list whose "
+                                        "answers this one needs. Never use it "
+                                        "for a fact you already hold — write "
+                                        "that fact into this brief instead, "
+                                        "so both run at once."
+                                    ),
+                                    "items": {"type": "integer"},
+                                },
+                            },
+                            "required": ["brief"],
                         },
-                    },
-                    "required": ["brief"],
+                    ],
                 },
             }
         },

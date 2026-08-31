@@ -56,6 +56,7 @@ from app.services import booking, recognition, slots
 from app.config import (
     CALL_AGENT_EFFORT,
     CALL_AGENT_MODEL,
+    SIMPLE_TURN_MODEL,
     AGENT_EFFORT,
     AGENT_MODEL,
     ANTHROPIC_API_KEY,
@@ -1152,6 +1153,37 @@ def _trim_messages(messages: list, keep: int = TRIM_KEEP) -> list:
     return messages[start:]
 
 
+def _is_simple_turn(state: AgentState) -> bool:
+    """Whether the customer's message is one the cheap tier may answer.
+
+    DETERMINISTIC OR NOT AT ALL. The only rule today is the router prefilter's
+    bare-greeting check — reused, not re-implemented, so the router and this
+    dial can never disagree about what a greeting is. Anything the rule cannot
+    prove simple runs on the agent model; a failure here must cost nothing but
+    the discount.
+    """
+    try:
+        from app.agent.router import prefilter as _prefilter
+
+        text = ""
+        for m in reversed(state.get("messages") or []):
+            if isinstance(m, dict) and m.get("role") == "user":
+                c = m.get("content")
+                if isinstance(c, str):
+                    text = c
+                elif isinstance(c, list):
+                    text = " ".join(
+                        b.get("text") or ""
+                        for b in c
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
+                break
+        return bool(text) and _prefilter.is_bare_greeting(text)
+    except Exception:  # noqa: BLE001 — the discount is optional, the turn is not
+        log.warning("simple-turn check failed; using the agent model", exc_info=True)
+        return False
+
+
 def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     """One model turn, guarded by the loop bound and the AD-D ceiling.
 
@@ -1243,9 +1275,21 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     # Call turns may run a FASTER model (CALL_AGENT_MODEL, off by default) —
     # first-token time is the audible floor of a spoken reply. Same trusted
     # flag as the voice anchor and the effort dial.
-    model_for_turn = (
-        CALL_AGENT_MODEL if (cfg.get("voice_call") and CALL_AGENT_MODEL) else AGENT_MODEL
-    )
+    #
+    # SIMPLE chat turns may too (SIMPLE_TURN_MODEL, off by default; OPEN-ISSUES
+    # #2): a bare greeting pays the agent model's full 2,401ms fixed cost to
+    # say hello. "Simple" is decided by the router prefilter's deterministic
+    # rule and nothing looser — see config.SIMPLE_TURN_MODEL for why the
+    # vocabulary is that narrow. Checked on the CUSTOMER's message: a
+    # tool-round re-entry sees a tool_result there, extracts no text, and
+    # falls back to the agent model, which is the conservative direction.
+    if cfg.get("voice_call") and CALL_AGENT_MODEL:
+        model_for_turn = CALL_AGENT_MODEL
+    elif not cfg.get("voice_call") and SIMPLE_TURN_MODEL and _is_simple_turn(state):
+        log.info("simple turn — model=%s session=%s", SIMPLE_TURN_MODEL, session_id)
+        model_for_turn = SIMPLE_TURN_MODEL
+    else:
+        model_for_turn = AGENT_MODEL
     assistant = generate(
         _trim_messages(state["messages"]),
         model=model_for_turn,

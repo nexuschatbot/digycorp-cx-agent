@@ -24,7 +24,7 @@ left**. Ordered by what it costs, not by how hard it is.
 | # | Issue | Costs | Size |
 |---|---|---|---|
 | 1 | [A specialist narrates instead of proposing the write](#1-a-specialist-narrates-instead-of-proposing-the-write) | bookings | prompt + guard |
-| 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) | ~15s turns | measurement first |
+| 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) — levers built, `fix/latency-floor`; run still owed | ~15s turns | measurement first |
 | 3 | [`MAX_CASCADES_PER_TURN = 2` is an unproven guess](#3-max_cascades_per_turn--2-is-an-unproven-guess) | answer quality, unknown | one re-run |
 | 4 | [The card strip follows search rank, not the answer](#4-the-card-strip-follows-search-rank-not-the-answer) | wrong car on screen | design |
 | 5 | [`.env` leaks flags into pytest — 10 failures](#5-env-leaks-flags-into-pytest--10-failures) | CI trust | small |
@@ -113,6 +113,30 @@ for the conversation and drops to Haiku when no specialist is needed), or **fewe
 round trips**. Shortening the `emit_briefs` payload is the cheapest real win and
 does not need either decision — but it changes a tool schema Aisha is measured
 against, so it wants its own before/after run.
+
+**LEVERS BUILT on `fix/latency-floor` — the before/after run is still owed.**
+Both were built offline (no live calls; the decision to build both was taken
+2026-08-31):
+
+- **The payload.** `emit_briefs` now accepts a brief as **the bare question
+  string**; the `{"brief": ..., "depends_on": [...]}` object survives for the
+  one thing only it can say. `run.plan_turn` is the single place both shapes
+  become one. The ~8 wrapper tokens per brief at 20 ms each come off every
+  cascade with no loss of content — the brief itself, complete question and
+  all, is untouched.
+- **The model dial.** `SIMPLE_TURN_MODEL` (config, empty = OFF — the shipped
+  default) runs Aisha's generation on a cheaper tier when a deterministic rule
+  proves the turn simple. The only rule today is the router prefilter's
+  bare-greeting check, reused not re-implemented; an affirmation or a consent
+  answer never qualifies, because those sit inside the booking sequence.
+  Same trusted-flag shape as `CALL_AGENT_MODEL`.
+
+**What is still owed:** the before/after latency run (this entry's own
+requirement) before either the schema change is trusted at the measured ~110
+tokens/call or the dial is turned ON. Neither has been measured live; the p50
+numbers above are still the current truth. Tests:
+`tests/test_simple_turn.py`, plus the string-brief cases in
+`tests/test_orchestrator.py`.
 
 ---
 

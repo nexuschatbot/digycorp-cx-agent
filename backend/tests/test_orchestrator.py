@@ -244,6 +244,48 @@ def test_plan_turn_detects_the_reference_the_customer_said():
     assert not plan.ok  # no ref, no vehicle: still honestly blocked
 
 
+def test_a_bare_string_plans_exactly_like_the_wrapped_brief():
+    """OPEN-ISSUES #2: the wrapper object is output tokens Aisha types at 20ms
+    each, so the schema now allows the question string alone."""
+    from app.orchestrator import run as run_module
+
+    text = "cancel the test drive booking TD-2026-0KXC"
+    wrapped, un_w = run_module.plan_turn([{"brief": text}])
+    bare, un_b = run_module.plan_turn([text])
+
+    assert not un_w and not un_b
+    assert [s.agent for s in bare.steps] == [s.agent for s in wrapped.steps]
+    assert bare.steps[0].brief == text
+    assert bare.steps[0].carries == frozenset({"booking_ref"})
+
+
+def test_string_and_object_briefs_mix_in_one_call():
+    """The object form survives beside the strings — depends_on still needs it."""
+    from app.orchestrator import run as run_module
+
+    plan, unroutable = run_module.plan_turn([
+        "cancel the test drive booking TD-2026-0KXC",
+        {"brief": "cancel the booking with reference td2026htxe",
+         "depends_on": [0]},
+    ])
+    assert not unroutable
+    assert len(plan.steps) == 2
+    assert plan.steps[1].depends_on == (0,) or plan.steps[0].depends_on == (0,)
+
+
+def test_the_briefs_schema_offers_the_string_shape_first():
+    """The contract half: a bare string is the normal entry; the object form
+    exists only to carry depends_on."""
+    from app.tools.brief_tools import EMIT_BRIEFS_SCHEMA
+
+    items = EMIT_BRIEFS_SCHEMA["input_schema"]["properties"]["briefs"]["items"]
+    shapes = items["anyOf"]
+    assert shapes[0]["type"] == "string"
+    assert shapes[1]["type"] == "object"
+    assert shapes[1]["required"] == ["brief"]
+    assert "JUST THE QUESTION STRING" in EMIT_BRIEFS_SCHEMA["description"]
+
+
 def test_the_cards_declare_the_producer_of_every_requirement():
     """Otherwise a step can never be satisfied and every turn needing it blocks."""
     producible = set()
