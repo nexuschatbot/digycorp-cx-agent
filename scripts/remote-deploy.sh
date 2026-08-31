@@ -133,16 +133,31 @@ else
   sudo systemctl reload "${WEB_SERVICE}" || sudo systemctl restart "${WEB_SERVICE}"
 fi
 
-echo "==> Waiting for the API to come up"
-for attempt in $(seq 1 15); do
+# 120 SECONDS, NOT 30, AND IT IS MEASURED (2026-08-31).
+#
+#     Started Digycorp CX Agent API   18:15:24
+#     Application startup complete    18:16:04   -> 40s
+#
+# The old `seq 1 15` with a 2s sleep allowed about thirty, which was ample
+# while the box had no .env and therefore did almost nothing at boot. A
+# CONFIGURED server is slower, and for good reasons: PREWARM_PROMPT_CACHE
+# makes eight live prefix calls (~29s of that 40) and RETRIEVAL_ENABLED loads
+# the 118 MB ONNX model and rebuilds the index (~9s). Both are wanted.
+#
+# So the timeout has to bound the SLOWEST HONEST BOOT, not the fastest — a cold
+# start on a 2 vCPU box with a cold prompt cache is the case that matters, and
+# failing it rolls back a deploy that was fine. Waiting longer costs nothing
+# when the server is healthy, because the loop exits on the first 200.
+echo "==> Waiting for the API to come up (up to 120s)"
+for attempt in $(seq 1 60); do
   if curl -sf --max-time 5 http://127.0.0.1:8000/health >/dev/null; then
-    echo "==> API healthy on attempt ${attempt}"
+    echo "==> API healthy after ~$(( attempt * 2 ))s"
     echo "==> Deploy to ${ENVIRONMENT} complete"
     exit 0
   fi
   sleep 2
 done
 
-echo "!! API did not become healthy. Recent logs:" >&2
+echo "!! API did not become healthy within 120s. Recent logs:" >&2
 sudo journalctl -u "${API_SERVICE}" -n 50 --no-pager >&2 || true
 exit 1
