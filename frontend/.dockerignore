@@ -1,0 +1,12 @@
+# Keep the build context small; deps and bundle are produced inside the image.
+node_modules
+dist
+
+# Secrets / local env — never bake into an image layer.
+.env
+.env.*
+
+# VCS / OS noise.
+.git
+.gitignore
+.DS_Store

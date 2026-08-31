@@ -1,0 +1,222 @@
+[
+  {
+    "id": 1,
+    "brand": "Jetour",
+    "name": "Jetour Al Quoz",
+    "emirate": "dubai",
+    "city": "al_quoz",
+    "address": "4th Street, Al Quoz Industrial Area 3, Dubai",
+    "address_ar": "شارع 4، منطقة القوز الصناعية 3، دبي",
+    "map_link": "https://www.google.com/maps/search/?api=1&query=Jetour+Showroom+Al+Quoz+Dubai",
+    "latitude": 25.1279,
+    "longitude": 55.2331,
+    "phone": "800535483",
+    "hours": "Mon–Sat 9:00 AM – 9:00 PM · Sun 12:00 – 9:00 PM",
+    "hours_by_day": {
+      "mon": [
+        9,
+        21
+      ],
+      "tue": [
+        9,
+        21
+      ],
+      "wed": [
+        9,
+        21
+      ],
+      "thu": [
+        9,
+        21
+      ],
+      "fri": [
+        9,
+        21
+      ],
+      "sat": [
+        9,
+        21
+      ],
+      "sun": [
+        12,
+        21
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "brand": "Jetour",
+    "name": "Jetour Deira",
+    "emirate": "dubai",
+    "city": "deira",
+    "address": "109 Al Ittihad Rd - Al Khabaisi, Dubai",
+    "address_ar": "شارع الاتحاد 109 - الخبيصي، دبي",
+    "map_link": "https://www.google.com/maps/search/?api=1&query=Jetour+Showroom+Deira+Dubai",
+    "latitude": 25.2704,
+    "longitude": 55.322,
+    "phone": "800535483",
+    "hours": "Mon–Sat 9:00 AM – 9:00 PM · Sun 12:00 – 9:00 PM",
+    "hours_by_day": {
+      "mon": [
+        9,
+        21
+      ],
+      "tue": [
+        9,
+        21
+      ],
+      "wed": [
+        9,
+        21
+      ],
+      "thu": [
+        9,
+        21
+      ],
+      "fri": [
+        9,
+        21
+      ],
+      "sat": [
+        9,
+        21
+      ],
+      "sun": [
+        12,
+        21
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "brand": "Jetour",
+    "name": "Jetour Abu Dhabi (Rabdan)",
+    "emirate": "abu_dhabi",
+    "city": "rabdan",
+    "address": "International Airport Road - Rabdan, Abu Dhabi",
+    "address_ar": "طريق المطار الدولي - الربدان، أبوظبي",
+    "map_link": "https://www.google.com/maps/search/?api=1&query=Jetour+Showroom+Rabdan+Abu+Dhabi",
+    "latitude": 24.429,
+    "longitude": 54.427,
+    "phone": "800535483",
+    "hours": "Mon–Sat 9:00 AM – 9:00 PM · Sun 12:00 – 9:00 PM",
+    "hours_by_day": {
+      "mon": [
+        9,
+        21
+      ],
+      "tue": [
+        9,
+        21
+      ],
+      "wed": [
+        9,
+        21
+      ],
+      "thu": [
+        9,
+        21
+      ],
+      "fri": [
+        9,
+        21
+      ],
+      "sat": [
+        9,
+        21
+      ],
+      "sun": [
+        12,
+        21
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "brand": "Jetour",
+    "name": "Jetour Al Ain",
+    "emirate": "abu_dhabi",
+    "city": "al_ain",
+    "address": "Industrial Area – Hessa bint Mohammed Street, Al Ain",
+    "address_ar": "المنطقة الصناعية - شارع حصة بنت محمد، العين",
+    "map_link": "https://www.google.com/maps/search/?api=1&query=Jetour+Showroom+Al+Ain",
+    "latitude": 24.2075,
+    "longitude": 55.7447,
+    "phone": "800535483",
+    "hours": "Mon–Sat 9:00 AM – 9:00 PM · Sun 12:00 – 9:00 PM",
+    "hours_by_day": {
+      "mon": [
+        9,
+        21
+      ],
+      "tue": [
+        9,
+        21
+      ],
+      "wed": [
+        9,
+        21
+      ],
+      "thu": [
+        9,
+        21
+      ],
+      "fri": [
+        9,
+        21
+      ],
+      "sat": [
+        9,
+        21
+      ],
+      "sun": [
+        12,
+        21
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "brand": "Jetour",
+    "name": "Jetour Ajman",
+    "emirate": "ajman",
+    "city": "ajman",
+    "address": "Al Jurf Industrial Area 1, Sheikh Mohammed bin Rashid Street, Ajman",
+    "address_ar": "منطقة الجرف الصناعية 1، شارع الشيخ محمد بن راشد، عجمان",
+    "map_link": "https://www.google.com/maps/search/?api=1&query=Jetour+Showroom+Ajman",
+    "latitude": 25.4052,
+    "longitude": 55.5136,
+    "phone": "800535483",
+    "hours": "Mon–Sat 9:00 AM – 9:00 PM · Sun 12:00 – 9:00 PM",
+    "hours_by_day": {
+      "mon": [
+        9,
+        21
+      ],
+      "tue": [
+        9,
+        21
+      ],
+      "wed": [
+        9,
+        21
+      ],
+      "thu": [
+        9,
+        21
+      ],
+      "fri": [
+        9,
+        21
+      ],
+      "sat": [
+        9,
+        21
+      ],
+      "sun": [
+        12,
+        21
+      ]
+    }
+  }
+]

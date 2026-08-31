@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-08-28T16:46:47",
+  "model": "claude-sonnet-4-6",
+  "agent_effort": "medium",
+  "router_enabled": true,
+  "pricing_assumption": {
+    "in_per_m": 3.0,
+    "out_per_m": 15.0,
+    "cache_write_mult": 2.0,
+    "cache_read_mult": 0.1
+  },
+  "cap_usd": 0.3,
+  "spent_usd": 0.19028,
+  "unmetered_calls": 0,
+  "conversations": [
+    {
+      "key": "price",
+      "what": "A direct price question — grounding, no invention",
+      "note": "",
+      "session_id": "baseline-price",
+      "turns": [
+        {
+          "n": 1,
+          "user": "How much is the Jetour X70?",
+          "aisha": "",
+          "tools": [
+            "get_vehicle_details",
+            "offer_options"
+          ],
+          "latency_ms": 11920,
+          "model_calls": 2,
+          "usd": 0.19028,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 29580,
+            "cache_read": 28761,
+            "output": 277
+          }
+        }
+      ],
+      "truncated": true,
+      "truncated_at_turn": 2
+    }
+  ]
+}

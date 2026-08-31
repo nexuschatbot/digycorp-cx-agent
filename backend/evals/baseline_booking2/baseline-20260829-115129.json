@@ -1,0 +1,372 @@
+{
+  "captured_at": "2026-08-29T11:51:29",
+  "model": "claude-sonnet-4-6",
+  "agent_effort": "medium",
+  "router_enabled": true,
+  "pricing_assumption": {
+    "in_per_m": 3.0,
+    "out_per_m": 15.0,
+    "cache_write_mult": 2.0,
+    "cache_read_mult": 0.1
+  },
+  "cap_usd": 0.6,
+  "spent_usd": 0.33664,
+  "unmetered_calls": 0,
+  "conversations": [
+    {
+      "key": "booking_full",
+      "what": "The whole journey — discovery through confirmed booking",
+      "note": "NINE turns, not five. Measured: her flow is variant -> branch -> lock -> passengers -> recap -> licence -> consent -> create. The first run scripted five and never reached create_booking, which made the most important conversation in the baseline the one with no booking in it. .. IT THEN DEADLOCKED TWICE MORE, and the second reason is the interesting one. 'A showroom is fine - any branch' names no branch, so Aisha asked which; naming 'Al Quoz' was no better, because that reads as a PLACE THE CUSTOMER IS, which sends her to nearest_showroom. .. nearest_showroom CANNOT RESOLVE IN THIS ENVIRONMENT, for any input. There is no Google Maps key and outbound calls are blocked, so maps.geocode returns None and every location - landmarks included - comes back could_not_locate + ask_for_landmark. She then asks for a landmark that can never work, and the conversation loops until the script runs out. This was silently true of EVERY baseline ever run, single-agent included, which is why booking_full has never once reached create_booking. .. So turn 3 now DECLINES to give a location, which is the branch of her own NEAREST_BRANCH anchor that works offline: 'only list the branches with get_showrooms if they would rather not say where they are'. Verified against the fixture before being written here - get_showrooms lists five branches, get_available_slots returns slot 2 at Al Quoz, and lock_slot takes it. .. NINE turns now, because declining and then choosing is two exchanges rather than one. A script may decline to steer; it may not withhold what the agent must have, and it may not send her down a path this environment cannot complete.",
+      "session_id": "baseline-booking_full",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Hi! I'd like to book a test drive of the Jetour T2. My name is Test Driver, mobile +971509998877.",
+          "aisha": "Welcome to Elite, Test Driver! I'm Aisha, Elite Group's assistant, and I'd be happy to get you set up with a T2 test drive.\n\nWe actually have two versions of the T2 available. The Jetour T2 Luxury Plus is a petrol 2.0L turbo with BorgWarner 4WD, priced from AED 146,000. The Jetour T2 i-DM is a plug-in hybrid with an impressive 140 km of EV-only range and 600 HP, priced from AED 159,000.\n\nWhich one would you like to try?",
+          "tools": [
+            "find_or_create_customer",
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 24890,
+          "model_calls": 3,
+          "usd": 0.02924,
+          "tokens": {
+            "uncached": 5,
+            "cache_write": 746,
+            "cache_read": 62743,
+            "output": 395
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 0,
+              "cache_read": 20659,
+              "output": 80,
+              "usd": 0.00741,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 0,
+              "cache_read": 21042,
+              "output": 87,
+              "usd": 0.00762,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 746,
+              "cache_read": 21042,
+              "output": 228,
+              "usd": 0.01421,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "The petrol one, please.",
+          "aisha": "Great choice! To find your nearest showroom, whereabouts are you — a nearby landmark or area works perfectly.",
+          "tools": [],
+          "latency_ms": 2758,
+          "model_calls": 1,
+          "usd": 0.00868,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 288,
+            "cache_read": 21788,
+            "output": 27
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 288,
+              "cache_read": 21788,
+              "output": 27,
+              "usd": 0.00868,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "I'd rather not share my location — could you just list your branches?",
+          "aisha": "Of course, no problem at all! We have five Jetour showrooms across the UAE:\n\nJetour Al Quoz (Dubai), Jetour Deira (Dubai), Jetour Abu Dhabi Rabdan, Jetour Al Ain, and Jetour Ajman.\n\nWhich one works best for you?",
+          "tools": [],
+          "latency_ms": 3328,
+          "model_calls": 1,
+          "usd": 0.00806,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 45,
+            "cache_read": 22076,
+            "output": 77
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 45,
+              "cache_read": 22076,
+              "output": 77,
+              "usd": 0.00806,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 4,
+          "user": "Al Quoz, please. Whatever slot is earliest.",
+          "aisha": "The earliest slot is tomorrow, Sunday, 30 August at 12 PM at Jetour Al Quoz. Shall I lock that in for you?",
+          "tools": [
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 11998,
+          "model_calls": 2,
+          "usd": 0.01927,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 471,
+            "cache_read": 44334,
+            "output": 209
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 92,
+              "cache_read": 22121,
+              "output": 100,
+              "usd": 0.0087,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 379,
+              "cache_read": 22213,
+              "output": 109,
+              "usd": 0.01058,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 5,
+          "user": "That works for me, let's go with it.",
+          "aisha": "Wonderful! Will anyone be joining you for the drive, or will it just be you?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 2865,
+          "model_calls": 1,
+          "usd": 0.00903,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 164,
+            "cache_read": 22592,
+            "output": 84
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 164,
+              "cache_read": 22592,
+              "output": 84,
+              "usd": 0.00903,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 6,
+          "user": "Just me, nobody else coming.",
+          "aisha": "Perfect! And if there's anything you'd like us to arrange to make your visit more comfortable, just say the word.\n\nHere's a recap of your booking: a Jetour T2 Luxury Plus test drive at Jetour Al Quoz, Dubai, on Sunday, 30 August 2026 at 12 PM. Does everything look right?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 3963,
+          "model_calls": 1,
+          "usd": 0.00979,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 128,
+            "cache_read": 22756,
+            "output": 146
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 128,
+              "cache_read": 22756,
+              "output": 146,
+              "usd": 0.00979,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 7,
+          "user": "Yes, that all looks correct.",
+          "aisha": "Just remember to bring your driving licence on the day!\nMay we send you WhatsApp confirmations and reminders about this test drive?",
+          "tools": [
+            "lock_slot",
+            "acknowledge_licence_reminder",
+            "offer_options"
+          ],
+          "latency_ms": 7991,
+          "model_calls": 3,
+          "usd": 0.16079,
+          "tokens": {
+            "uncached": 5,
+            "cache_write": 24000,
+            "cache_read": 46630,
+            "output": 186
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 192,
+              "cache_read": 22884,
+              "output": 67,
+              "usd": 0.00903,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 23746,
+              "cache_read": 0,
+              "output": 38,
+              "usd": 0.14305,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 62,
+              "cache_read": 23746,
+              "output": 81,
+              "usd": 0.00871,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 8,
+          "user": "Yes, I'll bring my licence. And yes, WhatsApp confirmations are fine.",
+          "aisha": "I'm running into a small technical hiccup completing the booking — I'm so sorry about that, Test Driver. Let me try once more.\nI'm sorry, Test Driver — I'm having a bit of trouble completing the booking on my end right now. I don't want to leave you without a confirmed slot, so let me arrange for a colleague to follow up and get this locked in for you properly.\nI've passed this to our team and they'll be in touch to confirm your booking. In the meantime, you can also reach us directly on 800-535483 and we'll sort it out straight away. I'm sorry for the inconvenience, and I really look forward to you getting behind the wheel of that T2!\n\nIs there anything else I can help you with today?",
+          "tools": [
+            "record_consent",
+            "emit_briefs",
+            "emit_briefs",
+            "create_booking",
+            "create_booking",
+            "emit_briefs",
+            "request_human_callback"
+          ],
+          "latency_ms": 40231,
+          "model_calls": 8,
+          "usd": 0.08249,
+          "tokens": {
+            "uncached": 10,
+            "cache_write": 1703,
+            "cache_read": 196494,
+            "output": 886
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 134,
+              "cache_read": 23808,
+              "output": 53,
+              "usd": 0.00875,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 111,
+              "cache_read": 23942,
+              "output": 138,
+              "usd": 0.00992,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 377,
+              "cache_read": 24053,
+              "output": 127,
+              "usd": 0.01139,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 407,
+              "cache_read": 24430,
+              "output": 113,
+              "usd": 0.01147,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 179,
+              "cache_read": 24837,
+              "output": 36,
+              "usd": 0.00907,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 84,
+              "cache_read": 25016,
+              "output": 171,
+              "usd": 0.01058,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 208,
+              "cache_read": 25100,
+              "output": 163,
+              "usd": 0.01123,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 203,
+              "cache_read": 25308,
+              "output": 85,
+              "usd": 0.01009,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 9,
+          "user": "Perfect, thank you!",
+          "aisha": "You're very welcome, Test Driver! Wishing you a wonderful drive tomorrow — I hope you love the T2. Feel free to chat anytime. Take care!",
+          "tools": [
+            "close_conversation"
+          ],
+          "latency_ms": 2690,
+          "model_calls": 1,
+          "usd": 0.00929,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 91,
+            "cache_read": 25511,
+            "output": 72
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 91,
+              "cache_read": 25511,
+              "output": 72,
+              "usd": 0.00929,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    }
+  ]
+}

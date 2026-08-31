@@ -1,0 +1,135 @@
+# DEVELOPMENT VM overlay (AD-G). ADDITIVE — layered ON TOP of the root
+# docker-compose.yml, never instead of it. Executed ON the VM by deploy-core.sh:
+#
+#   docker compose -f docker-compose.yml -f deploy/dev/docker-compose.yml up -d
+#
+# Local dev (uvicorn --reload + npm run dev, SQLite) and plain `docker compose
+# up` are both untouched by this file. It exists to add exactly two things a
+# public host needs and a laptop does not: TLS termination, and restart policies.
+#
+# A SIBLING OVERLAY EXISTS at deploy/prod/docker-compose.yml. They are separate
+# files ON PURPOSE (editing this stack can never change prod), which means a
+# change that should apply to BOTH environments must be made in both. Today they
+# are intentionally identical.
+
+services:
+  # TLS terminator. The only service published to the internet.
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"     # ACME HTTP-01 challenge + redirect to 443
+      - "443:443"
+    environment:
+      # Fails fast rather than silently serving on the wrong name — a cert
+      # issued for the wrong hostname would break the mic (getUserMedia needs
+      # real HTTPS on phones, dev included).
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS (deploy-core.sh writes it into the remote .env)}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Named volume, NOT a bind mount: this holds the issued certificates and
+      # ACME account key. Losing it on every deploy would re-request a cert each
+      # time and burn Let's Encrypt rate limits (5 per name per week).
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+  # A VM reboot (Azure host maintenance, an accidental restart) must bring the
+  # stack back by itself. `unless-stopped` still honours a deliberate
+  # `docker compose stop`.
+  backend:
+    restart: unless-stopped
+
+  frontend:
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ coturn
+  # THE TURN RELAY (2026-08-04) — what makes the voice call's WebRTC transport
+  # (AD-M) actually connect off localhost.
+  #
+  # ⚠️ WHY A RELAY AND NOT JUST STUN. Measured on this VM: 13 negotiations, 13
+  # failures, never once `connected`. The backend runs on the compose bridge, so
+  # the only address it can offer ICE is 172.18.0.4 — private, behind Docker's
+  # masquerade AND Azure's NAT. The browser offers only its own LAN address.
+  # Two private addresses cannot pair, so every call fell back to WS-PCM: the
+  # path with no native AEC3, i.e. the echo that made Aisha transcribe her own
+  # voice as the customer and cut herself off mid-sentence. STUN alone would
+  # still leave a pinhole to punch through two endpoint-dependent NATs, with
+  # results varying by whatever network the customer is on. A relay removes the
+  # guesswork — both sides connect OUTBOUND to it, which every network permits.
+  #
+  # ⚠️ THIS IS THE ONE PLACE THE DEV AND PROD OVERLAYS DELIBERATELY DIVERGE.
+  # They were identical by intent (see the header). Dev is the testbed for this;
+  # prod gets it only once it is proven here, and prod should get time-limited
+  # shared-secret credentials rather than the static user below.
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    # HOST NETWORKING IS REQUIRED, not a shortcut. coturn allocates relay
+    # ports on the interface it is bound to, and must advertise addresses a
+    # remote browser can reach — through Docker's bridge it would hand out
+    # 172.18.x.x and be useless. Unlike `backend`, it has no compose-DNS
+    # dependency (it talks to nobody by service name), so host mode costs it
+    # nothing.
+    network_mode: host
+    restart: unless-stopped
+    command:
+      - --listening-port=3478
+      # THE MAPPING THAT MAKES IT WORK: bound to the VM's private NIC, but
+      # advertising the public IP in its allocation responses. Azure gives the
+      # VM a 1:1 static NAT, so <public>/<private> is the correct pairing.
+      - --external-ip=20.216.16.132/10.0.0.4
+      - --realm=elite-dev.uaenorth.cloudapp.azure.com
+      # TIME-LIMITED CREDENTIALS (the TURN REST API scheme, 2026-08-04).
+      # NEVER run this without auth: an open relay on a public IP is found by
+      # scanners within days and used to launder traffic.
+      #
+      # Switched from a static --user because the BROWSER now needs a
+      # credential too (a client behind symmetric NAT cannot connect without
+      # allocating its own relay), and a fixed password handed to every page
+      # load is a permanent key to this relay. Here the backend mints a
+      # username that is an expiry timestamp plus its HMAC under this secret;
+      # coturn validates it and stores nothing, so a leaked credential dies by
+      # itself. The secret never leaves the server.
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET:?set TURN_SECRET in deploy/dev/.env}
+      - --fingerprint
+      # A NARROW relay range, so the firewall opening stays small. One call
+      # uses 1-2 ports; 40 is ample for a demo VM and keeps the NSG rule tight.
+      - --min-port=49160
+      - --max-port=49200
+      # Attack surface: no admin interface, no multicast relaying.
+      - --no-cli
+      - --no-tlsv1
+      - --no-multicast-peers
+      # ⚠️ THE RELAY MUST NEVER REACH ANYTHING PRIVATE. A TURN server forwards
+      # to whatever peer address a client names, so without these an
+      # authenticated (or credential-leaked) client could use it to reach the
+      # VM's own services and, worst of all, Azure's instance metadata endpoint
+      # at 169.254.169.254 — which hands out managed-identity tokens. Legitimate
+      # peers here are customers' browsers on public addresses, so denying every
+      # private range costs nothing.
+      #
+      # `--no-loopback-peers` was tried first and does NOT exist in coturn 4.6
+      # (the container exits 255 with "unrecognized option"). These ranges are
+      # the supported form, and cover strictly more than that flag did.
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+# NOTE ON PORTS 8000 AND 8080. The base compose file publishes backend:8000 and
+# frontend:8080 on the host, and compose MERGES port lists rather than replacing
+# them, so an overlay cannot unpublish them. They are therefore closed at the
+# Azure NSG instead, which only admits 22, 80 and 443 — a network-level block
+# that sits in front of Docker's iptables rules (and so, unlike ufw, is not
+# bypassed by them). Both remain reachable over an SSH tunnel for debugging.

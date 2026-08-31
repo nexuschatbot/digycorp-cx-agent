@@ -1,0 +1,278 @@
+{
+  "captured_at": "2026-08-28T16:53:42",
+  "model": "claude-sonnet-4-6",
+  "agent_effort": "medium",
+  "router_enabled": true,
+  "pricing_assumption": {
+    "in_per_m": 3.0,
+    "out_per_m": 15.0,
+    "cache_write_mult": 2.0,
+    "cache_read_mult": 0.1
+  },
+  "cap_usd": 0.55,
+  "spent_usd": 0.12025,
+  "unmetered_calls": 0,
+  "conversations": [
+    {
+      "key": "showroom",
+      "what": "Branch questions — get_showrooms, no markdown lists",
+      "note": "The ordinary turn that also leaked markdown before the sanitiser.",
+      "session_id": "baseline-showroom",
+      "turns": [
+        {
+          "n": 1,
+          "user": "What showrooms do you have in Dubai?",
+          "aisha": "Hi there! I'm Aisha, Elite Group's assistant. We have two Jetour showrooms in Dubai.\n\nThe first is Jetour Al Quoz, located at 4th Street, Al Quoz Industrial Area 3. The second is Jetour Deira, on 109 Al Ittihad Road, Al Khabaisi. Both are open Saturday through Friday from 9 AM to 9 PM, with slightly later opening on Sundays from 12 PM to 9 PM.\n\nIs there anything else I can help you with, or would you like to book a test drive at one of these locations?",
+          "tools": [
+            "get_showrooms"
+          ],
+          "latency_ms": 9887,
+          "model_calls": 2,
+          "usd": 0.02046,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 0,
+            "cache_read": 57995,
+            "output": 203
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 0,
+              "cache_read": 28760,
+              "output": 56,
+              "usd": 0.00948,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 0,
+              "cache_read": 29235,
+              "output": 147,
+              "usd": 0.01098,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "Which one is closest to Al Quoz?",
+          "aisha": "Could you share a nearby landmark, mall, or metro station so I can pinpoint your closest showroom?",
+          "tools": [
+            "nearest_showroom"
+          ],
+          "latency_ms": 4410,
+          "model_calls": 2,
+          "usd": 0.0204,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 262,
+            "cache_read": 58628,
+            "output": 82
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 158,
+              "cache_read": 29235,
+              "output": 57,
+              "usd": 0.01058,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 104,
+              "cache_read": 29393,
+              "output": 25,
+              "usd": 0.00982,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "Great, thank you.",
+          "aisha": "You're welcome! If you ever need help finding a showroom, booking a test drive, or exploring our Jetour lineup, just give me a shout. Have a wonderful day!",
+          "tools": [
+            "close_conversation"
+          ],
+          "latency_ms": 2983,
+          "model_calls": 1,
+          "usd": 0.01018,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 31,
+            "cache_read": 29497,
+            "output": 76
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 31,
+              "cache_read": 29497,
+              "output": 76,
+              "usd": 0.01018,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "key": "doorstep",
+      "what": "Doorstep drive — FR-SL-07 address + explicit consent",
+      "note": "",
+      "session_id": "baseline-doorstep",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Can you bring a car to me instead of me coming in?",
+          "aisha": "We do offer doorstep test drives, yes! That brings the car right to you, in the evenings, across Dubai.\n\nTo get you set up with the right car and slot, do you have a particular model in mind, or would you like help finding one?",
+          "tools": [],
+          "latency_ms": 3137,
+          "model_calls": 1,
+          "usd": 0.01144,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 333,
+            "cache_read": 28431,
+            "output": 60
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 333,
+              "cache_read": 28431,
+              "output": 60,
+              "usd": 0.01144,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "Yes please, I'd prefer that.",
+          "aisha": "I'd love to help you find the right car! Tell me a little about what you're looking for - the kind of driving you do, how many seats you need, your budget, anything that matters to you - and I'll point you in the right direction.",
+          "tools": [],
+          "latency_ms": 2946,
+          "model_calls": 1,
+          "usd": 0.00992,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 71,
+            "cache_read": 28764,
+            "output": 57
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 71,
+              "cache_read": 28764,
+              "output": 57,
+              "usd": 0.00992,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "Actually, let me think about it first.",
+          "aisha": "Of course, take your time! Whenever you're ready, just come back and I'll help you find the perfect car and get a doorstep drive arranged. Have a great day!",
+          "tools": [],
+          "latency_ms": 2939,
+          "model_calls": 1,
+          "usd": 0.0097,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 69,
+            "cache_read": 28835,
+            "output": 42
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 69,
+              "cache_read": 28835,
+              "output": 42,
+              "usd": 0.0097,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "key": "close",
+      "what": "Rule 19 — a clean close, exactly once",
+      "note": "",
+      "session_id": "baseline-close",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Hi, just wanted to know your opening hours.",
+          "aisha": "I'm Aisha, Elite Group's assistant. Welcome!\n\nAll our showrooms share the same hours: Monday through Saturday, 9 AM to 9 PM. On Sundays we open a little later, from 12 PM to 9 PM. We have branches in Al Quoz, Deira, Abu Dhabi (Rabdan), Al Ain and Ajman, all keeping those same hours.\n\nIs there anything else I can help you with, or would you like to book a test drive?",
+          "tools": [
+            "get_showrooms"
+          ],
+          "latency_ms": 6416,
+          "model_calls": 2,
+          "usd": 0.02756,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 1341,
+            "cache_read": 57192,
+            "output": 156
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 330,
+              "cache_read": 28431,
+              "output": 38,
+              "usd": 0.01109,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 1011,
+              "cache_read": 28761,
+              "output": 118,
+              "usd": 0.01647,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "That's all I needed, thanks. Goodbye!",
+          "aisha": "You're welcome, and thanks for reaching out! Feel free to come back anytime. Goodbye!",
+          "tools": [
+            "close_conversation"
+          ],
+          "latency_ms": 2638,
+          "model_calls": 1,
+          "usd": 0.01059,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 130,
+            "cache_read": 29772,
+            "output": 58
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 130,
+              "cache_read": 29772,
+              "output": 58,
+              "usd": 0.01059,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    }
+  ]
+}

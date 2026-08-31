@@ -1,0 +1,280 @@
+{
+  "captured_at": "2026-08-29T11:46:43",
+  "model": "claude-sonnet-4-6",
+  "agent_effort": "medium",
+  "router_enabled": true,
+  "pricing_assumption": {
+    "in_per_m": 3.0,
+    "out_per_m": 15.0,
+    "cache_write_mult": 2.0,
+    "cache_read_mult": 0.1
+  },
+  "cap_usd": 0.6,
+  "spent_usd": 0.12377,
+  "unmetered_calls": 0,
+  "conversations": [
+    {
+      "key": "booking_full",
+      "what": "The whole journey — discovery through confirmed booking",
+      "note": "EIGHT turns, not five. Measured: her flow is variant -> showroom/doorstep -> lock -> passengers -> recap -> licence -> consent -> create. The first run scripted five and never reached create_booking, which made the most important conversation in the baseline the one with no booking in it. .. IT THEN DEADLOCKED A SECOND TIME, for a different reason, and turn 3 is the fix. It used to say 'a showroom is fine - any branch, whatever slot is earliest', which sounds accommodating and answers nothing: Aisha cannot lock a slot without a branch, so she asked which one, the script replied to a question it had not been asked, and the remaining five turns talked past each other. Both the single-agent and multi-agent runs looped identically. NAMING THE BRANCH IS NOT OVER-CONSTRAINING - it is supplying the one fact the flow genuinely requires, which is the opposite of the over-scripting this module's header warns about. A script may decline to steer; it may not withhold what the agent must have.",
+      "session_id": "baseline-booking_full",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Hi! I'd like to book a test drive of the Jetour T2. My name is Test Driver, mobile +971509998877.",
+          "aisha": "Welcome to Elite, Test Driver! I'm Aisha, Elite Group's assistant, and I'm happy to help you book a test drive.\n\nThe Jetour T2 comes in two versions. The T2 Luxury Plus is a 2.0L turbo petrol, priced from AED 146,000, with a Sony 12-channel audio system, 15.6\" touchscreen and a BorgWarner 4WD system with 7 driving modes. The T2 i-DM is a plug-in hybrid starting from AED 159,000, with up to 140 km of EV-only range, 600 HP combined output and an 800 km total range.\n\nWhich one would you like to test drive?",
+          "tools": [
+            "find_or_create_customer",
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 22430,
+          "model_calls": 3,
+          "usd": 0.03383,
+          "tokens": {
+            "uncached": 5,
+            "cache_write": 1504,
+            "cache_read": 61872,
+            "output": 415
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 351,
+              "cache_read": 20308,
+              "output": 80,
+              "usd": 0.00941,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 520,
+              "cache_read": 20522,
+              "output": 88,
+              "usd": 0.0106,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 633,
+              "cache_read": 21042,
+              "output": 247,
+              "usd": 0.01382,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "The petrol one, please.",
+          "aisha": "Lovely choice! To find your nearest showroom, whereabouts are you — a nearby landmark or area works perfectly?",
+          "tools": [],
+          "latency_ms": 2338,
+          "model_calls": 1,
+          "usd": 0.00874,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 302,
+            "cache_read": 21675,
+            "output": 28
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 302,
+              "cache_read": 21675,
+              "output": 28,
+              "usd": 0.00874,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "Al Quoz, please — whatever slot is earliest.",
+          "aisha": "Could you give me a little more to go on within Al Quoz — a nearby mall, landmark or street? Something like Al Quoz Mall, Mall of the Emirates, or a specific area like Al Quoz 1 would do perfectly.",
+          "tools": [
+            "emit_briefs"
+          ],
+          "latency_ms": 10002,
+          "model_calls": 2,
+          "usd": 0.0168,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 220,
+            "cache_read": 43997,
+            "output": 151
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 43,
+              "cache_read": 21977,
+              "output": 95,
+              "usd": 0.00829,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 177,
+              "cache_read": 22020,
+              "output": 56,
+              "usd": 0.00851,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 4,
+          "user": "That works for me, let's go with it.",
+          "aisha": "I want to make sure I find you the right branch! Could you share a nearby landmark, like Mall of the Emirates, Al Quoz Mall, or anything close to you in Al Quoz?",
+          "tools": [],
+          "latency_ms": 2456,
+          "model_calls": 1,
+          "usd": 0.00775,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 68,
+            "cache_read": 22197,
+            "output": 45
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 68,
+              "cache_read": 22197,
+              "output": 45,
+              "usd": 0.00775,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 5,
+          "user": "Just me, nobody else coming.",
+          "aisha": "Thank you! I still need a landmark or area within Al Quoz to find your nearest branch — something like Mall of the Emirates, Al Quoz Industrial Area, or Al Khail Road would work perfectly.",
+          "tools": [],
+          "latency_ms": 2410,
+          "model_calls": 1,
+          "usd": 0.00774,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 55,
+            "cache_read": 22265,
+            "output": 48
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 55,
+              "cache_read": 22265,
+              "output": 48,
+              "usd": 0.00774,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 6,
+          "user": "Yes, that all looks correct.",
+          "aisha": "Let me try finding the nearest showroom with what you've mentioned — Al Quoz Mall works as a landmark!\nI'm having a little trouble pinpointing your exact location. Would you like me to just list all our available showrooms so you can pick the one most convenient for you?",
+          "tools": [
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 9560,
+          "model_calls": 2,
+          "usd": 0.01841,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 264,
+            "cache_read": 44698,
+            "output": 227
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 58,
+              "cache_read": 22320,
+              "output": 120,
+              "usd": 0.00885,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 206,
+              "cache_read": 22378,
+              "output": 107,
+              "usd": 0.00956,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 7,
+          "user": "Yes, I'll bring my licence. And yes, WhatsApp confirmations are fine.",
+          "aisha": "I'd love to get you booked in! Let me pull up all our showrooms so you can pick the most convenient one.\nGreat news — it sounds like Jetour Al Quoz is right near you! We also have branches in Deira, Abu Dhabi (Rabdan), Al Ain, and Ajman. Which would you like?",
+          "tools": [
+            "emit_briefs",
+            "offer_options"
+          ],
+          "latency_ms": 12704,
+          "model_calls": 2,
+          "usd": 0.02075,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 550,
+            "cache_read": 45335,
+            "output": 256
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 167,
+              "cache_read": 22584,
+              "output": 115,
+              "usd": 0.00951,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 383,
+              "cache_read": 22751,
+              "output": 141,
+              "usd": 0.01124,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 8,
+          "user": "Perfect, thank you!",
+          "aisha": "Which showroom would you like to visit for your test drive?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 2681,
+          "model_calls": 1,
+          "usd": 0.00975,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 207,
+            "cache_read": 23134,
+            "output": 104
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 207,
+              "cache_read": 23134,
+              "output": 104,
+              "usd": 0.00975,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    }
+  ]
+}

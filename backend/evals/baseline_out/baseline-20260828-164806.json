@@ -1,0 +1,88 @@
+{
+  "captured_at": "2026-08-28T16:48:06",
+  "model": "claude-sonnet-4-6",
+  "agent_effort": "medium",
+  "router_enabled": true,
+  "pricing_assumption": {
+    "in_per_m": 3.0,
+    "out_per_m": 15.0,
+    "cache_write_mult": 2.0,
+    "cache_read_mult": 0.1
+  },
+  "cap_usd": 0.45,
+  "spent_usd": 0.03813,
+  "unmetered_calls": 0,
+  "conversations": [
+    {
+      "key": "close",
+      "what": "Rule 19 — a clean close, exactly once",
+      "note": "",
+      "session_id": "baseline-close",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Hi, just wanted to know your opening hours.",
+          "aisha": "Hi there! I'm Aisha, Elite Group's assistant. Happy to help with our opening hours.\nAll our showrooms share the same hours. Monday through Saturday they are open from 9 AM to 9 PM, and on Sundays from 12 PM to 9 PM. That applies to all five locations: Al Quoz and Deira in Dubai, Abu Dhabi (Rabdan), Al Ain, and Ajman.\n\nIs there anything else I can help you with?",
+          "tools": [
+            "get_showrooms"
+          ],
+          "latency_ms": 8335,
+          "model_calls": 2,
+          "usd": 0.02763,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 1363,
+            "cache_read": 57192,
+            "output": 152
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 330,
+              "cache_read": 28431,
+              "output": 60,
+              "usd": 0.01142,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 1033,
+              "cache_read": 28761,
+              "output": 92,
+              "usd": 0.01621,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "That's all I needed, thanks. Goodbye!",
+          "aisha": "You're welcome! Goodbye, and have a wonderful day. Feel free to drop by or chat with us anytime!",
+          "tools": [
+            "close_conversation"
+          ],
+          "latency_ms": 2849,
+          "model_calls": 1,
+          "usd": 0.0105,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 104,
+            "cache_read": 29794,
+            "output": 62
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 104,
+              "cache_read": 29794,
+              "output": 62,
+              "usd": 0.0105,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    }
+  ]
+}

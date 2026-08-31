@@ -1,0 +1,8 @@
+{
+  "_comment": "Which prompt version each agent runs. Edit, review, merge, deploy. PROMPT_VERSIONS in the environment overrides this without a deploy, which is the rollback lever.",
+  "base": "v1",
+  "aisha": "v1",
+  "sales": "v1",
+  "testdrive": "v1",
+  "finance": "v1"
+}

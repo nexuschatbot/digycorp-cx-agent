@@ -1,0 +1,20 @@
+# dependencies
+node_modules
+
+# build output
+dist
+
+# secrets / local env — never commit (CLAUDE.md: no secrets in this repo)
+.env
+.env.*
+
+# editor / OS
+.DS_Store
+*.local
+
+# run logs from local dev servers
+*.log
+
+# Design handoff reference (not app code)
+Frontend EliteGroup/
+Frontend EliteGroup.zip

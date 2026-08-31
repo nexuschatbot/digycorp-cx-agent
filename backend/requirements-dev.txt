@@ -1,4 +1,21 @@
+# Test-only dependencies. DELIBERATELY NOT in requirements.txt: the production
+# image should not ship a test runner, and the Dockerfile does not COPY tests/
+# either — so the deployed container could never run them anyway.
+#
+# ops/run-tests.sh installs these into a THROWAWAY container built from the same
+# image, with the repo mounted. That keeps production lean while making the suite
+# one command to run, which is what it was not: pytest was simply absent, so
+# nothing had been run against the agent for weeks.
+#
+# Everything else the suite imports (fastapi, sqlalchemy, httpx for TestClient)
+# is already a runtime dependency.
+# This repo's CI installs ONLY this file (see .github/workflows/ci.yml), unlike
+# the source repo where ops/run-tests.sh layered dev deps onto an image that
+# already had the runtime ones. So pull the runtime set in explicitly.
 -r requirements.txt
+
 pytest==8.3.4
-httpx==0.28.1
+
+# Lint, run by .github/workflows/ci.yml. Not in the source repo's dev deps —
+# added here because this repo's CI gates on `ruff check .`.
 ruff==0.8.4

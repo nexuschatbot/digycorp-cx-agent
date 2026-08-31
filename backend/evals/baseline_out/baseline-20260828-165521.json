@@ -1,0 +1,254 @@
+{
+  "captured_at": "2026-08-28T16:55:21",
+  "model": "claude-sonnet-4-6",
+  "agent_effort": "medium",
+  "router_enabled": true,
+  "pricing_assumption": {
+    "in_per_m": 3.0,
+    "out_per_m": 15.0,
+    "cache_write_mult": 2.0,
+    "cache_read_mult": 0.1
+  },
+  "cap_usd": 0.45,
+  "spent_usd": 0.12039,
+  "unmetered_calls": 0,
+  "conversations": [
+    {
+      "key": "booking_full",
+      "what": "The whole journey — discovery through confirmed booking",
+      "note": "EIGHT turns, not five. Measured: her flow is variant -> showroom/doorstep -> lock -> passengers -> recap -> licence -> consent -> create. The first run scripted five and never reached create_booking, which made the most important conversation in the baseline the one with no booking in it.",
+      "session_id": "baseline-booking_full",
+      "turns": [
+        {
+          "n": 1,
+          "user": "Hi! I'd like to book a test drive of the Jetour T2. My name is Test Driver, mobile +971509998877.",
+          "aisha": "I'm Aisha, Elite Group's assistant — welcome, and great choice! The Jetour T2 is a capable mid-size off-road SUV with a 2.0L turbo engine, BorgWarner 4WD with 7 driving modes, a 15.6-inch touchscreen and a 12-channel Sony audio system. It's priced from AED 146,000 to 179,000.\n\nThere is also a plug-in hybrid version called the Jetour T2 i-DM — did you have the petrol T2 in mind, or were you thinking of the hybrid?",
+          "tools": [
+            "get_vehicle_details",
+            "find_or_create_customer",
+            "offer_options"
+          ],
+          "latency_ms": 9177,
+          "model_calls": 2,
+          "usd": 0.0307,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 1426,
+            "cache_read": 57076,
+            "output": 334
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 351,
+              "cache_read": 28431,
+              "output": 122,
+              "usd": 0.01247,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 1075,
+              "cache_read": 28645,
+              "output": 212,
+              "usd": 0.01823,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 2,
+          "user": "The petrol one, please.",
+          "aisha": "Perfect! To find your nearest showroom, whereabouts are you — a nearby landmark, mall, or area works great?",
+          "tools": [],
+          "latency_ms": 2978,
+          "model_calls": 1,
+          "usd": 0.01092,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 260,
+            "cache_read": 29720,
+            "output": 29
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 260,
+              "cache_read": 29720,
+              "output": 29,
+              "usd": 0.01092,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 3,
+          "user": "A showroom is fine — any branch, whatever slot is earliest.",
+          "aisha": "The earliest slots are all tomorrow, Saturday 29 August at 9 AM. You have three branches to choose from: Jetour Al Quoz, Jetour Deira, or Jetour Abu Dhabi (Rabdan). Which works best for you?",
+          "tools": [
+            "get_available_slots"
+          ],
+          "latency_ms": 6526,
+          "model_calls": 2,
+          "usd": 0.02403,
+          "tokens": {
+            "uncached": 4,
+            "cache_write": 530,
+            "cache_read": 60006,
+            "output": 189
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 46,
+              "cache_read": 29980,
+              "output": 126,
+              "usd": 0.01117,
+              "metered": true
+            },
+            {
+              "uncached": 1,
+              "cache_write": 484,
+              "cache_read": 30026,
+              "output": 63,
+              "usd": 0.01286,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 4,
+          "user": "That works for me, let's go with it.",
+          "aisha": "Which branch would you prefer — Al Quoz, Deira, or Abu Dhabi (Rabdan)?",
+          "tools": [],
+          "latency_ms": 2011,
+          "model_calls": 1,
+          "usd": 0.01003,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 75,
+            "cache_read": 30510,
+            "output": 28
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 75,
+              "cache_read": 30510,
+              "output": 28,
+              "usd": 0.01003,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 5,
+          "user": "Just me, nobody else coming.",
+          "aisha": "That's great! Which branch would you prefer — Al Quoz, Deira, or Abu Dhabi (Rabdan)?",
+          "tools": [],
+          "latency_ms": 2250,
+          "model_calls": 1,
+          "usd": 0.00989,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 38,
+            "cache_read": 30585,
+            "output": 32
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 38,
+              "cache_read": 30585,
+              "output": 32,
+              "usd": 0.00989,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 6,
+          "user": "Yes, that all looks correct.",
+          "aisha": "I'd love to confirm, but I just need to know which branch you'd like — Al Quoz, Deira, or Abu Dhabi (Rabdan)?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 4942,
+          "model_calls": 1,
+          "usd": 0.01113,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 42,
+            "cache_read": 30623,
+            "output": 112
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 42,
+              "cache_read": 30623,
+              "output": 112,
+              "usd": 0.01113,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 7,
+          "user": "Yes, I'll bring my licence. And yes, WhatsApp confirmations are fine.",
+          "aisha": "Almost there! I just need to know which branch you'd like for the test drive — Al Quoz, Deira, or Abu Dhabi (Rabdan)?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 3132,
+          "model_calls": 1,
+          "usd": 0.01196,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 178,
+            "cache_read": 30665,
+            "output": 112
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 178,
+              "cache_read": 30665,
+              "output": 112,
+              "usd": 0.01196,
+              "metered": true
+            }
+          ]
+        },
+        {
+          "n": 8,
+          "user": "Perfect, thank you!",
+          "aisha": "We're nearly there! I just need one last thing from you — which branch would you like for the test drive?",
+          "tools": [
+            "offer_options"
+          ],
+          "latency_ms": 2698,
+          "model_calls": 1,
+          "usd": 0.01173,
+          "tokens": {
+            "uncached": 3,
+            "cache_write": 164,
+            "cache_read": 30843,
+            "output": 99
+          },
+          "calls": [
+            {
+              "uncached": 3,
+              "cache_write": 164,
+              "cache_read": 30843,
+              "output": 99,
+              "usd": 0.01173,
+              "metered": true
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    }
+  ]
+}

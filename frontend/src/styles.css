@@ -1,0 +1,2054 @@
+/*
+ * Design token layer — Aisha front-end design spec v1.0 (design-tokens.json).
+ * Light theme on a white ground; graphite ink is the action colour (no brand
+ * hue); four rationed status hues; one muted brass for booking refs, receipts
+ * and the focus ring. The legacy --color-* aliases at the bottom remap the
+ * app's existing variables onto these tokens, so the whole chat adopts the
+ * palette; per-component refinement follows the design files section by section.
+ */
+:root {
+  /* ---- Fonts (IBM Plex; Arabic is a mode, not an override) ---- */
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-arabic: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* ---- Background & lines ---- */
+  --bg-canvas: #ffffff;
+  --bg-subtle: #faf9f6;
+  --bg-sunken: #f1efe9;
+  --line-hairline: #e6e3dc;
+  --line-strong: #c9c6bf;
+
+  /* ---- Ink: action is graphite ---- */
+  --ink-primary: #16171a;
+  --ink-secondary: #63666d;
+  --ink-action: #1c1e22;
+  --ink-action-hover: #33373c;
+  --ink-on-action: #ffffff;
+  --ink-disabled: #a0a2a7;
+
+  /* ---- Brass: rationed (refs, receipts, focus ring, #1 rank) ---- */
+  --brass-ink: #8a6a2e;
+  --brass-line: #d9c79b;
+  --brass-wash: #f6f0e1;
+
+  /* ---- Status: wash+ink for pills, base for bars/dots/filled buttons ---- */
+  --ok-base: #2f7a52;  --ok-ink: #276444;  --ok-wash: #edf4ef;  --ok-line: #cbe0d3;
+  --warn-base: #a8710f; --warn-ink: #8a5c0c; --warn-wash: #f8f1e4; --warn-line: #e7d6b6;
+  --error-base: #b4382f; --error-ink: #992f27; --error-wash: #fbeeed; --error-line: #efd2cf;
+  --info-base: #2e5c93; --info-ink: #2a5182; --info-wash: #edf1f8; --info-line: #cfdbec;
+
+  /* ---- Actor washes (chat bubbles) ---- */
+  --actor-customer-wash: #f1efe9; --actor-customer-ink: #3a3d42; --actor-customer-line: #e6e3dc;
+  --actor-agent-wash: #edeff2;    --actor-agent-ink: #33414f;    --actor-agent-line: #d9dee4;
+  --actor-system-wash: #e9edea;   --actor-system-ink: #33413a;   --actor-system-line: #d5dcd7;
+  --actor-admin-wash: #f6f0e1;    --actor-admin-ink: #7a5c24;    --actor-admin-line: #e7d6b6;
+
+  /* ---- Console sidebar (graphite) ---- */
+  --console-sidebar: #1c1e22; --console-sidebar-active: #26292e; --console-sidebar-rule: #2c2f34;
+  --console-sidebar-label: #6e7278; --console-sidebar-item: #c3c6ca;
+
+  /* ---- Space / radius / elevation / motion ---- */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --radius-sm: 6px; --radius-md: 12px; --radius-lg: 18px; --radius-full: 999px;
+  --radius-bubble-tail: 4px;
+  --shadow-e1: 0 0 0 1px #e6e3dc;         /* E1 is a hairline, not a shadow */
+  --shadow-e2: 0 4px 14px rgba(22, 23, 26, 0.07);
+  --shadow-e3: 0 18px 44px rgba(22, 23, 26, 0.16);
+  --dur-fast: 150ms; --dur-base: 240ms; --dur-slow: 400ms;
+  --focus-ring: #8a6a2e; /* 2px brass, offset 2px */
+
+  /* ==== Legacy aliases → design tokens (whole-app remap; refined per component) ==== */
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
+  --color-bg: var(--bg-canvas);
+  --color-surface: var(--bg-subtle);
+  --color-text: var(--ink-primary);
+  --color-text-muted: var(--ink-secondary);
+  --color-border: var(--line-hairline);
+  --color-accent: var(--ink-action);
+  --color-accent-contrast: var(--ink-on-action);
+  --color-send: var(--ink-action);
+  --color-header-bg: var(--ink-action);
+  --color-bubble-agent: var(--bg-subtle);    /* Aisha's bubble: subtle ground + hairline (chat, not console) */
+  --color-bubble-user: var(--ink-action);    /* the customer's own bubble is graphite (Foundations rule 1) */
+  --color-bubble-text: var(--ink-primary);   /* agent bubbles + cards; the user bubble overrides to on-action */
+  --color-ok: var(--ok-base);
+  --color-error: var(--error-base);
+  --color-loading: var(--ink-disabled);
+}
+
+/* Apply base font token (not a component style). */
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* --- Phase 0 health panel ------------------------------------------------ */
+.health-panel {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  max-width: 24rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.health-title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--color-text-muted);
+}
+
+.health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.health-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.health-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--color-loading);
+}
+
+.health-dot--ok {
+  background: var(--color-ok);
+}
+
+.health-dot--error {
+  background: var(--color-error);
+}
+
+.health-dot--loading {
+  background: var(--color-loading);
+}
+
+.health-name {
+  font-weight: 600;
+  min-width: 5rem;
+}
+
+.health-state {
+  color: var(--color-text-muted);
+}
+
+.health-detail {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-error);
+  word-break: break-word;
+}
+
+/* ========================================================================== *
+ * Stage 3 — chat widget (transport rendering). Built on the existing tokens.
+ * RTL is per-bubble.
+ * ========================================================================== */
+html, body, #root { height: 100%; }
+#root { display: flex; }
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 46rem;
+  height: 100dvh;
+  margin: 0 auto;
+  background: var(--color-bg);
+  border-inline: 1px solid var(--color-border);
+}
+
+/* --- header --------------------------------------------------------------- */
+/* Light header on the white ground (design spec): the Aisha mark, her name,
+   a live status line, and a mono outlined "New chat", over a hairline rule. */
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* brand left, "New chat" right */
+  gap: 1rem;
+  padding: 12px 16px;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--line-hairline);
+}
+.brand { display: flex; align-items: center; gap: 0.65rem; }
+/* Aisha's mark — graphite disc ringed in brass (the design's identity mark);
+   the photo fills the disc, the brass ring frames it. */
+.brand-avatar {
+  position: relative;
+  display: grid; place-items: center;
+  width: 2.35rem; height: 2.35rem;
+  color: var(--ink-on-action);
+  background: var(--ink-action);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--brass-line);
+}
+.brand-face { width: 100%; height: 100%; display: block; border-radius: 50%; object-fit: cover; }
+.brand-online {
+  position: absolute; right: -2px; bottom: -2px;
+  width: 0.62rem; height: 0.62rem; border-radius: 50%;
+  background: var(--ok-base); border: 2.5px solid var(--bg-canvas);
+}
+.brand-text { display: flex; flex-direction: column; min-width: 0; }
+.brand-title { margin: 0; font-family: var(--font-sans); font-weight: 600; font-size: 1rem; line-height: 1.15; color: var(--ink-primary); }
+.brand-sub { margin: 0; font-size: 0.78rem; color: var(--ink-secondary); }
+/* "New chat" — mono, uppercase, hairline-outlined; darkens on hover. */
+.chat-header .btn--newchat {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-primary);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-canvas);
+  padding: 8px 12px;
+}
+.chat-header .btn--newchat:hover { color: var(--ink-action); background: var(--bg-sunken); border-color: var(--ink-action); }
+
+/* --- booking receipt (inline TD-ref chip, from the booking SSE event) ----- */
+.row--receipt { justify-content: flex-start; }
+.row--receipt.row--rtl { justify-content: flex-end; }
+/* The compact booking-reference pill: brass is the rationed accent for booking
+   refs and receipts (Foundations rule 2). Brass wash + line + ink, mono ref. */
+.receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--brass-line);
+  background: var(--brass-wash);
+  color: var(--brass-ink);
+  font-size: 13px;
+}
+.receipt-tick {
+  display: inline-grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--brass-ink);
+  color: var(--bg-canvas);
+}
+.receipt-label { font-weight: 500; }
+.receipt-ref {
+  font-family: var(--font-mono); font-weight: 500;
+  letter-spacing: 0.05em; font-variant-numeric: tabular-nums;
+}
+
+/* --- thread + bubbles ---------------------------------------------------- */
+.chat-thread {
+  /* overflow-x is EXPLICIT, not redundant: with only `overflow-y: auto` set, the
+     spec computes overflow-x from `visible` to `auto`, so the thread silently
+     becomes a horizontal scroller too and any over-wide child (a card strip, a
+     long unbroken URL) scrolls the whole conversation sideways. The thread never
+     scrolls horizontally — the card strip does that inside itself. */
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: 0.55rem;
+  padding: 1.1rem;
+}
+/* Welcome / empty state (design A1): left-aligned, the large Aisha mark, a
+   display greeting, and two stacked full-width starter buttons. */
+.empty {
+  margin: auto 0; padding: 8px 0;
+  text-align: start; color: var(--ink-secondary);
+  display: flex; flex-direction: column; align-items: flex-start;
+  width: 100%;
+}
+.empty-avatar {
+  width: 112px; height: 112px; border-radius: 50%;
+  background: var(--ink-action);
+  box-shadow: 0 0 0 2px var(--brass-line);
+  overflow: hidden; margin-bottom: 24px;
+}
+.empty-avatar-face { width: 100%; height: 100%; display: block; object-fit: cover; border-radius: 50%; }
+.empty-hello {
+  margin: 0; font-family: var(--font-sans); font-weight: 600;
+  font-size: 28px; line-height: 1.12; letter-spacing: -0.025em; color: var(--ink-primary);
+}
+.empty-sub { margin: 12px 0 0; font-size: 16px; line-height: 1.5; color: var(--ink-secondary); max-width: 32ch; }
+
+.starter-list { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 24px; }
+.starter-btn {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; box-sizing: border-box;
+  min-height: 56px; padding: 0 18px;
+  border-radius: var(--radius-md); cursor: pointer;
+  font-family: var(--font-sans); font-size: 16px; font-weight: 500;
+  text-align: start;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+}
+.starter-btn:active { transform: scale(0.98); }
+.starter-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring); }
+.starter-btn--primary { background: var(--ink-action); color: var(--ink-on-action); border: none; }
+.starter-btn--primary:hover { background: var(--ink-action-hover); }
+.starter-btn--secondary { background: var(--bg-sunken); color: var(--ink-primary); border: 1px solid var(--line-hairline); }
+.starter-btn--secondary:hover { background: var(--bg-canvas); border-color: var(--line-strong); }
+.starter-chev { width: 18px; height: 18px; flex: 0 0 auto; opacity: 0.85; }
+
+.row { display: flex; }
+.row--user { justify-content: flex-end; }
+.row--agent { justify-content: flex-start; }
+/* Rule 19: the idle closing line. Centred and quiet — it is the room's voice,
+   not Aisha's, so it must not be mistaken for something the agent said. */
+.row--system { justify-content: center; }
+
+.bubble {
+  max-width: 85%;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 16px; /* [REQ] body never below 16px in a chat bubble */
+  font-weight: 400;
+}
+/* The customer's own bubble is graphite with white ink (Foundations rule 1);
+   Aisha's is the subtle ground with a hairline and primary ink. Tail = the
+   squared bottom corner on the speaker's side. */
+.bubble--user { max-width: 78%; background: var(--color-bubble-user); color: var(--ink-on-action); border-bottom-right-radius: var(--radius-bubble-tail); }
+.bubble--agent { background: var(--color-bubble-agent); color: var(--color-bubble-text); border: 1px solid var(--line-hairline); border-bottom-left-radius: var(--radius-bubble-tail); }
+.bubble--error { background: color-mix(in srgb, var(--color-error) 10%, var(--color-bg)); color: var(--color-error); border: 1px solid color-mix(in srgb, var(--color-error) 35%, transparent); }
+.bubble--system {
+  background: transparent; color: var(--color-text-muted);
+  font-size: 0.85rem; font-style: italic; text-align: center; max-width: 90%;
+}
+
+/* Per-bubble direction: Arabic script renders RTL, right-aligned, native font. */
+.bubble--rtl { direction: rtl; text-align: right; font-family: var(--font-arabic); }
+.bubble--ltr { direction: ltr; text-align: left; }
+
+/* streaming caret + typing dots */
+.caret { display: inline-block; width: 2px; height: 1em; margin-inline-start: 2px; background: currentColor; vertical-align: text-bottom; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+.dots, .working-dots { display: inline-flex; gap: 3px; align-items: center; }
+.dots i, .working-dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.4; animation: bounce 1.2s infinite; }
+.dots i:nth-child(2), .working-dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3), .working-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes bounce { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* subtle "working…" affordance — never raw tool JSON */
+.working { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.75rem; border-radius: 12px; background: var(--color-surface); color: var(--color-text-muted); font-size: 0.85rem; font-style: italic; }
+
+/* --- composer ------------------------------------------------------------ */
+.composer-dock { border-top: 1px solid var(--color-border); background: rgba(255, 255, 255, 1); }
+/* [mic] [ ————— pill input ————— ] [send]. The mic leads, the input takes the
+   room, Send closes the row. */
+.composer { display: flex; gap: 10px; align-items: center; padding: 10px 12px; }
+/* Design spec: a 44px pill on the sunken tint with a hairline; it becomes white
+   with a graphite border while focused. One filled field between two round
+   icon buttons. */
+.composer-input {
+  flex: 1; resize: none;
+  height: 44px; box-sizing: border-box;
+  padding: 10px 14px; border: 1px solid var(--line-hairline); border-radius: var(--radius-full);
+  font-family: var(--font-sans); font-size: 15px; color: var(--ink-primary);
+  background: var(--bg-sunken);
+  line-height: 1.4;
+  overflow-y: hidden; /* single-line field: never show the textarea scrollbar */
+}
+.composer-input::placeholder { color: var(--ink-disabled); }
+.composer-input:focus { outline: none; background: var(--bg-canvas); border-color: var(--ink-action); }
+.composer-input:focus-visible { box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring); }
+
+/* Rule 19: the ended state. Replaces the composer rather than greying it — a
+   disabled textarea still reads as "try typing"; this reads as "we're done". */
+/* Header "New chat" — permanently available, so it must read as secondary to
+   the conversation rather than compete with Send. */
+.btn--ghost {
+  padding: 0.4rem 0.8rem;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  font-size: 0.8rem;
+}
+.btn--ghost:hover { color: var(--color-text); border-color: var(--color-text-muted); }
+
+.composer--closed { align-items: center; justify-content: space-between; }
+.composer-ended { color: var(--color-text-muted); font-size: 0.9rem; }
+.btn { padding: 0.6rem 1.2rem; border: none; border-radius: 10px; font-family: var(--font-display); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+.btn--send { background: var(--color-accent); color: var(--color-accent-contrast); }
+.btn--send:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--stop { background: var(--color-error); color: #fff; }
+
+/* Round icon Send — its OWN class, deliberately not btn--send: the closed-state
+   "Start new chat" button reuses btn--send as a text pill and must stay one. */
+/* Send disc: graphite with a white glyph when the field has text; a quiet grey
+   pill (sunken + hairline, grey glyph) when empty/disabled — per the design's
+   idle vs active send. */
+.btn--send-icon {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+  padding: 0; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--ink-action);
+  color: var(--ink-on-action); border: none;
+}
+.btn--send-icon:hover:not(:disabled) { background: var(--ink-action-hover); }
+.btn--send-icon:disabled {
+  background: var(--bg-sunken); border: 1px solid var(--line-hairline);
+  color: var(--ink-disabled); cursor: not-allowed;
+}
+/* Stop shares the round Send slot while streaming — GRAPHITE with a white
+   square (red is reserved for recording only). */
+.btn--stop-icon {
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--ink-action); color: var(--ink-on-action); border: none;
+}
+
+/* --- voice notes, INPUT ONLY (2026-07-21 scope override) ------------------ */
+/* Attach — same bare shape as the mic beside it, but PERMANENTLY DISABLED (see
+   App.tsx). Deliberately NOT styled to look live: the cursor stays default and
+   the icon sits at 40%, so it reads as a control that exists but is unavailable
+   rather than one that is broken. `cursor: not-allowed` is avoided on purpose —
+   it implies a temporary block the customer could clear by doing something
+   differently, and there is nothing they can do. */
+.btn--attach {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+  padding: 0; width: 2.4rem; height: 2.4rem; border-radius: 50%;
+  background: transparent; border: none;
+  color: var(--color-text-muted);
+  opacity: 0.4;
+  cursor: default;
+}
+/* Attach and mic are ONE cluster, so they sit closer to each other than either
+   sits to the input. Pulled in rather than given a smaller container gap,
+   because .composer's gap also sets the input's breathing room and the two
+   spacings are not the same job. */
+.btn--attach + .btn--mic { margin-inline-start: -0.35rem; }
+
+/* Composer mic — a quiet round icon button on the leading edge: sunken tint,
+   hairline, dark glyph (design spec: 44px, #F1EFE9 / #E6E3DC / #16171A). */
+.btn--mic {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+  padding: 0; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--bg-sunken);
+  color: var(--ink-primary); border: 1px solid var(--line-hairline);
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+.btn--mic:hover:not(:disabled) {
+  background: var(--bg-canvas);
+  border-color: var(--line-strong);
+}
+.btn--mic:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring);
+}
+.btn--mic:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* While recording, the composer becomes [discard] timer [send] — CENTRED as one
+   group, not pushed to the edges. Spread across the full width the three read as
+   three separate things with a stray timer floating between them; grouped, they
+   read as one control for one action, and the eye lands on the timer (the only
+   part that is changing) with both choices immediately either side of it. */
+.composer--recording { align-items: center; justify-content: center; gap: 0.75rem; }
+.voice-live { display: flex; align-items: center; gap: 0.4rem; font-variant-numeric: tabular-nums; }
+.voice-elapsed { font-weight: 600; font-size: 0.95rem; }
+.voice-remaining { color: var(--color-text-muted); font-size: 0.85rem; }
+
+/* Both recording controls: same circular target, opposite weight. Discard is
+   quiet and only colours to the error tone on hover, so the destructive action
+   never draws the eye first; send carries the accent, because it is what the
+   customer means to press. Sized at 2.6rem to stay a comfortable thumb target. */
+.voice-icon {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 2.6rem; height: 2.6rem; padding: 0;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: transparent; color: var(--color-text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.voice-icon--cancel:hover {
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+}
+.voice-icon--stop {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+.voice-icon--stop:hover { filter: brightness(1.08); }
+/* The one piece of motion in the composer: a recording indicator that does not
+   pulse reads as a frozen UI, which on a phone is indistinguishable from a
+   crashed one. */
+.voice-dot {
+  width: 0.55rem; height: 0.55rem; border-radius: 50%;
+  background: var(--color-error); animation: voice-pulse 1.4s ease-in-out infinite;
+}
+@keyframes voice-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .voice-dot { animation: none; } }
+
+/* The call overlay (2026-07-27): a call is a MODE, not a widget. Translucent
+   glass over the whole chat — the thread stays dimly visible behind it (this
+   is still the same conversation) but the screen belongs to the call. */
+.call-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, #0b1220 62%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.call-overlay-card {
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  padding: 2.5rem 3rem;
+  color: #fff; text-align: center;
+}
+.call-overlay-avatar {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  width: 6rem; height: 6rem; border-radius: 50%;
+  background: var(--color-accent); color: var(--color-accent-contrast);
+  margin-bottom: 0.75rem;
+}
+/* Aisha's face fills the avatar; sits ABOVE the reactive glow, INSIDE the ring
+   (the ring/pulse are at negative inset, so they frame the face rather than
+   overlap it). */
+.call-overlay-face { position: relative; z-index: 1; width: 100%; height: 100%; display: block; border-radius: 50%; object-fit: cover; }
+/* The state ring around the avatar — one signal, four meanings, colour and
+   motion only (position never moves): EMERALD that pulses with the caller's
+   voice = listening, amber spinning = thinking, accent breathing = Aisha
+   speaking, grey = connecting. Emerald (not red) for "live": red reads as
+   record/alarm, and the red hang-up button sits right below it. */
+.call-overlay-ring {
+  position: absolute; inset: -0.45rem; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.22);
+}
+.call-overlay-ring--connecting { border-color: rgba(255, 255, 255, 0.4); }
+.call-overlay-ring--listening { border-color: #34d399; }
+.call-overlay-ring--thinking {
+  border-color: #d97706; border-style: dashed;
+  animation: call-spin 3s linear infinite;
+}
+.call-overlay-ring--speaking {
+  border-color: var(--color-accent);
+  animation: call-breathe 1.6s ease-in-out infinite;
+}
+/* The mic-reactive glow (listening only): emerald spread + gentle scale driven
+   by --call-level (0..1, written each animation frame by CallPulse). Fully
+   transparent at level 0, so a silent moment — or any non-listening state —
+   shows nothing, and the ring's own colour carries the state. */
+.call-overlay-pulse {
+  --call-level: 0;
+  position: absolute; inset: -0.45rem; border-radius: 50%; pointer-events: none;
+  box-shadow:
+    0 0 calc(var(--call-level) * 1.8rem) calc(var(--call-level) * 0.5rem)
+    color-mix(in srgb, #34d399 calc(var(--call-level) * 80%), transparent);
+  transform: scale(calc(1 + var(--call-level) * 0.05));
+  transition: box-shadow 0.09s linear, transform 0.09s linear;
+}
+@keyframes call-spin { to { transform: rotate(360deg); } }
+@keyframes call-breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .call-overlay-ring--thinking, .call-overlay-ring--speaking { animation: none; }
+  .call-overlay-pulse { transition: none; }
+}
+.call-overlay-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.call-overlay-state {
+  font-size: 1rem; margin: 0; color: rgba(255, 255, 255, 0.75);
+  min-height: 1.4em; /* state text changes length; the card must not jump */
+}
+.call-overlay-elapsed {
+  font-variant-numeric: tabular-nums; font-size: 0.9rem; margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+}
+.call-overlay-controls { display: flex; gap: 2rem; margin-top: 2rem; }
+.call-overlay-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 3.6rem; height: 3.6rem; padding: 0;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, 0.16); color: #fff;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+.call-overlay-btn:hover { background: rgba(255, 255, 255, 0.26); }
+.call-overlay-btn--mute.is-muted {
+  background: #fff; color: var(--color-error);
+}
+.call-overlay-btn--hangup { background: var(--color-error); }
+.call-overlay-btn--hangup:hover { filter: brightness(1.1); background: var(--color-error); }
+
+/* The player inside a customer bubble, ABOVE the transcript. Logical properties
+   throughout so it mirrors correctly in an RTL thread without a second rule. */
+.voice-player {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin-block-end: 0.4rem; min-width: 11rem;
+}
+.voice-play {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 1.9rem; height: 1.9rem; padding: 0;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  color: inherit;
+}
+.voice-play:hover { background: color-mix(in srgb, currentColor 28%, transparent); }
+.voice-track {
+  flex: 1 1 auto; height: 0.25rem; border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+.voice-progress { height: 100%; background: currentColor; opacity: 0.75; }
+.voice-time { flex: 0 0 auto; font-size: 0.78rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+
+/* --- read aloud, opt-in TTS (2026-07-21) ---------------------------------- */
+/* Sits at the END of Aisha's bubble, inline after the text — `margin-inline-start`
+   rather than `margin-left` so it follows the bubble's direction in an Arabic
+   thread with no second rule. Quiet by default: it is an affordance on every one
+   of her messages, so at full contrast it would tile the thread with icons and
+   compete with the words. */
+.speak-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  vertical-align: middle;
+  width: 1.55rem; height: 1.55rem; padding: 0;
+  margin-inline-start: 0.45rem;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: transparent; color: inherit; opacity: 0.4;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.speak-btn:hover { opacity: 0.9; background: color-mix(in srgb, currentColor 14%, transparent); }
+/* Speaking: full contrast and a soft pulse, so it is obvious WHICH message is
+   being read when several are on screen. */
+.speak-btn--on {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  animation: speak-pulse 1.6s ease-in-out infinite;
+}
+@keyframes speak-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .speak-btn--on { animation: none; } }
+
+/* Mic unavailable (denied, or the HTTPS blocker). Muted system styling — we
+   said this, not Aisha, so it must not look like one of her bubbles. */
+.voice-note-hint {
+  padding: 0 1.1rem 0.7rem; margin: 0;
+  color: var(--color-text-muted); font-size: 0.8rem; text-align: center;
+}
+
+.composer-disclaimer {
+  padding: 0 1.1rem 0.55rem; margin: -0.15rem 0 0;
+  color: var(--color-text-muted); font-size: 0.72rem; text-align: center;
+}
+
+/* --- inline vehicle cards (rule 18 / FR-BK-10) ---------------------------
+ *
+ * ONE CARD, TWO BEHAVIOURS (developer decision 25 Jul 2026). Geometry supplied
+ * by the developer: 265x238, radius 18, 1px rgba(240,241,242,1) on white, a 2px
+ * rgba(255,179,0,1) rule under the image. Both variants are now this card to a
+ * pixel; `--full` and `--compact` survive on the CONTAINER only, to say which
+ * tool drew the row. The card itself differs solely in whether it is pressable.
+ *
+ * ROW SCROLLS SIDEWAYS RATHER THAN WRAPPING. Three 265px cards need 815px and a
+ * demo phone is ~360px, so wrapping would stack them into a column taller than
+ * the viewport — the customer would scroll past the whole conversation to see
+ * option three. The strip snaps a swipe onto a whole card, and is inset so the
+ * next card's edge peeks: that sliver is the only thing telling a customer more
+ * cards exist, since the scrollbar is hidden (mobile hides it anyway, so a
+ * visible one would appear on desktop alone and match nothing).
+ */
+.vcards {
+  display: flex;
+  gap: 0.6rem;
+  max-width: 100%;
+  /* REQUIRED with the padding-inline-end below. Under content-box, `max-width:
+     100%` caps the CONTENT and the 20px peek padding is then added OUTSIDE it,
+     so the strip measured 721px inside a 700.8px thread — a 20px overhang that
+     gave the THREAD its own horizontal scrollbar. */
+  box-sizing: border-box;
+  align-self: flex-start;
+  /* THE STRIP IS A FLEX ITEM OF .chat-thread (a flex column), so it inherits
+     flex-shrink: 1 and gets SQUEEZED when the thread runs out of room — measured
+     at 140px against its own 246px of cards. Two symptoms, one cause: the cards
+     were clipped from the bottom (chips first), and the THREAD STOPPED
+     SCROLLING, because content that shrinks to fit never overflows and so never
+     gives the thread anything to scroll. Fixed height boxes in this thread must
+     refuse to shrink. */
+  flex: 0 0 auto;
+  /* The strip. `auto` not `scroll`, so a single card shows no scroll affordance
+     at all. Padding on the inline end is what lets the last card sit clear of
+     the bubble edge once scrolled. */
+  overflow-x: auto;
+  /* REQUIRED, not tidiness. Per the CSS overflow spec, when one axis is set to a
+     non-`visible` value the other computes from `visible` to `auto` — so
+     `overflow-x: auto` alone gave the strip its own VERTICAL scrollbar, and the
+     cards scrolled inside the bubble instead of the thread scrolling. The
+     4px padding-block below is what keeps a focus ring from clipping against
+     this. */
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;
+  padding-inline-end: 1.25rem;
+  /* A focus ring on a pressable card is drawn OUTSIDE its border, and
+     overflow-x clips it vertically unless the strip has room to spare. */
+  padding-block: 4px;
+}
+.vcards::-webkit-scrollbar { display: none; }
+.vcards--rtl { align-self: flex-end; }
+/* Cards must not squeeze to fit the bubble — 265px is a fixed geometry, and a
+   flex child in a scroller shrinks by default. */
+.vcards > * { scroll-snap-align: start; flex: 0 0 auto; }
+
+/* THE CARD. Fixed 238px, never taller: every text row below clamps to one line
+   so a long Arabic model name or a missing price cannot change the height of
+   one card in a row of three. */
+.vcard {
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  height: 238px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-md);
+  /* Clips the full-bleed photo to the card's own radius. */
+  overflow: hidden;
+  background: var(--bg-canvas);
+  /* No shadow: the border is the only edge. */
+}
+
+/* PRESSABLE — the recommendation card opens the detail dialog. It is a real
+   <button>, so everything here beyond the states is a control reset: buttons do
+   not inherit font, colour or text alignment. */
+.vcard--pressable {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.vcard--pressable:hover:not(:disabled) { border-color: var(--line-strong); }
+/* Focus is hover PLUS a brass ring — tabbing must be distinguishable from
+   pointing, and a border colour change alone is too quiet to serve as focus. */
+.vcard--pressable:focus-visible {
+  outline: none;
+  border-color: var(--ink-action);
+  box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring);
+}
+/* Mid-generation: still readable, no longer a way in (see the component header
+   — `disabled` is the ONLY thing that may deaden a card). */
+.vcard--pressable:disabled { cursor: not-allowed; opacity: 0.55; }
+/* No id to open — rendered as an <article>, so it must not look pressable. */
+.vcard--static { cursor: default; }
+
+/* IMAGE — full-bleed, 134px = 238 - 2px card borders - 6px double rule - 98px
+   body. The upper of the two yellow lines is the image's own bottom border, so
+   it can never drift from the seam it marks; the lower one belongs to the body
+   (see .vcard-body) and the 2px of card background between them is the gap.
+
+   The body was specified at 110px, then measured at 96px of actual content once
+   the type settled (14/14/11/11). The 14px difference went HERE rather than
+   being padded out below the chips (developer decision 25 Jul 2026): the card
+   keeps its specified 238px, and a photo of the car is a better use of the space
+   than white.
+
+   cover, NOT contain (25 Jul 2026, reversing the earlier note). The nine seed
+   photos run 1.00:1 (Dashing) to 2.20:1 (X50) against a 2.14:1 frame, so contain
+   would letterbox the square Dashing across half the card — and no single
+   backdrop colour works when one shot is white and another charcoal, which is
+   what made the letterbox read as a rendering fault rather than a margin. cover
+   crops vertically only, and all nine cars are horizontally centred, so no nose
+   or tail is lost. The Dashing loses the bottom of its tyres; a wider crop of
+   that one photo is the fix, not a different fit rule. */
+.vcard-img {
+  width: 100%;
+  height: 134px;
+  flex: 0 0 auto;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  border-bottom: 2px solid var(--line-hairline);
+  background: var(--bg-sunken);
+}
+/* No photo. Keeps the exact same 124px + rule, so the card's geometry holds. */
+.vcard-img--empty {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: 1.5rem;
+}
+
+/* BODY — 98px = its own 2px yellow rule + 96px of content, and the content is
+   exactly 12 top + 18 name + 6 + 14 tagline + 10 + 24 chips + 12 bottom.
+   Nothing floats and nothing is padded out, so a change to ANY of those seven
+   numbers must be paid for out of .vcard-img's height or the chips clip against
+   the card's overflow:hidden.
+
+   THE 2px MARGIN IS THE WHITE GAP between the two yellow lines — it is card
+   background showing through, not a third element, so it can never fall out of
+   step with the rules on either side of it. */
+.vcard-body {
+  display: flex;
+  flex-direction: column;
+  height: 98px;
+  box-sizing: border-box;
+  margin-top: 2px;
+  border-top: 2px solid transparent;
+  padding: 12px 22px;
+  min-width: 0;
+}
+/* Name leading, price trailing on one baseline row — mirrored in Arabic for
+   free, because the container already carries `dir`. */
+.vcard-head {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+/* Every text row is single-line-clamped. The card height is fixed, so a wrap
+   would push the chips out through the bottom edge rather than growing the box.
+ *
+ * 14px/500, NOT the mockup's 17px/700 — and the reason is the catalogue, not
+ * taste (25 Jul 2026). EIGHT OF THE NINE MODELS ARE PRICED AS A RANGE
+ * ("AED 146,000–179,000"); the mockup drew a single figure. At 17px/700 the
+ * price alone measured 180px of the 219px text column, so every card rendered
+ * its model name as "J…".
+ *
+ * MEASURED, not estimated — against the real font, all nine rows, at the 219px
+ * column: 17px name + 12px price fits 4 of 9 · 13px both fits 4 of 9 · 14px both
+ * fits 4 of 9 · 12px both fits 9 of 9 but leaves the T2 i-DM at exactly 219px
+ * (zero slack) · 14px both WITH THE BRAND PREFIX STRIPPED fits 9 of 9 with the
+ * widest at 205px. The last is what ships, which is why displayName() in
+ * VehicleCards.tsx is load-bearing rather than cosmetic: restore "Jetour " to
+ * the name and five of nine cards truncate again. Re-measure all nine if this
+ * size, the 22px side padding or the 8px gap moves. */
+.vcard-name {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--color-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Dark, matching the name rather than the muted grey it used to be — on this
+   card the price is a headline, not a caption. */
+.vcard-price {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+/* TAGLINE — VehicleModel.body_type, the one catalogue field behind this row.
+   KNOWN AND ACCEPTED (25 Jul 2026): body_type is stored English prose with no
+   `_ar` twin, so this line stays English in an Arabic card — the single place
+   the no-display-text-in-data rule is knowingly bent (LOC-01). Clamped, because
+   the longest is "Full-size luxury off-road SUV (body-on-frame)". */
+.vcard-tagline {
+  margin-top: 6px;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Spec chips. Read-only FACTS, not controls: no hover, no focus, no cursor
+   change. They must never look tappable, or they read as slot chips (which
+   commit) sitting inside a card (which browses). */
+.vcard-chips {
+  display: flex;
+  gap: 0.35rem;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  /* One row only — the height is fixed, so a second row has nowhere to go. */
+  overflow: hidden;
+}
+.vcard-chip {
+  padding: 5px 12px;
+  border-radius: 10px;
+  background: var(--color-bubble-agent);
+  color: var(--color-bubble-text);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+/* --- booking card (get_booking / reload from booking_refs) ----------------
+ *
+ * A VERTICAL STACK (product decision 2026-07-28). This REVERSES the horizontal
+ * strip that was here, and the reason the strip existed is worth keeping in
+ * view: a second and third booking push the thread down by a whole card each,
+ * which is exactly what the strip was avoiding. That cost is now accepted,
+ * because a horizontally scrolled card is a card most people never find. A
+ * customer with two bookings could see only one of them without discovering a
+ * sideways scroll that has no scrollbar (`scrollbar-width: none`, below, was
+ * part of the strip), and on a demo stage a booking that is present but unseen
+ * reads as a booking we lost.
+ *
+ * So multiple bookings now stack and the thread scrolls, which is the gesture
+ * every customer already knows. UNLIKE .vcards, which stays horizontal on
+ * purpose: three RECOMMENDATIONS are a set to compare across, and losing the
+ * third one costs a browse. A BOOKING is a commitment the customer already
+ * holds, so every one of them has to be reachable without a discovery step.
+ *
+ * box-sizing stays EXPLICIT for the reason learned on .vcards: under content-box
+ * the padding lands outside `max-width: 100%` and overflows the thread sideways.
+ * The overflow axes and the x scroll-snap are gone with the strip — a column of
+ * full-width cards has nothing to snap and nothing to scroll.
+ */
+.bkgs {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  box-sizing: border-box;
+  /* Refuses to be squeezed by .chat-thread's flex column — see .vcards. */
+  flex: 0 0 auto;
+}
+/* Each card keeps its own height rather than being stretched to match the
+   tallest — a doorstep card has no map link and is legitimately shorter. */
+.bkgs > * { flex: 0 0 auto; }
+.bkgs--rtl { align-self: flex-end; }
+/* SUPERSEDED — replaced by a reschedule, or cancelled. Muted but still legible:
+   the thread must keep showing that this booking existed (the customer read it
+   out loud a minute ago), while making clear it is no longer the live one. Its
+   actions are removed in the component, not merely hidden here. */
+.bkgs--superseded { opacity: 0.55; }
+.bkgs--superseded .bkg-link { pointer-events: none; text-decoration: none; }
+
+/* THE CARD — rail on the leading edge, everything else in the body beside it. */
+/* FULL THREAD WIDTH — the 34rem bubble cap is deliberately gone. Four labelled
+   facts on ONE line is the layout that was specified, and it needs the room:
+   measured against the longest real values (a +971 mobile, "Jetour X70 Plus",
+   "Wednesday, 7:00 pm - 8:00 pm") the four columns need 596px of track, so a
+   544px card wrapped every second value onto a second line. */
+.bkg {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(240, 241, 242, 1);
+  border-radius: 18px;
+  /* Clips the grey rail to the card's own radius, so the gutter's corners
+     follow the card instead of squaring off inside it. */
+  overflow: hidden;
+  background: rgba(255, 255, 255, 1);
+}
+
+/* RAIL — the grey gutter holding the person mark. The UPPER of the two yellow
+   lines is its right border; the lower one belongs to .bkg-main, and the 2px of
+   card background between them is the gap. Same construction as the vehicle
+   card's double rule, turned on its side, so neither line can drift from the
+   other. */
+.bkg-rail {
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 48px;
+  padding-top: 1.05rem;
+  background: var(--bg-subtle);
+  border-inline-end: 2px solid var(--brass-line);
+  color: var(--brass-ink);
+}
+
+.bkg-main {
+  flex: 1;
+  min-width: 0;
+  margin-inline-start: 2px;
+  border-inline-start: 2px solid var(--brass-line);
+  padding: 1rem;
+}
+
+/* HEADER — inside the card, beside the rail. */
+.bkg-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.1rem; }
+.bkg-head-label { font-family: var(--font-display); font-size: 15px; font-weight: 500; }
+/* Position badge. Min-width plus horizontal padding so a lone "1" stays a pill
+   rather than being squashed into an ellipse, and the pill GROWS for the
+   "1 of 2" form a stack uses (see BookingCard). nowrap because the height is
+   fixed: without it "1 of 2" breaks onto a second line inside a 1.4rem box and
+   the text escapes the pill. */
+.bkg-count {
+  display: inline-grid; place-items: center;
+  min-width: 1.4rem; height: 1.4rem; padding: 0 0.5rem;
+  border-radius: 999px;
+  background: var(--color-error); color: #fff;
+  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The four facts on ONE row, sized so they stay on one line rather than being
+   left to wrap.
+ *
+ * FLEX, NOT GRID, and that is the whole point. Fixed grid tracks weighted to the
+ * four columns held fine while all four were present — and broke the moment the
+ * PII gate withheld name and mobile, because the two survivors then inherited
+ * the two NARROW tracks and the time slot wrapped in 121px when it needed 177px.
+ * A track cannot know which field landed in it. Natural-width flex items adapt
+ * to whatever the gate leaves, which is the one thing this row must do.
+ *
+ * `nowrap` on the value is what makes a break VISIBLE rather than silent: an
+ * over-long value pushes its whole field onto a second line instead of snapping
+ * mid-phone-number. Measured at 13px/700 the longest real values need 517px of
+ * a 596px row, so the four sit comfortably with ~31px of slack. */
+.bkg-grid {
+  display: flex;
+  flex-wrap: wrap;
+  /* 22px, not more: the four fields need 517px of a 595px row, so three gaps of
+     22px land at 583px and leave 12px of slack. 26px would consume all of it and
+     the next long value would wrap a field onto a second line. */
+  gap: 0.75rem 22px;
+}
+.bkg-field { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.bkg-field--wide { margin-top: 1rem; }
+.bkg-label { font-size: 13px; font-weight: 400; color: var(--color-text); }
+/* 13px, not the 15px the mockup implies. At 15px the four columns need 596px of
+   track inside a card the thread caps at ~679px and both the mobile and the time
+   slot wrapped; 14px still wrapped the gated card. */
+.bkg-value { font-size: 13px; font-weight: 700; color: var(--color-text); white-space: nowrap; }
+.bkg-link {
+  font-size: 14px; font-weight: 400;
+  color: var(--color-accent); text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.bkg-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* RTL: right-align the card body. Redundant against `dir="rtl"` on the strip
+   (which already resolves text-align:start to the right) but kept explicit,
+   since the pressable card is a <button> and buttons centre their own text
+   until something says otherwise. */
+.vcards--rtl .vcard-body { text-align: right; }
+
+/* --- showroom choice cards (get_showrooms) --------------------------------
+ *
+ * A stack of full-width pills, each one entirely a button. COMMIT semantics like
+ * the slot chips below, so the same three states apply: live, selected, dead.
+ * The "Select →" affordance is gone — the pill IS the control, and the radio
+ * mark on its leading edge is what says "one of these".
+ */
+.shrs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* Full thread width, like the booking card — the 22rem cap was for a stacked
+     two-line card, and a pill that sets its name and address on ONE line needs
+     the room or the address ellipsises away to nothing. */
+  width: 100%;
+  align-self: flex-start;
+}
+.shrs--rtl { align-self: flex-end; }
+
+.shr {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.shr:hover:not(:disabled) { border-color: var(--line-strong); background: var(--bg-subtle); }
+.shr:active:not(:disabled) { transform: scale(0.98); box-shadow: var(--shadow-e2); }
+.shr:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring); }
+.shr:disabled { cursor: not-allowed; }
+
+/* The location mark and the double bar — neutral ink (graphite when chosen). */
+.shr-mark { display: inline-flex; flex: 0 0 auto; color: var(--ink-secondary); }
+.shr-bars {
+  flex: 0 0 auto;
+  box-sizing: content-box;
+  width: 3px;
+  height: 20px;
+  border-inline: 3px solid var(--ink-secondary);
+  border-radius: 1px;
+}
+
+.shr-name {
+  flex: 0 0 auto;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 15px;
+}
+/* The address shares the line rather than sitting under the name. It is the only
+   thing here allowed to shrink, and it ellipsises rather than wrapping — a pill
+   that grows to two lines stops reading as a pill. */
+.shr-address {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* SELECTED — the branch they chose. Full opacity and a filled mark while its
+   siblings fade, because it is now a fact about the conversation rather than an
+   option. The `--selected:disabled` pair matches .shr:disabled's specificity and
+   wins on source order. */
+.shr--selected,
+.shr--selected:disabled {
+  opacity: 1;
+  cursor: default;
+  background: var(--bg-canvas);
+  border-color: var(--ink-action);
+  box-shadow: inset 0 0 0 1px var(--ink-action);
+}
+.shr--selected .shr-mark, .shr--selected .shr-bars { color: var(--ink-action); border-color: var(--ink-action); }
+
+/* DEAD — a superseded offer, or one the chat has moved past. Still READABLE
+   (the transcript must stay honest) but no longer a way back in. */
+.shr--dead { opacity: 0.55; }
+
+/* --- slot chips (FR-SL-01) — tappable, up to 3 ---------------------------
+ *
+ * A DAY HEADING OVER A ROW OF TIME PILLS. The chip used to be a two-line card
+ * repeating the day and the place on every offer; those moved into the heading,
+ * leaving the pill to carry the one thing that differs between siblings.
+ *
+ * Grouping is by day AND place — see groupSlotChips. Three slots at one branch
+ * make one group and read exactly as drawn; three across two branches make two
+ * groups rather than one heading silently covering both.
+ */
+.slots {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  max-width: 100%;
+  align-self: flex-start;
+}
+.slots--rtl { align-self: flex-end; }
+
+.slot-group { display: flex; flex-direction: column; gap: 0.65rem; }
+.slot-group-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+
+/* The double-bar mark. Two rules with a gap, built from one element's inline
+   borders (its 3px content box IS the gap) so the pair can never fall out of
+   step — the same construction as the vehicle card's double rule and the booking
+   card's rail. */
+.slot-group-mark {
+  align-self: center;
+  flex: 0 0 auto;
+  box-sizing: content-box;
+  width: 3px;
+  height: 20px;
+  border-inline: 3px solid rgba(198, 201, 207, 1);
+  border-radius: 1px;
+}
+/* Yellow ON THE GROUP HOLDING THE PICK. A settled thread then shows which DAY
+   was chosen, not just which pill — the heading answers from further away. */
+.slot-group-mark--picked { border-inline-color: var(--ink-action); }
+
+.slot-group-day {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--color-text);
+}
+/* The place. Quieter than the day, but present: the pills no longer carry it. */
+.slot-group-where { font-size: 14px; color: var(--color-text-muted); }
+
+.slot-group-times { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+
+/* THE PILL — time only. Fully rounded, no border; the fill is the shape. */
+/* Available (default): white with a strong hairline; graphite text. */
+.slot-chip {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.slot-chip:hover:not(:disabled) { background: var(--bg-sunken); border-color: var(--ink-action); }
+.slot-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring);
+}
+/* Taken / failed: quiet sunken pill, struck through, non-interactive. */
+.slot-chip:disabled {
+  cursor: not-allowed;
+  background: var(--bg-sunken); border-color: var(--line-hairline);
+  color: var(--ink-disabled); text-decoration: line-through;
+}
+
+/* Locked by you (selected): graphite fill, white ink — the pick the customer
+   made stays unmistakable even when the settled row is otherwise disabled. */
+.slot-chip--selected,
+.slot-chip--selected:disabled {
+  cursor: default;
+  background: var(--ink-action);
+  border-color: var(--ink-action);
+  color: var(--ink-on-action);
+  text-decoration: none;
+}
+
+/* --- Option chips (agent-declared answers, 2026-08-14) -------------------- */
+/*
+ * Tappable answers to a question Aisha asked in the bubble above. Built on the
+ * slot-chip shape on purpose: the thread should have ONE visual grammar for
+ * "you can tap this", so a customer who has tapped a time already knows what
+ * these are.
+ *
+ * Two differences from .slot-chip, both deliberate:
+ *   • text WRAPS rather than nowrap — a label is words ("Bring the car to me"),
+ *     not a time, and on a narrow phone an unwrappable sentence would either
+ *     overflow the thread or force a horizontal scroll.
+ *   • a spent chip is NOT struck through. A struck-out "No" reads as an answer
+ *     that was rejected; these were simply not chosen.
+ */
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  max-width: 100%;
+  align-self: flex-start;
+}
+.options--rtl { align-self: flex-end; }
+
+.option-chip {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.25;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.option-chip:hover:not(:disabled) { background: var(--bg-sunken); border-color: var(--ink-action); }
+.option-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring);
+}
+/* Not chosen, or the row is spent: quiet and inert, but never struck through. */
+.option-chip:disabled {
+  cursor: not-allowed;
+  background: var(--bg-sunken);
+  border-color: var(--line-hairline);
+  color: var(--ink-disabled);
+}
+/* The answer they gave — graphite fill, white ink, same as a locked slot. */
+.option-chip--selected,
+.option-chip--selected:disabled {
+  cursor: default;
+  background: var(--ink-action);
+  border-color: var(--ink-action);
+  color: var(--ink-on-action);
+}
+
+/* --- Vehicle detail dialog (rule 18) ------------------------------------- */
+/* Opened by a card's "View more". Browsing costs no tokens, so this is pure UI:
+   it renders data from /api/vehicles/{id} and never narrates. Mirrors for
+   Arabic via dir="rtl" on .vdlg — logical properties (inline-start/end) do the
+   flipping, so there is no second RTL stylesheet to keep in sync. */
+
+.vdlg-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 22, 26, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.vdlg {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  width: min(30rem, 100%);
+  /* Phones first — QR attendees are on their own devices. The panel scrolls
+     inside itself so the page behind never does. */
+  max-height: min(85vh, 44rem);
+  overflow-y: auto;
+  padding: 1rem 1.15rem 1.25rem;
+  font-family: var(--font-body);
+}
+
+.vdlg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.vdlg-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.vdlg-close {
+  border: none;
+  background: transparent;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 0 0.25rem;
+}
+
+.vdlg-img {
+  width: 100%;
+  border-radius: 10px;
+  background: var(--color-surface);
+  margin-bottom: 0.9rem;
+}
+
+.vdlg-img--empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  color: var(--color-border);
+  font-size: 2rem;
+}
+
+.vdlg-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.vdlg-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.4rem;
+}
+
+.vdlg-row-label {
+  color: var(--color-text-muted);
+}
+
+.vdlg-row-value {
+  color: var(--color-text);
+  text-align: end;
+}
+
+.vdlg-section {
+  margin-top: 1rem;
+}
+
+.vdlg-section-title {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin: 0 0 0.4rem;
+}
+
+/* Bullets, not markdown: rule 17 governs what the AGENT writes, and this panel
+   is UI rather than speech. The list marker sits inline-start so it flips. */
+.vdlg-features,
+.vdlg-showrooms {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.vdlg-features li,
+.vdlg-showrooms li {
+  margin-bottom: 0.25rem;
+}
+
+.vdlg-book {
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.7rem 1rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vdlg-note {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  padding: 1rem 0;
+}
+
+.vdlg-note--error {
+  color: var(--color-error);
+}
+
+/* Read-aloud: synthesising. The first play of a message waits on the vendor
+   (~1s); the server caches the clip, so every replay after it is instant. */
+.speak-btn--loading { opacity: 0.75; cursor: progress; animation: speak-spin 0.9s linear infinite; }
+@keyframes speak-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .speak-btn--loading { animation: none; } }
+
+/* Nearest-showroom feature: clickable links + a "Get directions" chip inside
+   chat bubbles, and the location (GPS) composer button reuses the mic styling. */
+.msg-link {
+  color: inherit;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.dir-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-top: 0.45em;
+  padding: 0.4em 0.8em;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dir-link:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Post-chat agent-feedback card (shown when the conversation closes). */
+.fb-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  /* border-box so the 100% width + padding + border stays INSIDE the dock; with
+     content-box the padding/border were added on top of 100%, overhanging the
+     message column on the right. */
+  box-sizing: border-box;
+  padding: 0.9rem 1rem 1rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.02);
+}
+.fb-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.fb-stars {
+  display: flex;
+  gap: 0.25rem;
+}
+.fb-star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 2rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  color: var(--line-strong);
+  transition: color 0.1s ease, transform 0.1s ease;
+}
+.fb-star:hover {
+  transform: scale(1.12);
+}
+.fb-star--on {
+  color: var(--ink-action);
+}
+.fb-word {
+  margin: 0;
+  min-height: 1.1em;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--ink-primary);
+}
+.fb-comment {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.fb-submit {
+  margin-top: 0.25rem;
+}
+.fb-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.fb-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #c0392b;
+}
+.fb-card--done {
+  flex-direction: row;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #1e8e3e;
+}
+.fb-done-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: #1e8e3e;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+/* Nearest-showroom rich card (distance · time · directions · select). */
+.shrs--nearest { display: flex; flex-direction: column; gap: 0.5rem; }
+/* Nearest-showroom card (rich, transactional): white with a hairline, graphite
+   Select, quiet Get-directions; distance/time is muted supporting info (never
+   amber — saturation means status, and this is neither). */
+.nsr {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 14px;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+.nsr--dead { opacity: 0.55; }
+.nsr--selected { border-color: var(--ink-action); box-shadow: inset 0 0 0 1px var(--ink-action); }
+.nsr-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.nsr-name { font-family: var(--font-sans); font-weight: 600; font-size: 16.5px; letter-spacing: -0.01em; color: var(--ink-primary); }
+.nsr-meta { font-size: 13.5px; font-weight: 500; color: var(--ink-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.nsr-address { margin: 0; font-size: 13.5px; color: var(--ink-secondary); line-height: 1.45; }
+.nsr-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; flex-wrap: wrap; }
+.nsr-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-hairline);
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.nsr-dir:hover { background: var(--bg-sunken); border-color: var(--line-strong); }
+.nsr-select {
+  margin-inline-start: auto;
+  padding: 10px 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--ink-action);
+  color: var(--ink-on-action);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 15px;
+  cursor: pointer;
+}
+.nsr-select:hover:not(:disabled) { background: var(--ink-action-hover); }
+.nsr-select:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring); }
+.nsr-select:disabled { cursor: default; background: var(--bg-sunken); border: 1px solid var(--line-hairline); color: var(--ink-disabled); }
+.nsr--selected .nsr-select { background: var(--ink-action); color: var(--ink-on-action); }
+
+/* Contextual "Use my current location" button (shown when Aisha asks where you are). */
+.useloc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 10px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+}
+.useloc-btn:hover { background: var(--bg-sunken); border-color: var(--ink-action); }
+.useloc-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-ring); }
+.useloc-btn:disabled { opacity: 0.5; cursor: default; }
+
+
+/* --- Move between cars inside the detail panel (2026-08-15) --------------- */
+/* Sits between the title and the close button. Quiet: this is navigation, not
+   the reason the panel is open. `margin-inline-start: auto` rather than a left
+   margin so it lands correctly in Arabic without a second rule. */
+.vdlg-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-inline-start: auto;
+  margin-inline-end: 0.5rem;
+}
+.vdlg-navbtn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-strong, #d7dbe0);
+  border-radius: 6px;
+  background: var(--bg-canvas, #fff);
+  color: var(--ink-primary, #1f2937);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.vdlg-navbtn:hover { background: var(--bg-sunken, #f3f4f6); border-color: var(--ink-action, #9ca3af); }
+.vdlg-navbtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-canvas, #fff), 0 0 0 4px var(--focus-ring, #b58b3a);
+}
+/* Tabular figures so "1 / 3" does not shift width as the customer steps along. */
+.vdlg-navpos {
+  font-size: 12px;
+  color: var(--ink-mute, #6b7280);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.6rem;
+  text-align: center;
+}
+
+
+/* --- Two Jetours side by side (2026-08-15) -------------------------------- */
+/* Quiet by design. The only emphasis in the whole card is on the rows that
+   DIFFER, because that is the entire job: a customer holding six numbers in
+   their head wants the two that are not the same. */
+.cmp {
+  align-self: flex-start;
+  /* FLEX ITEMS SHRINK BY DEFAULT, and .chat-thread is a flex COLUMN — so without
+     this the card collapsed to 2px while its 124px table overflowed under the
+     `overflow: hidden` below. The rendered result was a hairline: present in the
+     DOM, correct in the data, invisible on screen. */
+  flex: 0 0 auto;
+  max-width: 100%;
+  border: 1px solid var(--line-hairline, #e5e7eb);
+  border-radius: 12px;
+  background: var(--bg-canvas, #fff);
+  overflow: hidden;
+}
+.cmp--rtl { align-self: flex-end; }
+
+.cmp-heads { display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--line-hairline, #e5e7eb); }
+.cmp-head { background: var(--bg-canvas, #fff); padding: 10px 10px 8px; text-align: center; }
+.cmp-img { width: 100%; height: 74px; object-fit: cover; border-radius: 6px; display: block; }
+.cmp-img--empty { display: grid; place-items: center; background: var(--bg-sunken, #f3f4f6);
+  color: var(--ink-disabled, #9ca3af); }
+.cmp-name { display: block; margin-top: 6px; font-size: 13px; font-weight: 600;
+  color: var(--ink-primary, #1f2937); }
+
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cmp-row > * { padding: 7px 9px; border-top: 1px solid var(--line-hairline, #e5e7eb); }
+.cmp-label { text-align: start; font-weight: 500; color: var(--ink-mute, #6b7280);
+  white-space: nowrap; }
+.cmp-val { text-align: center; color: var(--ink-primary, #1f2937);
+  font-variant-numeric: tabular-nums; }
+/* The one emphasis in the card. A tint, not bold — bold on half the table reads
+   as shouting, and these are still just facts. */
+.cmp-row--differs .cmp-val { background: var(--bg-sunken, #f7f5f0); font-weight: 600; }
+
+/* ------------------------------------------------------------------ */
+/* Interior photos.                                                    */
+/*                                                                     */
+/* In the CHAT they cycle inside the vehicle card's own image area     */
+/* (.vcard-carousel below) so the answer costs the thread no extra     */
+/* height. The photo STRIP survives only inside the vehicle dialog.    */
+/* ------------------------------------------------------------------ */
+.int-gallery {
+  display: flex;
+  gap: 0.6rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.int-gallery::-webkit-scrollbar { display: none; }
+.int-gallery > * { scroll-snap-align: start; flex: 0 0 auto; }
+
+.int-gallery-img {
+  border-radius: 10px;
+  border: 1px solid var(--line-hairline);
+  background: var(--color-surface);
+  object-fit: cover;
+}
+
+.int-gallery--dialog {
+  align-self: stretch;
+  margin-bottom: 0.9rem;
+}
+.int-gallery--dialog .int-gallery-img { height: 120px; width: auto; }
+
+/* The in-card carousel: a relative wrapper AROUND the card (the card is a
+   <button>, so the arrows cannot live inside it — invalid HTML). Arrows and
+   dots overlay the image area only; the card underneath stays fully pressable
+   everywhere else. */
+.vcard-carousel {
+  position: relative;
+  flex: 0 0 auto;
+}
+.vcard-carousel-nav {
+  position: absolute;
+  /* The image area: .vcard-img is 140px tall inside the card's 1px border +
+     padding — the nav band covers it and nothing below it. */
+  top: 1px;
+  left: 1px;
+  right: 1px;
+  height: 134px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  pointer-events: none; /* only the arrows catch taps, never the band */
+}
+.vcard-carousel-arrow {
+  pointer-events: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 20, 20, 0.45);
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  padding-bottom: 2px; /* optical centring of the chevron glyph */
+}
+.vcard-carousel-arrow:hover { background: rgba(20, 20, 20, 0.65); }
+.vcard-carousel-dots {
+  position: absolute;
+  top: 122px; /* just inside the bottom edge of the 134px image */
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.vcard-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+}
+.vcard-dot--on { background: #fff; }
+/* ------------------------------------------------------------------ */
+/* Vehicle dialog, showcase redesign (2026-08-29): full-bleed hero     */
+/* carousel with the name and price on a scrim, floating controls,     */
+/* stat tiles, colour pills, trim rows, one big commit button.         */
+/* ------------------------------------------------------------------ */
+.vdlg {
+  padding: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-e3);
+}
+/* The plain bar survives only for loading/error. */
+.vdlg > .vdlg-head { padding: 1rem 1.15rem 0; }
+.vdlg > .vdlg-note { padding: 0 1.15rem 1.25rem; }
+
+.vdlg-hero {
+  position: relative;
+  background: var(--bg-sunken);
+}
+.vdlg-hero-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  cursor: pointer;
+  background: var(--bg-sunken);
+}
+.vdlg-hero-img--empty {
+  display: grid;
+  place-items: center;
+  color: var(--line-strong);
+  font-size: 2rem;
+  cursor: default;
+}
+/* Legibility scrim: a whisper at the top for the floating controls, a firm
+   graphite ramp at the bottom under the caption. Never blocks taps. */
+.vdlg-hero-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(12, 13, 16, 0.35) 0%,
+    rgba(12, 13, 16, 0) 26%,
+    rgba(12, 13, 16, 0) 48%,
+    rgba(12, 13, 16, 0.82) 100%
+  );
+}
+
+.vdlg-close--float {
+  position: absolute;
+  top: 10px;
+  inset-inline-end: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 20, 20, 0.45);
+  color: #fff;
+  font-size: 1.25rem;
+  padding: 0;
+}
+.vdlg-close--float:hover { background: rgba(20, 20, 20, 0.65); }
+
+.vdlg-nav--float {
+  position: absolute;
+  top: 10px;
+  inset-inline-start: 10px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(20, 20, 20, 0.45);
+  border-radius: var(--radius-full);
+  padding: 2px 6px;
+}
+.vdlg-nav--float .vdlg-navbtn,
+.vdlg-nav--float .vdlg-navpos {
+  color: #fff;
+  background: transparent;
+  border: none;
+}
+.vdlg-nav--float .vdlg-navbtn { cursor: pointer; font-size: 1.05rem; padding: 0 4px; }
+.vdlg-nav--float .vdlg-navpos { font-size: 0.78rem; opacity: 0.85; }
+
+/* Frame arrows: vertically centred over the photo, clear of the caption. */
+.vdlg-carousel-nav {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
+}
+.vdlg-carousel-nav .vcard-carousel-arrow {
+  pointer-events: auto;
+  width: 32px;
+  height: 32px;
+  font-size: 1.25rem;
+}
+
+.vdlg-hero-caption {
+  position: absolute;
+  bottom: 12px;
+  inset-inline: 14px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+.vdlg-hero-name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+.vdlg-hero-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 17rem;
+}
+.vdlg-hero-price {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink-primary);
+  font-weight: 700;
+  font-size: 0.92rem;
+  border-radius: var(--radius-full);
+  padding: 0.35rem 0.8rem;
+  white-space: nowrap;
+}
+
+.vdlg-content {
+  padding: 0.9rem 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.vdlg-content .int-gallery--dialog { margin-bottom: 0; }
+
+.vdlg-thumb {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+.vdlg-thumb--on { border-color: var(--ink-action); }
+.vdlg-thumb .int-gallery-img { height: 64px; width: auto; }
+
+.vdlg-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.vdlg-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.4rem;
+  text-align: center;
+}
+.vdlg-stat-value {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink-primary);
+}
+.vdlg-stat-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-secondary);
+}
+
+.vdlg-section { margin: 0; }
+.vdlg-section-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-secondary);
+}
+
+.vdlg-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.vdlg-pill {
+  border: 1px solid var(--line-hairline);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-full);
+  padding: 0.28rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--ink-primary);
+}
+
+.vdlg-trims { display: flex; flex-direction: column; gap: 0.5rem; }
+.vdlg-trim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--line-hairline);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem;
+}
+.vdlg-trim-name { font-weight: 600; font-size: 0.9rem; }
+.vdlg-trim-price { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
+.vdlg-trim-soon {
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+
+.vdlg-features {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.vdlg-features li {
+  position: relative;
+  padding-inline-start: 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.vdlg-features li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.5em;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--brass-line);
+}
+
+.vdlg-book {
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--ink-action);
+  color: var(--ink-on-action);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.85rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-e2);
+}
+.vdlg-book:hover { background: var(--ink-action-hover); }

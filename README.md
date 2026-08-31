@@ -77,6 +77,11 @@ Merging into `test`, `elite-prod`, or `general-prod` triggers
 that branch's Azure VM over SSH, runs `scripts/remote-deploy.sh` to install
 dependencies and restart services, then polls `/health` until it returns 200.
 
+The backend serves liveness at **`/health`, `/` and `/api/health`** — three paths,
+one check. Two deploy scripts poll two different ones, so a test reads the paths
+out of the scripts and asserts the app routes each of them
+(`backend/tests/test_health.py`).
+
 Each target reads its own repository secrets:
 
 | Secret                  | Purpose                                    |
