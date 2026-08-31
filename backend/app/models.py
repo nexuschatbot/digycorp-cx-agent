@@ -98,6 +98,16 @@ class Speaker(str, enum.Enum):
     # Aisha's words), the console must not count it as her turn, and the client
     # renders it as a muted system line, never in her bubble.
     system = "system"
+    # A human operator typing from the admin console during a takeover (human
+    # takeover, 2026-08-31). Not `agent`: these are a person's words, so
+    # read-aloud must refuse them and the console must not count them as
+    # Aisha's turns. Not `system` either: they render as real bubbles in the
+    # customer's thread, with the operator's name, never as a muted marker.
+    #
+    # MIGRATION NOTE — same as Actor.admin: SAEnum is a NATIVE enum on
+    # Postgres, so this value needs ALTER TYPE (see the Alembic revision that
+    # added it). On SQLite it is a VARCHAR and nothing is required.
+    staff = "staff"
 
 
 class Actor(str, enum.Enum):

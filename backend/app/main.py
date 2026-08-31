@@ -27,6 +27,7 @@ from app.api import (
     insights_router,
     intents_router,
     speech_router,
+    takeover_router,
     vehicles_router,
     voice_router,
     whatsapp_router,
@@ -195,6 +196,12 @@ app.include_router(call_router)
 # GET/POST /api/conversation/... — reload-resume + "New chat" close (rule 19).
 # The DIRECT path: same services as the agent's tools, no LLM in the loop.
 app.include_router(conversation_router)
+
+# WS /api/takeover/{session_id} — human takeover of an escalated session
+# (2026-08-31). The second WebSocket after the call gateway, and for the same
+# reason SSE could not serve: a human reply must reach a customer who is only
+# waiting, holding no request open. No LLM anywhere on this path.
+app.include_router(takeover_router)
 
 # GET /api/vehicles/{id} — full detail for the UI dialog, both languages.
 # Also the DIRECT path: browsing a car is fully determined by its id, so it

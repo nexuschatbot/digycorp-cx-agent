@@ -44,11 +44,13 @@ REQUEST_HUMAN_CALLBACK_SCHEMA = {
         "blank. If the customer declines to give a number, you may still book them "
         "later, but a callback cannot be arranged without one.\n\n"
         "This does not end the conversation and it is not the last word: once it "
-        "is logged, tell the customer plainly that a specialist will follow up, "
-        "give them the helpline from the result so they also have a way to reach "
-        "us, and then offer to keep helping with the test drive itself. Never "
-        "invent a policy, a price, or a promise on the human's behalf — you are "
-        "passing it on, not answering it."
+        "is logged, tell the customer plainly that you have passed it to our "
+        "team, and that a colleague may join this very chat to help them "
+        "directly, or arrange a callback instead — 'may', never a promise of "
+        "which or of when. Give them the helpline from the result so they also "
+        "have a way to reach us, and then offer to keep helping with the test "
+        "drive itself. Never invent a policy, a price, or a promise on the "
+        "human's behalf — you are passing it on, not answering it."
     ),
     "input_schema": {
         "type": "object",

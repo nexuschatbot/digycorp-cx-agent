@@ -34,6 +34,7 @@ from typing import Callable
 from app.agent import StreamAborted, build_config, build_graph, new_sqlite_checkpointer
 from app.agent.router import route as _route
 from app import config as _config
+from app.services import takeover as takeover_service
 from app.services import turn_trace as _turn_trace
 from app import lang as lang_service
 from app.config import AGENT_CHECKPOINT_PATH
@@ -249,7 +250,7 @@ class TurnResult:
     just streamed as text, and `closed` to end the call after the sign-off.
     """
 
-    status: str  # "done" | "aborted" | "error"
+    status: str  # "done" | "aborted" | "error" | "refused" (human takeover)
     reply: str = ""
     lang: str | None = None
     turn_id: int | None = None
@@ -369,6 +370,17 @@ def run_turn(
     # a note ABOUT that rather than invented words (see _VOICE_FAILED_NOTE).
     graph_message = _VOICE_FAILED_NOTE if voice_failed else message
     try:
+        # HUMAN TAKEOVER GATE (2026-08-31). Once an admin has taken this session
+        # over, the AI is out of it for good — on EVERY channel, which is why
+        # the gate lives here in the shared turn and not in the chat route. The
+        # customer client switches its sends to the takeover WebSocket, so this
+        # is the belt behind that: a straggler POST (an old tab, the voice
+        # gateway) must not run the graph, write a turn, or burn a token.
+        # Nothing is persisted; the WS path owns takeover messages.
+        if takeover_service.state(db, session_id=session_id)["taken_over"]:
+            on_event("taken_over", {})
+            return TurnResult(status="refused")
+
         # Transcript: the user turn, in native script (distinct from checkpoint).
         # SKIPPED on a handoff kickoff — the "message" is a server-authored
         # directive, not the customer's words, so there is no customer bubble

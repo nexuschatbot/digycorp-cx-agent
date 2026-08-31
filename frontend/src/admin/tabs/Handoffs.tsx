@@ -18,6 +18,7 @@
 
 import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import MenuItem from '@mui/material/MenuItem'
 import Pagination from '@mui/material/Pagination'
@@ -33,6 +34,7 @@ import Typography from '@mui/material/Typography'
 import { fetchHandoffs, type HandoffRow } from '../adminApi'
 import { useList } from '../useList'
 import { CardSkeletons, EmptyState, ErrorState, TopBar } from '../components/ui'
+import TakeoverDialog from '../components/TakeoverDialog'
 
 /** Elapsed time, in the words an operator would use. */
 function ageOf(ts: string | null): { label: string; hours: number } {
@@ -61,6 +63,8 @@ export default function Handoffs() {
   const filters = useMemo(() => ({ reason }), [reason])
   const list = useList<HandoffRow>(fetchHandoffs, filters, 25)
   const pageCount = Math.ceil(list.total / list.limit)
+  // The row whose live-chat dialog is open (human takeover, 2026-08-31).
+  const [takingOver, setTakingOver] = useState<HandoffRow | null>(null)
 
   return (
     <Box>
@@ -103,6 +107,7 @@ export default function Handoffs() {
                 <TableCell>Reason</TableCell>
                 <TableCell>What they asked about</TableCell>
                 <TableCell>Session</TableCell>
+                <TableCell>Live chat</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -150,12 +155,52 @@ export default function Handoffs() {
                         </Typography>
                       </Tooltip>
                     </TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                      {/* Human takeover (2026-08-31): step into the chat as a
+                          person — the AI is refused from that moment on. A row
+                          someone holds says who; opening it again rejoins.
+                          THE BUTTON IS EARNED, NOT DEFAULT: only a chat that is
+                          still open AND where the customer explicitly asked for
+                          a person (reason explicit_request) offers a live
+                          takeover. Every other row — closed chats, and
+                          escalations Aisha raised herself for price, finance or
+                          a complaint — is a callback promise, and showing a
+                          dead-end button on those would only invite refusals. */}
+                      {h.taken_over_by ? (
+                        <Chip
+                          size="small"
+                          color={h.session_active ? 'success' : 'default'}
+                          variant="outlined"
+                          label={h.session_active
+                            ? `Held by ${h.taken_over_by}`
+                            : `Closed — was ${h.taken_over_by}'s`}
+                          onClick={() => setTakingOver(h)}
+                        />
+                      ) : h.session_active && h.reason === 'explicit_request' ? (
+                        <Button size="small" variant="outlined"
+                                onClick={() => setTakingOver(h)}>
+                          Take over
+                        </Button>
+                      ) : (
+                        <Typography variant="caption" color="text.disabled">
+                          {h.session_active ? 'callback only' : 'chat closed'}
+                        </Typography>
+                      )}
+                    </TableCell>
                   </TableRow>
                 )
               })}
             </TableBody>
           </Table>
         </Box>
+      )}
+
+      {takingOver && (
+        <TakeoverDialog
+          row={takingOver}
+          onClose={() => setTakingOver(null)}
+          onChanged={list.reload}
+        />
       )}
 
       {pageCount > 1 && (

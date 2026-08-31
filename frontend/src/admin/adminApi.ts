@@ -186,6 +186,14 @@ export interface HandoffRow {
   customer_id: number | null
   customer_name: string | null
   customer_mobile: string | null
+  /** Human takeover (2026-08-31): who holds this conversation live, if anyone.
+   *  Null until an admin takes it over; then their display name, so the queue
+   *  shows a claimed row as claimed — and by whom. */
+  taken_over_by: string | null
+  taken_over_ts: string | null
+  /** The conversation is still open. A closed chat has nobody in it to talk
+   *  to, so the queue offers no live takeover on it — callback only. */
+  session_active: boolean
 }
 
 /** One step of one multi-agent turn. Mirrors orchestrator/run.trace_steps. */

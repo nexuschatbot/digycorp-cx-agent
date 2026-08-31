@@ -303,9 +303,24 @@ def list_vehicles(
 # "was this dealt with", and the first thing to go stale.
 
 
-def _handoff_row(event: AuditEvent, customer: Customer | None) -> dict:
+def _handoff_row(
+    event: AuditEvent,
+    customer: Customer | None,
+    takeover: dict | None = None,
+    session_active: bool = True,
+) -> dict:
     payload = event.payload or {}
     return {
+        # Human takeover (2026-08-31): who holds this conversation live, if
+        # anyone — the first "later audit row saying a human acted" the derived
+        # DONE above anticipated. Null when nobody has taken it yet.
+        "taken_over_by": (takeover or {}).get("admin_name"),
+        "taken_over_ts": (takeover or {}).get("ts"),
+        # Is the conversation still open? Derived from the same trail (the
+        # close marker in the intent rows), so the queue can withhold "Take
+        # over" from a chat nobody is in any more — a closed session is
+        # callback-only, whatever its reason.
+        "session_active": session_active,
         "audit_id": event.id,
         "ts": event.ts.isoformat() if event.ts else None,
         "session": event.session,
@@ -363,8 +378,44 @@ def list_handoffs(
         )
     }
 
+    # One query for every takeover AND every close on the page, not one per
+    # row — both facts live in the same `intent` rows, so one scan reads both.
+    # Payload scan in Python, the same portable-JSON call state() itself makes.
+    from app.services.conversation import CLOSE_ACTION
+    from app.services.takeover import TAKEOVER_ACTION
+
+    sessions = {r.session for r in page}
+    takeovers: dict[str, dict] = {}
+    closed_sessions: set[str] = set()
+    if sessions:
+        for ev in db.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.session.in_(sessions),
+                AuditEvent.type == AuditType.intent,
+            )
+            .order_by(AuditEvent.ts.asc(), AuditEvent.id.asc())
+        ).all():
+            p = ev.payload or {}
+            action = p.get("action")
+            if action == TAKEOVER_ACTION and ev.session not in takeovers:
+                takeovers[ev.session] = {
+                    "admin_name": p.get("admin_name"),
+                    "ts": ev.ts.isoformat() if ev.ts else None,
+                }
+            elif action == CLOSE_ACTION:
+                closed_sessions.add(ev.session)
+
     return _envelope(
-        [_handoff_row(r, customers.get((r.payload or {}).get("customer_id"))) for r in page],
+        [
+            _handoff_row(
+                r,
+                customers.get((r.payload or {}).get("customer_id")),
+                takeovers.get(r.session),
+                session_active=r.session not in closed_sessions,
+            )
+            for r in page
+        ],
         total,
         lim,
         off,

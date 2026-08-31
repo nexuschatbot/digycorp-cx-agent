@@ -135,6 +135,20 @@ export const LIFECYCLE_LINES: Record<Lang, { nudge: string; closing: string }> =
   },
 }
 
+/** Human takeover (2026-08-31): the muted line announcing a person joined the
+ *  chat. Client-side and ephemeral like the idle-ladder lines above — the
+ *  FACT (the takeover audit row, the staff turns) lives server-side; this line
+ *  is only the moment being narrated, so it is never persisted or replayed.
+ *  A function of the name because both languages inflect around it. */
+export const TAKEOVER_LINES: Record<Lang, { joined: (name: string) => string }> = {
+  en: {
+    joined: (name) => `${name} from Elite has joined the chat — you're now talking with a person.`,
+  },
+  ar: {
+    joined: (name) => `انضم ${name} من إيليت إلى المحادثة — أنت الآن تتحدث مع شخص.`,
+  },
+}
+
 /** Voice-note chrome (2026-07-21). CONTROLS AND STATUS ONLY — never anything
  *  Aisha would say. When a recording cannot be transcribed she answers in her
  *  own words, in the thread's own language, because a failure mid-conversation
