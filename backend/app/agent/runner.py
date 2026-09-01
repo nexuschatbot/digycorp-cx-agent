@@ -359,6 +359,11 @@ def run_turn(
     card_rows: list[dict] = []
     # Anchors already drawn this turn — see the tool_event branch below.
     drawn_anchors: set[str] = set()
+    # Per-turn token totals for turn_trace — summed across every model CALL in
+    # the turn (the tool loop makes 2-3), because the columns answer "what did
+    # this turn cost", not "what did one call cost". The per-call detail stays
+    # in the `agent usage` log line.
+    usage_totals = {"prompt": 0, "output": 0, "cache_read": 0, "calls": 0}
     # EVERY tool call this turn, in order, duplicates kept — for turn_trace.
     # This used to be derived from card_rows, which records only the calls
     # that DREW A CARD: every other tool this system ever called was invisible
@@ -608,6 +613,11 @@ def run_turn(
                 if chunk.get("agent"):
                     event["agent"] = chunk["agent"]
                 on_event("tool_event", event)
+            elif kind == "usage":
+                usage_totals["prompt"] += int(chunk.get("prompt_total") or 0)
+                usage_totals["output"] += int(chunk.get("output") or 0)
+                usage_totals["cache_read"] += int(chunk.get("cache_read") or 0)
+                usage_totals["calls"] += 1
             elif kind == "cascade":
                 # Which specialist took which brief, how it was chosen, how long
                 # it took and whether it worked. Appended rather than assigned:
@@ -696,6 +706,12 @@ def run_turn(
             # unchanged.
             steps=cascade_steps or None,
             agent_response=reply,
+            # Turn totals from the `usage` stream chunks — see _log_usage.
+            # None, not 0, when no usage arrived: absence must read as "not
+            # recorded", never as a free turn.
+            tokens_in=usage_totals["prompt"] if usage_totals["calls"] else None,
+            tokens_out=usage_totals["output"] if usage_totals["calls"] else None,
+            cache_hits=usage_totals["cache_read"] if usage_totals["calls"] else None,
             router_latency_ms=router_ms,
             latency_ms=int((time.perf_counter() - turn_started) * 1000),
         )
