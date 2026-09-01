@@ -6,6 +6,13 @@
 > section below**, all found on 31 Aug by putting the app on a real server for the first
 > time since the port. The pipeline itself is now green end to end —
 > [DEPLOYMENT.md](DEPLOYMENT.md).
+> **#1 and #6 are fixed**, and the entries are kept rather than deleted — #6
+> because how a route and a deploy script stayed individually correct for months
+> is the part worth remembering, #1 because the shape of the fix (name the gap,
+> don't ask the model harder) is the lesson this repo keeps re-learning. **Six
+> open here, plus five new ones in the deployment section below**, all found on
+> 31 Aug by putting the app on a real server for the first time since the port.
+> The pipeline itself is now green end to end — [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Everything here was found by **running the cascade end to end in a browser** on
 31 August 2026, after the wiring work described in
@@ -25,6 +32,8 @@ left**. Ordered by what it costs, not by how hard it is.
 |---|---|---|---|
 | 1 | [A specialist narrates instead of proposing the write](#1-a-specialist-narrates-instead-of-proposing-the-write) | bookings | prompt + guard |
 | 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) — levers built, `fix/latency-floor`; run still owed | ~15s turns | measurement first |
+| ~~1~~ | [~~A specialist narrates instead of proposing the write~~](#1-a-specialist-narrates-instead-of-proposing-the-write) — **FIXED**, `fix/write-gap` | bookings | done |
+| 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) | ~15s turns | measurement first |
 | 3 | [`MAX_CASCADES_PER_TURN = 2` is an unproven guess](#3-max_cascades_per_turn--2-is-an-unproven-guess) | answer quality, unknown | one re-run |
 | ~~4~~ | [~~The card strip follows search rank, not the answer~~](#4-the-card-strip-follows-search-rank-not-the-answer) — **FIXED** upstream, `8776775` (untested) | wrong car on screen | done |
 | 5 | [`.env` leaks flags into pytest — 10 failures](#5-env-leaks-flags-into-pytest--10-failures) | CI trust | small |
@@ -71,6 +80,30 @@ paragraph.
 
 **This is the one to take first.** Everything else on this list is latency or
 tidiness; this one loses bookings.
+
+**FIXED on `fix/write-gap`.** The structural candidate above, built as
+described — two halves, both in assembly code, no ported prose touched:
+
+- **The guard** (`turn.py::compose_input`): a step whose card may propose
+  writes, that comes back `ok` with `proposals=0` and **no structured
+  findings** — only a `_note` or bare evidence — is appended to `unavailable`
+  as `status: "no_action"`. The detail tells Aisha the three things she needs:
+  nothing was written whatever the note says, never confirm it, and re-brief
+  **once, naming the exact action** — or offer a person plainly. Both live
+  rounds match the signature (round one was note-only, round two evidence-only);
+  a read brief answered with data (`{"slot_id": 12}`) does not, so "what times
+  on Sunday" stays clean, and the total-silence case keeps its existing
+  `empty` name — one gap per step, never two.
+- **The contract** (`subagent.py::PROPOSALS_INSTRUCTION`): the specialist is
+  now told that an asked-for action it is not proposing needs a reason in its
+  note — "prose about booking is not a booking". This is the orchestrator's
+  T5-authored clause, not card prose, so migration rule zero is intact.
+
+Seven tests in `tests/test_orchestrator.py` pin the signature from both sides
+(fires on the two live shapes; stays quiet for read answers, read-only agents,
+proposing steps, and the empty case). What is deliberately NOT here: no prompt
+lever pulled on `testdrive/v1.md` — the three pulls recorded above were the
+evidence that a fourth would not help.
 
 ---
 
