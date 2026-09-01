@@ -16,6 +16,14 @@
 
 pytest==8.3.4
 
+# Parallel test execution (2026-09-01). The CI backend job was ~10 minutes and
+# 534 of those seconds were pytest alone — checkout and install are already
+# cached and fast. The suite is parallel-safe by construction (in-memory
+# sqlite per process, per-test tmp checkpoint paths); the one latent race it
+# surfaced was the harness's own shared StaticPool connection, fixed in
+# test_call_realtime_mode.rt_env, not papered over here.
+pytest-xdist==3.8.0
+
 # Lint, run by .github/workflows/ci.yml. Not in the source repo's dev deps —
 # added here because this repo's CI gates on `ruff check .`.
 ruff==0.8.4
