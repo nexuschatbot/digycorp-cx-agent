@@ -1,9 +1,9 @@
 # Open issues — carried out of `multi-agent-migration`
 
-> **#6 and #7 are fixed**, and the entries are kept rather than deleted because
-> how each pair of individually-correct pieces disagreed is the part worth
-> remembering. **Six open here, plus five new ones in the deployment section
-> below**, all found on 31 Aug by putting the app on a real server for the first
+> **#4, #6 and #7 are fixed**, and the entries are kept rather than deleted
+> because how each pair of individually-correct pieces disagreed is the part
+> worth remembering. **Five open here, plus five new ones in the deployment
+> section below**, all found on 31 Aug by putting the app on a real server for the first
 > time since the port. The pipeline itself is now green end to end —
 > [DEPLOYMENT.md](DEPLOYMENT.md).
 
@@ -26,7 +26,7 @@ left**. Ordered by what it costs, not by how hard it is.
 | 1 | [A specialist narrates instead of proposing the write](#1-a-specialist-narrates-instead-of-proposing-the-write) | bookings | prompt + guard |
 | 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) — levers built, `fix/latency-floor`; run still owed | ~15s turns | measurement first |
 | 3 | [`MAX_CASCADES_PER_TURN = 2` is an unproven guess](#3-max_cascades_per_turn--2-is-an-unproven-guess) | answer quality, unknown | one re-run |
-| 4 | [The card strip follows search rank, not the answer](#4-the-card-strip-follows-search-rank-not-the-answer) | wrong car on screen | design |
+| ~~4~~ | [~~The card strip follows search rank, not the answer~~](#4-the-card-strip-follows-search-rank-not-the-answer) — **FIXED** upstream, `8776775` (untested) | wrong car on screen | done |
 | 5 | [`.env` leaks flags into pytest — 10 failures](#5-env-leaks-flags-into-pytest--10-failures) | CI trust | small |
 | ~~6~~ | [~~`/health` 404s, so every deploy fails its health gate~~](#6-health-404s-so-every-deploy-fails-its-health-gate) — **FIXED**, `fix/health-route` | deploys | done |
 | ~~7~~ | [~~Finance's CALLBACK prose instructs a write it cannot propose~~](#7-finances-callback-prose-instructs-a-write-it-cannot-propose) — **FIXED**, `fix/latency-floor` | a decided buyer stalls | done |
@@ -183,6 +183,23 @@ around it.
 becomes an output of the answer rather than a side effect of the lookups — and
 that is a change to what a turn emits, with a frontend contract on the other end
 of it. Too wide for a bug-fix branch.
+
+**FIXED upstream by `8776775` ("choose the card strip once, where the answer is
+composed", 31 August 2026) — this entry just never caught up.** On the
+multi-agent path the specialists' `search_vehicles` events no longer draw cards
+as they stream (`turn.py::CURATED` defers the drawing; the results still reach
+Aisha in full as evidence). `graph.py::_select_cards` then picks the strip ONCE
+at compose time — round-robin across the per-clause searches, dedupe AFTER
+selection — and the same list is both emitted to the screen and written into
+Aisha's payload as `cards_shown`, whose prose orders her to lead with those
+cars. Prose and strip cannot disagree because they are the same list read twice.
+
+**Two caveats, recorded so they are not rediscovered.** The single-agent
+fallback (`MULTI_AGENT_ENABLED=false`) still draws in stream order — deliberate,
+that path is byte-frozen as the kill switch. And nothing in `tests/` pins
+`_select_cards`, `CURATED`, or `cards_shown`: the fix is live but unprotected,
+and a refactor could regress it to stream order with the suite green. Writing
+those tests is the remaining (optional) work.
 
 ---
 
