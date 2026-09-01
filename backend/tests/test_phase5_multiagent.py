@@ -82,6 +82,15 @@ def test_multi_agent_is_off_by_default():
     assert turn.enabled() is False
 
 
+def test_the_cascade_is_off_by_default_in_the_ported_suite():
+    """Guards the pin itself (OPEN-ISSUES #5), same as ROUTER_ENABLED's: if this
+    flips, every scripted single-agent turn silently runs against the
+    multi-agent shape and fails on refusals that are themselves correct."""
+    from app import config
+
+    assert config.MULTI_AGENT_ENABLED is False
+
+
 def test_voice_is_excluded_even_when_the_switch_is_on(monkeypatch):
     """PER CHANNEL, NOT GLOBAL. run_turn is shared and realtime has a 400ms
     first-audio budget; the measured Haiku round trip alone is 1088ms."""

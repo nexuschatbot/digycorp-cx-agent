@@ -46,6 +46,17 @@ def _names(out: dict) -> list[str]:
 # --------------------------------------------------------------------------- #
 # Off is off
 # --------------------------------------------------------------------------- #
+def test_the_vector_pass_pin_covers_both_copies_of_the_flag():
+    """Guards the pin itself (OPEN-ISSUES #5). catalogue.py binds its own copy
+    of RETRIEVAL_ENABLED at import, so conftest pins config AND the module —
+    if either shows true here, the suite is running against a developer's .env
+    and not the shipped shape."""
+    from app import config
+
+    assert config.RETRIEVAL_ENABLED is False
+    assert catalogue.RETRIEVAL_ENABLED is False
+
+
 def test_disabled_by_default(db):
     """OFF MUST MEAN OFF — not "runs the vector pass and discards it". Phase 1
     ships changing nothing a customer sees until the flag is flipped."""
