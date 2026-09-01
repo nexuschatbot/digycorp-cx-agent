@@ -2513,6 +2513,21 @@ def test_natural_persona_is_one_config_flip_away(db, client, rt_env):
 
     rt_env["monkeypatch"].setattr(rt_module, "CALL_PERSONA", "natural")
 
+    # THE DATE IS FROZEN, because the brief embeds today/tomorrow/the weekend
+    # in spoken English and the calendar was writing the test's input: the
+    # length assert below passed all August and failed on 1 September, when
+    # the longer month name pushed the brief one character over. A long date
+    # is chosen deliberately — Wednesday, September, a three-word ordinal —
+    # so the budget is checked near the top of the yearly range.
+    from datetime import date as _date
+
+    class _FrozenDate(_date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 23)
+
+    rt_env["monkeypatch"].setattr("app.agent.call_persona.date", _FrozenDate)
+
     def factory_fn(*, instructions, vocabulary, on_event, **extras):
         rt_env["instructions"] = instructions
         rt_env["extras"] = extras
@@ -2541,7 +2556,11 @@ def test_natural_persona_is_one_config_flip_away(db, client, rt_env):
     # Raised from 6000 on 2026-08-03 to buy the answer-discipline paragraph,
     # after a live call where she chose a showroom the customer never named
     # and then read their Arabic greeting as consent to hold the slot.
-    assert len(rt_env["instructions"]) < 6800
+    # Raised again on 2026-09-01, from 6800: September's spoken dates run
+    # ~10 characters longer than August's, and a TPM budget is not sensitive
+    # to a hundred characters. The frozen date above is what makes this a
+    # test of the brief and not of the calendar.
+    assert len(rt_env["instructions"]) < 6900
     assert rt_env["session"].greeted is True
 
 

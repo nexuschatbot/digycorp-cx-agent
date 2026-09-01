@@ -31,6 +31,19 @@ best available evidence, and it is why the number is a named constant with the
 evidence beside it rather than a magic literal. Re-run evals/routing_calibration
 .py when real briefs exist; raising it costs coverage and nothing else.
 
+THE SCORES ARE NOT THE SAME ON EVERY CPU (found 2026-09-01, the first CI run
+that executed the backend suite). The model is int8-quantised and quantised
+kernels differ by architecture: "I want to buy it, whats next" misroutes to
+sales at margin 0.0163 on the macOS arm64 machine that calibrated the 0.02 —
+safely declined — and at 0.0209 on the Linux x86_64 runner, CONFIDENTLY
+ROUTED. Production is Linux. So the margin the threshold must clear is the
+worst wrong margin on the platform that serves customers, plus headroom for
+the same drift, which is what 0.03 buys: locally the fast lane keeps 7 of its
+13 correct routes, every wrong case sits at least 0.009 under the line on
+both platforms measured, and everything it now declines goes to the judge —
+a decline is latency, a confident misroute is a wrong specialist answering a
+customer.
+
 NO LIVE CALL IS EVER MADE FROM THE FAST LANE. Embedding is local. The judge is
 the only thing here that reaches the network, and it is skipped entirely when
 the fast lane is confident or the model is unavailable.
@@ -49,8 +62,11 @@ ROUTABLE: tuple[str, ...] = ("sales", "testdrive", "finance")
 
 # THE CALIBRATED RULE. See the module docstring: the winner must beat the
 # runner-up by this much. Measured on 32 card utterances, leave-one-out —
-# 0.02 is where the last misroute disappears, on twelve samples.
-MIN_MARGIN = 0.02
+# 0.02 was where the last misroute disappeared on the calibrating machine;
+# 0.03 is that number with cross-platform headroom, because the same case
+# scored 0.0163 on macOS and 0.0209 on the Linux CI runner (see the module
+# docstring — production is Linux).
+MIN_MARGIN = 0.03
 
 # A floor as well, so a brief that resembles NOTHING cannot win by a margin
 # between two equally poor scores. Deliberately low: it is a sanity bound, not
