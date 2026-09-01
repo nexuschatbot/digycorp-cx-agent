@@ -270,3 +270,29 @@ def test_unknown_ids_are_named_not_guessed(db):
     assert stock.availability(db, variant_id=9999)["error"] == "variant_not_found"
     assert stock.availability(db, model_id=9999)["error"] == "vehicle_not_found"
     assert stock.availability(db)["error"] == "missing_query"
+
+
+def test_offered_is_the_palette_not_the_warehouse(db):
+    """A colour Elite makes with no stock rows anywhere used to vanish from
+    `offered` entirely — "offered" had quietly meant "has ever had a stock
+    row". The model palette is the existence claim; stock stays the
+    availability claim."""
+    m = _model(db, "JET-G700")
+    m.exterior_colours = list(m.exterior_colours or []) + ["Test Lilac"]
+    db.flush()
+    v = _variant(db, "JET-G700", "Luxury")
+    out = stock.colours_available(db, variant_id=v.id)
+    assert "Test Lilac" in out["offered"]
+    assert "Test Lilac" not in out["available"]
+
+
+def test_the_get_colours_tool_answers_the_open_colour_question(db):
+    """The service existed, tested and orphaned, since T0.8 — no tool wrapped
+    it, so "what colours does the X50 come in?" dead-ended live (2026-09-01)."""
+    from app.tools.colour_tools import get_colours
+
+    m = _model(db, "JET-X50")
+    out = get_colours(db, "s", model_id=m.id)
+    assert out["offered"] and set(out["available"]) <= set(out["offered"])
+    assert get_colours(db, "s")["error"] == "missing_vehicle"
+    assert get_colours(db, "s", model_id="x")["error"] == "invalid_model_id"

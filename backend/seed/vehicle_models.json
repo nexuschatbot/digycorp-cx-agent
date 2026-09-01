@@ -44,6 +44,14 @@
       "Orange",
       "Ivory"
     ],
+    "exterior_colours": [
+      "Night Black",
+      "White",
+      "Highway Grey",
+      "Sand",
+      "Dark Blue",
+      "Matte Orange"
+    ],
     "variants": [
       {
         "id": 1,
@@ -140,6 +148,14 @@
       "Beige",
       "Green"
     ],
+    "exterior_colours": [
+      "Matte Grey",
+      "Silver Snow",
+      "Misty Cyan",
+      "Night Black",
+      "Sand",
+      "White"
+    ],
     "variants": [
       {
         "id": 5,
@@ -196,6 +212,11 @@
     "interior_colours": [
       "Green",
       "Ivory / Blue"
+    ],
+    "exterior_colours": [
+      "Silver",
+      "White",
+      "Black"
     ],
     "variants": [
       {
@@ -254,6 +275,12 @@
       "Black & Orange",
       "Black & Green",
       "Black & Light Grey"
+    ],
+    "exterior_colours": [
+      "Black",
+      "White",
+      "Silver",
+      "Light Gold"
     ],
     "variants": [
       {
@@ -339,6 +366,13 @@
       "Black & Orange",
       "Grey & Black"
     ],
+    "exterior_colours": [
+      "Silver",
+      "Gold",
+      "Green",
+      "White",
+      "Black"
+    ],
     "variants": [
       {
         "id": 10,
@@ -397,6 +431,14 @@
     "interior_colours": [
       "Black",
       "Ivory"
+    ],
+    "exterior_colours": [
+      "Black",
+      "White",
+      "Dark Grey",
+      "Light Grey",
+      "Light Blue",
+      "Dark Green"
     ],
     "variants": [
       {
@@ -469,6 +511,11 @@
     "interior_colours": [
       "Beige"
     ],
+    "exterior_colours": [
+      "Black",
+      "White",
+      "Dark Grey"
+    ],
     "variants": [
       {
         "id": 13,
@@ -529,6 +576,10 @@
       "Black",
       "White"
     ],
+    "exterior_colours": [
+      "Black",
+      "White"
+    ],
     "variants": [
       {
         "id": 14,
@@ -585,6 +636,13 @@
     "interior_colours": [
       "Black",
       "Blue & Grey"
+    ],
+    "exterior_colours": [
+      "Black",
+      "White",
+      "Dark Grey",
+      "Light Blue",
+      "Silver"
     ],
     "variants": [
       {

@@ -576,6 +576,14 @@ def main() -> None:
                 ),
                 "images": prev["images"],
                 "interior_colours": sheet["interior"],
+                # COLLECTED SINCE THE FIRST VERSION OF parse_models AND NEVER
+                # EMITTED until 2026-09-01: the palette went into
+                # sheet["exterior"] and no key ever read it back out, so the
+                # workbook's per-model exterior range was parsed and thrown
+                # away. Stock rows are the AVAILABILITY of a colour, not its
+                # existence — a colour Elite offers with no units anywhere had
+                # no representation at all. See VehicleModel.exterior_colours.
+                "exterior_colours": sheet["exterior"],
                 "variants": variants,
             }
         )

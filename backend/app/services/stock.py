@@ -264,7 +264,20 @@ def colours_available(
 
     q = select(Stock).where(Stock.variant_id.in_(ids))
     rows = list(db.scalars(q).all())
-    offered = sorted({r.colour for r in rows})
+    # OFFERED IS THE PALETTE, NOT THE WAREHOUSE (2026-09-01). This used to be
+    # the distinct stock colours alone, which quietly redefined "we make it in
+    # six colours" as "six colours have ever had a stock row" — a colour Elite
+    # offers with no units anywhere simply vanished from the answer. The
+    # model-level palette from Elite's Models sheet is the existence claim;
+    # stock rows stay the availability claim. Union rather than replacement,
+    # so a colour present on the ground but missing from the sheet (importers
+    # do that) is still offered — we are demonstrably selling it.
+    palette: set[str] = set()
+    for m in db.scalars(
+        select(VehicleModel).where(VehicleModel.id.in_({v.model_id for v in variants}))
+    ).all():
+        palette.update(m.exterior_colours or [])
+    offered = sorted(palette | {r.colour for r in rows})
     scoped = [r for r in rows if showroom_id is None or r.showroom_id == showroom_id]
     available = sorted({r.colour for r in scoped if r.units > 0})
 

@@ -75,6 +75,11 @@ def main() -> None:
                     # a model imported without one should fail here rather than
                     # answer "no interior colours" as though that were a fact.
                     interior_colours=r["interior_colours"],
+                    # The exterior palette, same rule — the converter dropped
+                    # this key for a whole phase and every colour question
+                    # dead-ended (2026-09-01); a silent .get() default would
+                    # let that regress without a sound.
+                    exterior_colours=r["exterior_colours"],
                     data_provenance=r["data_provenance"],
                     images=r["images"],
                 )
