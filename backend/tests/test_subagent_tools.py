@@ -337,6 +337,27 @@ def test_every_proposed_action_is_something_write_can_perform():
         assert unknown == set(), f"{agent} proposes {unknown}, which nothing can perform"
 
 
+def test_finances_callback_ask_travels_as_a_note_not_an_action():
+    """OPEN-ISSUES #7. The card forbids proposals (`proposes: []`) yet its prose
+    said "propose a human callback" — an instruction the write path would refuse
+    if the model ever obeyed it. The ask now travels as DATA: the note flags the
+    moment, and Aisha — who holds request_human_callback and rule 13's prose —
+    arranges it."""
+    stop = loader.sections("finance")["WHERE_YOU_STOP"].replace("\\\n", "")
+    assert "propose a human callback" not in stop
+    assert "SAY IN YOUR NOTE" in stop
+    assert "needs a human callback" in stop
+
+
+def test_finance_is_told_it_cannot_arrange_the_callback():
+    """The other half of the same defect: prose about a callback is not a
+    callback. The card says plainly that the sub-agent cannot arrange one, so
+    its note never reads back to Aisha as a confirmation."""
+    stop = loader.sections("finance")["WHERE_YOU_STOP"].replace("\\\n", "")
+    assert "YOU CANNOT ARRANGE THAT CALLBACK" in stop
+    assert "Aisha" in stop
+
+
 # --------------------------------------------------------------------------- #
 # The DELEGATING section — multi-agent only
 # --------------------------------------------------------------------------- #

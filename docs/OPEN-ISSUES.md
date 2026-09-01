@@ -1,8 +1,8 @@
 # Open issues — carried out of `multi-agent-migration`
 
-> **#6 is fixed**, and the entry is kept rather than deleted because how a route
-> and a deploy script stayed individually correct for months is the part worth
-> remembering. **Seven open here, plus five new ones in the deployment section
+> **#6 and #7 are fixed**, and the entries are kept rather than deleted because
+> how each pair of individually-correct pieces disagreed is the part worth
+> remembering. **Six open here, plus five new ones in the deployment section
 > below**, all found on 31 Aug by putting the app on a real server for the first
 > time since the port. The pipeline itself is now green end to end —
 > [DEPLOYMENT.md](DEPLOYMENT.md).
@@ -29,7 +29,7 @@ left**. Ordered by what it costs, not by how hard it is.
 | 4 | [The card strip follows search rank, not the answer](#4-the-card-strip-follows-search-rank-not-the-answer) | wrong car on screen | design |
 | 5 | [`.env` leaks flags into pytest — 10 failures](#5-env-leaks-flags-into-pytest--10-failures) | CI trust | small |
 | ~~6~~ | [~~`/health` 404s, so every deploy fails its health gate~~](#6-health-404s-so-every-deploy-fails-its-health-gate) — **FIXED**, `fix/health-route` | deploys | done |
-| 7 | [Finance's CALLBACK prose instructs a write it cannot propose](#7-finances-callback-prose-instructs-a-write-it-cannot-propose) | a decided buyer stalls | decision |
+| ~~7~~ | [~~Finance's CALLBACK prose instructs a write it cannot propose~~](#7-finances-callback-prose-instructs-a-write-it-cannot-propose) — **FIXED**, `fix/latency-floor` | a decided buyer stalls | done |
 | 8 | [Accessories became reachable, and they have no Arabic](#8-accessories-became-reachable-and-they-have-no-arabic) | AR conversations | data |
 
 ---
@@ -336,6 +336,22 @@ finance to propose the callback and add it to `write.py`'s action map; keep the
 prose but reword it so the *finding* asks Aisha to offer a callback; or drop the
 instruction. The first widens the write surface, which was the whole point of the
 split. This is a decision, not a bug.
+
+**FIXED on `fix/latency-floor`, 1 September 2026 — the second answer.** The
+deciding evidence: every piece of the callback machinery already exists on
+Aisha's side, multi-agent path included. Her card declares
+`request_human_callback` ("rule 13's exit"), `aisha_schemas()` serves it, the
+tool's reason enum already has `price_negotiation` and `finance`, and her base
+prose already says *"the moment a figure has to be committed to, it belongs to a
+human colleague, and a callback is how you get them there."* Widening the write
+surface would have duplicated a tool she holds; dropping the instruction would
+have stranded the decided buyer. So `WHERE_YOU_STOP` now tells finance to flag
+the moment **in its note** — "customer wants to negotiate/buy — needs a human
+callback" — and states plainly it cannot arrange one, so the note never reads
+back as a confirmation. Aisha reads the flag and arranges it with the tool and
+rules she already has. Two tests in `tests/test_subagent_tools.py` pin the
+reword. T6.1's finance rewrite is untouched: this removes a contradiction, it
+authors no money policy.
 
 **Related:** the finance body is thin on purpose — its real guardrails are T6.1,
 still unwritten.
