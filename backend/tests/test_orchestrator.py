@@ -125,6 +125,49 @@ def test_an_empty_brief_is_unroutable_without_scoring_anything():
     assert select.select("   ").agent is None
 
 
+# --------------------------------------------------------------------------- #
+# The judge's forced tool carries the JUDGE'S roster (found live, 2026-09-01)
+# --------------------------------------------------------------------------- #
+# The judge reused the legacy classifier's _live_generate as-is, and forced
+# tool use made that schema the law: its enum was (testdrive,
+# bookingmanagement, fallback), so the judge's Haiku call was STRUCTURALLY
+# UNABLE to answer `sales` or `finance`. 110 traced turns on the test VM and
+# not one specialist outside the legacy enum was ever selected; every finance
+# brief came back "fallback" and was dropped as unroutable.
+def _judge_call(monkeypatch, answer):
+    """Run judge.judge with a stubbed model call; capture the tool it forced."""
+    from app.agent.router import classifier
+
+    seen = {}
+
+    def fake(system, user, *, model, tool=None):
+        seen["tool"] = tool or classifier.ROUTE_TOOL
+        return {"agent": answer}
+
+    monkeypatch.setattr(classifier, "_live_generate", fake)
+    got = judge_mod.judge("what are the instalments", list(select.ROUTABLE))
+    return got, seen["tool"]
+
+
+def test_the_judge_forces_its_own_roster_not_the_legacy_enum(monkeypatch):
+    got, tool = _judge_call(monkeypatch, "finance")
+    enum = tool["input_schema"]["properties"]["agent"]["enum"]
+    assert set(select.ROUTABLE) <= set(enum), enum
+    assert "bookingmanagement" not in enum and "fallback" not in enum
+    assert got == "finance"
+
+
+def test_the_judge_reads_none_as_the_deliberate_decline(monkeypatch):
+    got, tool = _judge_call(monkeypatch, "none")
+    assert "none" in tool["input_schema"]["properties"]["agent"]["enum"]
+    assert got is None
+
+
+def test_the_judge_still_rejects_an_agent_off_its_roster(monkeypatch):
+    got, _ = _judge_call(monkeypatch, "concierge")
+    assert got is None
+
+
 @needs_model
 def test_the_card_vector_is_the_domain_not_the_utterances():
     """MEASURED: adding the eleven utterances to the card vector made the fast
@@ -224,16 +267,31 @@ def test_a_booking_ref_satisfies_testdrive_without_a_vehicle():
 def test_what_a_brief_carries_is_per_step_not_global():
     """carries satisfies the step that carries it; it is never folded into the
     plan's known set, so a ref in a cancel brief cannot stand in for entities
-    an unrelated step needs."""
+    an unrelated step needs. (The blocked example used to be finance, whose
+    card required a variant_id; since 2026-09-01 finance requires nothing —
+    the bank panel answers with no car — so a second testdrive step plays the
+    part.)"""
     plan = order.resolve([
         order.Step("cancel TD-2026-0KXC", "testdrive", index=0,
                    carries=frozenset({"booking_ref"})),
-        order.Step("the instalments", "finance", index=1),
     ])
-    assert [s.agent for s in plan.steps] == ["testdrive"]
-    step, missing = plan.blocked[0]
-    assert step.agent == "finance" and missing == ["variant_id"]
-    assert "booking_ref" not in plan.known
+    assert plan.ok and "booking_ref" not in plan.known
+    # A sibling step in the same turn sees the plan's known set plus what the
+    # RUN produces — never what another brief carried. With ambient + known
+    # alone, testdrive's requirement group is still unmet.
+    assert order._unmet(
+        "testdrive", set(order.AMBIENT) | set(plan.known)
+    ) == ["booking_ref|vehicle_id"]
+
+
+def test_a_bare_finance_brief_is_not_blocked():
+    """"tell me the installment plans" with no car chosen, observed live three
+    times in one morning (2026-09-01): the old `requires: [variant_id]` marked
+    it blocked and the customer was offered a callback for a question the bank
+    panel answers with no car at all. The card now requires nothing and the
+    agent resolves a named car itself (finance/v1.md, GETTING_TO_A_FIGURE)."""
+    plan = order.resolve([order.Step("the instalment plans", "finance", index=0)])
+    assert plan.ok and [s.agent for s in plan.steps] == ["finance"]
 
 
 def test_plan_turn_detects_the_reference_the_customer_said():
