@@ -646,7 +646,23 @@ def acknowledge_licence_reminder(db: Session, *, session_id: str) -> dict:
         )
     ).first()
     if slot is None:
-        return {"acknowledged": False, "reason": "no_locked_slot"}
+        # THE FAILURE MUST SAY WHAT IT IS NOT (found live, 2026-09-01). A
+        # customer accepted the one offered slot in words, no lock was ever
+        # taken, and the agent read this bare reason as the slot being GONE —
+        # told the customer their still-open time was unavailable and re-offered
+        # other times. Data-level for the same reason as _HOLD_NOTE: a schema
+        # description is read once at session start; a result is read at the
+        # moment it matters, by every engine and channel alike.
+        return {
+            "acknowledged": False,
+            "reason": "no_locked_slot",
+            "detail": (
+                "No slot is held by this conversation. This does NOT mean any "
+                "slot is taken or unavailable — do not tell the customer that. "
+                "Lock the slot they accepted with lock_slot, give the "
+                "reminder, then call this again."
+            ),
+        }
 
     slot.licence_ack = True
     db.flush()

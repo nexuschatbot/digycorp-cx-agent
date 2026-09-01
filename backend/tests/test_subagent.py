@@ -349,6 +349,32 @@ def test_no_hold_means_no_booking_state_in_the_brief(patched, db):
     assert "held_slot_id" not in sent
 
 
+def test_no_hold_briefs_the_lock_not_a_recheck(patched, db):
+    """The 2026-08-31 incident from the other side (found live, 2026-09-01). A
+    customer accepted the one offered slot IN WORDS ("Yes, book it!"), so no
+    lock was ever taken — and the step briefed to finish the booking re-verified
+    with get_available_slots, where the unheld slot has no held_by_you
+    protection: the 3-result cap left the accepted, still-open slot out, and
+    the step read absence as taken. The brief forbids exactly that misreading."""
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(
+        Step(brief="finish the booking", agent="testdrive", index=0),
+        {}, db=db, session_id="s-unheld",
+    )
+    sent = wire_text(client.calls[0]["messages"][0]["content"])
+    assert "No slot is held" in sent
+    assert "hold_slot" in sent
+
+
+def test_the_no_hold_brief_is_only_for_agents_that_can_hold(patched, db):
+    """Sales proposes nothing, so it must not be handed a booking verb — the
+    same reason PROPOSALS_INSTRUCTION is appended only for proposing agents."""
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(STEP, {}, db=db, session_id="s-none")
+    sent = wire_text(client.calls[0]["messages"][0]["content"])
+    assert "No slot is held" not in sent
+
+
 def test_a_lookup_agent_settles_without_a_summary_round(patched, db):
     """MEASURED over 40 live steps, 2026-08-31: a round costs ~2,187ms and 29 of
     40 took two — one to call the tool, one to write findings about the result.
