@@ -226,7 +226,7 @@ def test_a_routing_card_with_no_body_is_accepted():
 # 5: version selection and rollback
 # --------------------------------------------------------------------------- #
 def test_active_json_picks_the_live_version():
-    assert loader.version_for("aisha") == "v1"
+    assert loader.version_for("aisha") == "v2"
     assert loader.active_versions()["base"] == "v1"
 
 
