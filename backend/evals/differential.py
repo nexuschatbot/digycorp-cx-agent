@@ -156,12 +156,14 @@ KNOWN_CARD_ORPHANS: frozenset[tuple[str, str, str]] = frozenset({
 def check_card(agent: str) -> AgentReport:
     """The differential for one SUB-AGENT card: its own body vs its own tools.
 
-    OWN SECTIONS ONLY, deliberately. A sub-agent's shipped body is base blocks
-    plus its card's sections (loader.body_for), and the base blocks name
-    Aisha's tools — request_human_callback above all — which no sub-agent
-    holds. That is a KNOWN property with its own override prose (finance's
-    WHERE_YOU_STOP exists to counter it), not a defect per card, and flagging
-    it here would bury the real signal under the same three findings forever.
+    OWN SECTIONS ONLY, deliberately. A sub-agent's shipped body is its card's
+    sections plus the two base blocks SUBAGENT_BASE_ORDER names (the full base
+    prefix was dropped 2026-09-01 — see loader.py). Of the two kept blocks,
+    GROUNDING names get_available_slots, which only testdrive holds — shared
+    prose, one owner, the same known asymmetry the base prefix always had,
+    just one tool wide now instead of six. Checking the shared blocks per card
+    would flag that on sales and finance forever; the card's OWN prose is
+    where a new defect can actually appear.
 
     A TOOL NAMED IN PROSE IS REACHABLE two ways: bound on the card, or
     interceptable as a proposal — ported prose says "call lock_slot", and

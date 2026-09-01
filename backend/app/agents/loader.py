@@ -307,6 +307,30 @@ def single_agent_body() -> str:
 # lives inside aisha/v1.md and is told apart by provenance.
 LEGACY_JOURNEYS: tuple[str, ...] = ("testdrive", "bookingmanagement")
 
+# The base blocks a SUB-AGENT carries — and only these (2026-09-01).
+#
+# body_for used to prepend EVERY base block to a card, 26,580 chars of
+# persona, Arabic register, one-question rule, no-markdown output shaping and
+# closing — ~7.4k tokens on every specialist call — against the cards' own
+# stated design: sales/v1.md and testdrive/v1.md both say those are
+# "DELIBERATELY ABSENT ... because a sub-agent returns DATA and never a
+# sentence a customer reads", and subagent.py's docstring asserts the same.
+# Git shows it was never a decision: the sub-agent branch was grafted onto the
+# journey composer in the same commit that wrote those headers, and nothing
+# anywhere records "all base blocks" as intended. It also handed specialists
+# six tools they cannot call (request_human_callback above all — the prose
+# finance's WHERE_YOU_STOP exists to push back against) and two unsubstituted
+# «HELPLINE» placeholders, since only prompt.py's path does that replace.
+#
+# WHAT SURVIVES THE ROLE CHANGE, by content:
+#   GROUNDING         — every factual claim comes from a tool result. That IS
+#                       the specialist's job description.
+#   HOLDING_THE_LINE  — injection defence, other-customer privacy, data
+#                       minimisation, and the money-figure caveats finance's
+#                       returned figures lean on.
+# Everything else instructs a conversation this agent never has.
+SUBAGENT_BASE_ORDER: tuple[str, ...] = ("GROUNDING", "HOLDING_THE_LINE")
+
 
 def _base_blocks() -> list[str]:
     """Every base section, in the order it ships in."""
@@ -343,7 +367,12 @@ def legacy_journey_body(journey: str) -> str:
 
 
 def body_for(agent: str) -> str:
-    """The prompt body for one agent: every base block, then its own.
+    """The prompt body for one agent: its base share, then its own sections.
+
+    A SUB-AGENT CARRIES ONLY SUBAGENT_BASE_ORDER's base blocks — see that
+    tuple's comment for why the full base prefix was an accident, not a
+    decision. `base` itself still answers with everything, because its caller
+    is asking for the base prose, not composing a specialist.
 
     SUB-AGENT SECTIONS ARE TAKEN IN FILE ORDER, not from SINGLE_AGENT_ORDER —
     sales, testdrive and finance have sections that never appear in the
@@ -357,6 +386,12 @@ def body_for(agent: str) -> str:
 
     own = sections(agent) if (AGENTS_DIR / agent).is_dir() else {}
     if own:
+        # ROUTABLE CARDS ARE THE SPECIALISTS; aisha is not one and keeps the
+        # full base prefix — she is the one who talks, so persona, register
+        # and output shaping are genuinely hers.
+        if bool(frontmatter(agent).get("routable")):
+            base = sections("base")
+            return "".join([base[n] for n in SUBAGENT_BASE_ORDER] + list(own.values()))
         return "".join(_base_blocks() + list(own.values()))
 
     if agent in LEGACY_JOURNEYS:

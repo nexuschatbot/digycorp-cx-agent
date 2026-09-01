@@ -360,18 +360,36 @@ def test_the_two_meanings_of_testdrive_resolve_to_different_bodies():
 
 
 def test_every_sub_agent_now_has_a_body():
-    """Phase 2 shipped them bodyless on purpose; T5.2 fills them in."""
-    for agent in ("sales", "testdrive", "finance"):
+    """Phase 2 shipped them bodyless on purpose; T5.2 fills them in.
+
+    The floor is per-agent since 2026-09-01: a flat >20k pinned the accidental
+    full-base prefix (see SUBAGENT_BASE_ORDER), and finance is deliberately
+    thin until T6.1."""
+    floors = {"sales": 15_000, "testdrive": 18_000, "finance": 6_000}
+    for agent, floor in floors.items():
         assert loader.sections(agent), f"{agent} has no prompt body"
-        assert len(loader.body_for(agent)) > 20_000
+        assert len(loader.body_for(agent)) > floor, agent
 
 
-def test_a_sub_agent_body_carries_every_base_block():
-    """Grounding and data minimisation are not optional for anyone."""
+def test_a_sub_agent_body_carries_its_base_share_and_nothing_more():
+    """Grounding and data minimisation are not optional for anyone — and the
+    REST of base is not optional to omit. body_for used to prepend all 13 base
+    blocks (~7.4k tokens of persona, register, output shaping and closing) to
+    every specialist call, against the cards' own "DELIBERATELY ABSENT"
+    headers and subagent.py's docstring; SUBAGENT_BASE_ORDER is the recorded
+    decision this asserts."""
+    base = loader.sections("base")
+    kept = set(loader.SUBAGENT_BASE_ORDER)
     for agent in ("sales", "testdrive", "finance"):
         body = loader.body_for(agent)
-        for base_text in loader.sections("base").values():
-            assert base_text in body, agent
+        for name in kept:
+            assert base[name] in body, f"{agent} lost {name}"
+        for name, text in base.items():
+            if name not in kept:
+                assert text not in body, f"{agent} still carries base {name}"
+        # The specialists never talk to the customer, so the helpline
+        # placeholder — substituted only on Aisha's path — must not reach them.
+        assert "«HELPLINE»" not in body, agent
 
 
 def test_an_unknown_agent_is_still_refused():

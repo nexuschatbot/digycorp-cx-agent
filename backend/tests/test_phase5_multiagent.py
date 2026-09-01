@@ -19,11 +19,17 @@ from app.orchestrator import run, turn
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("agent", ["sales", "testdrive", "finance"])
 def test_every_sub_agent_has_a_body_and_carries_base(agent):
-    """Grounding and data minimisation are not optional for anyone."""
+    """Grounding and data minimisation are not optional for anyone — and since
+    2026-09-01 they are the ONLY base blocks a specialist carries
+    (loader.SUBAGENT_BASE_ORDER): the full base prefix was ~7.4k tokens of
+    persona and output shaping the cards' own headers call deliberately
+    absent, riding on every Haiku call."""
     assert loader.sections(agent)
     body = loader.body_for(agent)
-    for base_text in loader.sections("base").values():
-        assert base_text in body
+    base = loader.sections("base")
+    for name in loader.SUBAGENT_BASE_ORDER:
+        assert base[name] in body
+    assert base["WHO_YOU_ARE"] not in body, "persona is Aisha's, not a specialist's"
 
 
 def test_the_sales_and_testdrive_prose_was_ported_not_written():
