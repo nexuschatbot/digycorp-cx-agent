@@ -267,6 +267,19 @@ def execute(
 EVIDENCE_BUDGET_CHARS = 12000
 
 
+def _card_proposes(agent: str | None) -> bool:
+    """Whether this agent's card may ask for writes at all. Never raises —
+    a loader hiccup must cost the gap annotation, not the compose."""
+    if not agent:
+        return False
+    try:
+        from app.orchestrator.subagent import _proposes
+
+        return bool(_proposes(agent))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _evidence_for(steps) -> list[dict]:
     """Raw tool results for the composer, oldest first, inside the budget.
 
@@ -350,6 +363,41 @@ def compose_input(result: run.TurnResult) -> dict:
             }
             for s in result.steps
             if s.ok and not s.findings and not s.evidence
+        ] + [
+            # A WRITE-CAPABLE STEP THAT NARRATED INSTEAD OF PROPOSING (found
+            # live, 2026-08-31; OPEN-ISSUES #1). The specialist had a settled
+            # slot, wrote 1,098 characters ABOUT booking it, and proposed
+            # nothing — so write.py was never handed an action, Aisha re-briefed
+            # into the cascade ceiling, and a decided customer got a human
+            # handoff instead of a booking. The step was `ok` with a note, so
+            # neither list above named anything wrong.
+            #
+            # THE SIGNATURE, NOT A GUESS: the card may propose writes, the step
+            # proposed none, and its findings hold no fact — only prose (a
+            # `_note`) or bare evidence. A step that answered with data is a
+            # read answer and is left alone; a step with nothing at all is the
+            # `empty` gap above. Asking the model harder is recorded twice in
+            # this repo as not the fix — this names the incomplete step to the
+            # one party who can recover: the composer.
+            {
+                "agent": s.agent,
+                "status": "no_action",
+                "detail": (
+                    "This specialist may only REQUEST holds, bookings, moves "
+                    "and cancellations, and it requested none — so nothing was "
+                    "held, booked, moved or cancelled by this step, whatever "
+                    "its note says. If the customer asked for one of those, it "
+                    "has NOT happened: never confirm it. Re-brief once, naming "
+                    "the exact action and every detail it needs, or tell the "
+                    "customer plainly and offer a person."
+                ),
+            }
+            for s in result.steps
+            if s.ok
+            and not s.proposals
+            and not any(not k.startswith("_") for k in (s.findings or {}))
+            and ((s.findings or {}).get("_note") or s.evidence)
+            and _card_proposes(s.agent)
         ],
         # Set when SOME of the answer is missing — the case she needs wording
         # for, and the one a compose prompt will otherwise paper over.
