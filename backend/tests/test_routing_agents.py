@@ -8,8 +8,10 @@ decides everything else.
 
 So the invariant is: EVERY CASE IT ROUTES CONFIDENTLY IS CORRECT. Measured on
 the cards' own positives and negatives, every single failure sits below
-MIN_MARGIN — the worst is 0.0163 against a threshold of 0.02 — so the fast lane
-declines all of them. That is the calibration working, not failing.
+MIN_MARGIN — the worst is 0.0163 locally and 0.0209 on the Linux CI runner
+(int8 scores drift by CPU; see select.py), against a threshold of 0.03 — so
+the fast lane declines all of them. That is the calibration working, not
+failing.
 
 An accuracy target here would be the wrong gate twice over: it would fail on
 cases the system already handles correctly via the judge, and it would tempt
@@ -57,8 +59,15 @@ def test_the_fast_lane_is_never_confidently_wrong(result):
 @needs_model
 def test_the_fast_lane_still_earns_its_place(result):
     """If it settled nothing, it would be latency and code for no benefit — and
-    the honest move would be to delete it and always ask the judge."""
-    assert result["fast_lane_correct"] >= 8
+    the honest move would be to delete it and always ask the judge.
+
+    EIGHT BECAME FIVE on 2026-09-01, when MIN_MARGIN rose from 0.02 to 0.03
+    for cross-platform headroom (see select.py — the Linux runner scored a
+    misroute at 0.0209, above the old line). At 0.03 the fast lane keeps 7
+    correct routes on the calibrating machine; 5 is that with the same drift
+    allowance the threshold itself carries. Coverage was spent on never being
+    confidently wrong, which is the trade the module docstring says to make."""
+    assert result["fast_lane_correct"] >= 5
 
 
 @needs_model

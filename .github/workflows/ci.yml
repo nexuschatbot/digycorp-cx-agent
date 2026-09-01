@@ -7,6 +7,13 @@ on:
   push:
     branches: [test, elite-prod, general-prod]
 
+# dorny/paths-filter lists a PR's changed files through the API, and the
+# default workflow token cannot: every pull_request run died at the `changes`
+# job with "Resource not accessible by integration" before a single test ran.
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
