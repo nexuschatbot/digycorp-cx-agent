@@ -111,10 +111,18 @@ def plan_turn(
 ) -> tuple[_order.Plan, list[StepResult]]:
     """Select an agent per brief and order them. Returns (plan, unroutable).
 
-    Briefs are `{"brief": str, "depends_on": [int]}` — Aisha's shape. A brief no
-    agent owns does NOT abort the turn: it comes back unroutable and the others
-    still run.
+    Briefs are `{"brief": str, "depends_on": [int]}` — Aisha's shape — or the
+    bare question string. A brief no agent owns does NOT abort the turn: it
+    comes back unroutable and the others still run.
     """
+    # A BARE STRING IS A BRIEF (OPEN-ISSUES #2). The wrapper object is output
+    # tokens Aisha types at 20ms each and the customer never sees; most briefs
+    # carry no depends_on, so the schema now allows the question alone. This is
+    # the one place both shapes become one — everything downstream reads dicts.
+    briefs = [
+        {"brief": item} if isinstance(item, str) else (item or {})
+        for item in briefs
+    ]
     steps: list[_order.Step] = []
     unroutable: list[StepResult] = []
 

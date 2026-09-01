@@ -1,5 +1,11 @@
 # Open issues — carried out of `multi-agent-migration`
 
+> **#4, #6 and #7 are fixed**, and the entries are kept rather than deleted
+> because how each pair of individually-correct pieces disagreed is the part
+> worth remembering. **Five open here, plus five new ones in the deployment
+> section below**, all found on 31 Aug by putting the app on a real server for the first
+> time since the port. The pipeline itself is now green end to end —
+> [DEPLOYMENT.md](DEPLOYMENT.md).
 > **#1 and #6 are fixed**, and the entries are kept rather than deleted — #6
 > because how a route and a deploy script stayed individually correct for months
 > is the part worth remembering, #1 because the shape of the fix (name the gap,
@@ -24,13 +30,15 @@ left**. Ordered by what it costs, not by how hard it is.
 
 | # | Issue | Costs | Size |
 |---|---|---|---|
+| 1 | [A specialist narrates instead of proposing the write](#1-a-specialist-narrates-instead-of-proposing-the-write) | bookings | prompt + guard |
+| 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) — levers built, `fix/latency-floor`; run still owed | ~15s turns | measurement first |
 | ~~1~~ | [~~A specialist narrates instead of proposing the write~~](#1-a-specialist-narrates-instead-of-proposing-the-write) — **FIXED**, `fix/write-gap` | bookings | done |
 | 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) | ~15s turns | measurement first |
 | 3 | [`MAX_CASCADES_PER_TURN = 2` is an unproven guess](#3-max_cascades_per_turn--2-is-an-unproven-guess) | answer quality, unknown | one re-run |
-| 4 | [The card strip follows search rank, not the answer](#4-the-card-strip-follows-search-rank-not-the-answer) | wrong car on screen | design |
+| ~~4~~ | [~~The card strip follows search rank, not the answer~~](#4-the-card-strip-follows-search-rank-not-the-answer) — **FIXED** upstream, `8776775` (untested) | wrong car on screen | done |
 | 5 | [`.env` leaks flags into pytest — 10 failures](#5-env-leaks-flags-into-pytest--10-failures) | CI trust | small |
 | ~~6~~ | [~~`/health` 404s, so every deploy fails its health gate~~](#6-health-404s-so-every-deploy-fails-its-health-gate) — **FIXED**, `fix/health-route` | deploys | done |
-| 7 | [Finance's CALLBACK prose instructs a write it cannot propose](#7-finances-callback-prose-instructs-a-write-it-cannot-propose) | a decided buyer stalls | decision |
+| ~~7~~ | [~~Finance's CALLBACK prose instructs a write it cannot propose~~](#7-finances-callback-prose-instructs-a-write-it-cannot-propose) — **FIXED**, `fix/latency-floor` | a decided buyer stalls | done |
 | 8 | [Accessories became reachable, and they have no Arabic](#8-accessories-became-reachable-and-they-have-no-arabic) | AR conversations | data |
 
 ---
@@ -139,6 +147,30 @@ round trips**. Shortening the `emit_briefs` payload is the cheapest real win and
 does not need either decision — but it changes a tool schema Aisha is measured
 against, so it wants its own before/after run.
 
+**LEVERS BUILT on `fix/latency-floor` — the before/after run is still owed.**
+Both were built offline (no live calls; the decision to build both was taken
+2026-08-31):
+
+- **The payload.** `emit_briefs` now accepts a brief as **the bare question
+  string**; the `{"brief": ..., "depends_on": [...]}` object survives for the
+  one thing only it can say. `run.plan_turn` is the single place both shapes
+  become one. The ~8 wrapper tokens per brief at 20 ms each come off every
+  cascade with no loss of content — the brief itself, complete question and
+  all, is untouched.
+- **The model dial.** `SIMPLE_TURN_MODEL` (config, empty = OFF — the shipped
+  default) runs Aisha's generation on a cheaper tier when a deterministic rule
+  proves the turn simple. The only rule today is the router prefilter's
+  bare-greeting check, reused not re-implemented; an affirmation or a consent
+  answer never qualifies, because those sit inside the booking sequence.
+  Same trusted-flag shape as `CALL_AGENT_MODEL`.
+
+**What is still owed:** the before/after latency run (this entry's own
+requirement) before either the schema change is trusted at the measured ~110
+tokens/call or the dial is turned ON. Neither has been measured live; the p50
+numbers above are still the current truth. Tests:
+`tests/test_simple_turn.py`, plus the string-brief cases in
+`tests/test_orchestrator.py`.
+
 ---
 
 ## 3. `MAX_CASCADES_PER_TURN = 2` is an unproven guess
@@ -184,6 +216,23 @@ around it.
 becomes an output of the answer rather than a side effect of the lookups — and
 that is a change to what a turn emits, with a frontend contract on the other end
 of it. Too wide for a bug-fix branch.
+
+**FIXED upstream by `8776775` ("choose the card strip once, where the answer is
+composed", 31 August 2026) — this entry just never caught up.** On the
+multi-agent path the specialists' `search_vehicles` events no longer draw cards
+as they stream (`turn.py::CURATED` defers the drawing; the results still reach
+Aisha in full as evidence). `graph.py::_select_cards` then picks the strip ONCE
+at compose time — round-robin across the per-clause searches, dedupe AFTER
+selection — and the same list is both emitted to the screen and written into
+Aisha's payload as `cards_shown`, whose prose orders her to lead with those
+cars. Prose and strip cannot disagree because they are the same list read twice.
+
+**Two caveats, recorded so they are not rediscovered.** The single-agent
+fallback (`MULTI_AGENT_ENABLED=false`) still draws in stream order — deliberate,
+that path is byte-frozen as the kill switch. And nothing in `tests/` pins
+`_select_cards`, `CURATED`, or `cards_shown`: the fix is live but unprotected,
+and a refactor could regress it to stream order with the suite green. Writing
+those tests is the remaining (optional) work.
 
 ---
 
@@ -337,6 +386,22 @@ finance to propose the callback and add it to `write.py`'s action map; keep the
 prose but reword it so the *finding* asks Aisha to offer a callback; or drop the
 instruction. The first widens the write surface, which was the whole point of the
 split. This is a decision, not a bug.
+
+**FIXED on `fix/latency-floor`, 1 September 2026 — the second answer.** The
+deciding evidence: every piece of the callback machinery already exists on
+Aisha's side, multi-agent path included. Her card declares
+`request_human_callback` ("rule 13's exit"), `aisha_schemas()` serves it, the
+tool's reason enum already has `price_negotiation` and `finance`, and her base
+prose already says *"the moment a figure has to be committed to, it belongs to a
+human colleague, and a callback is how you get them there."* Widening the write
+surface would have duplicated a tool she holds; dropping the instruction would
+have stranded the decided buyer. So `WHERE_YOU_STOP` now tells finance to flag
+the moment **in its note** — "customer wants to negotiate/buy — needs a human
+callback" — and states plainly it cannot arrange one, so the note never reads
+back as a confirmation. Aisha reads the flag and arranges it with the tool and
+rules she already has. Two tests in `tests/test_subagent_tools.py` pin the
+reword. T6.1's finance rewrite is untouched: this removes a contradiction, it
+authors no money policy.
 
 **Related:** the finance body is thin on purpose — its real guardrails are T6.1,
 still unwritten.
