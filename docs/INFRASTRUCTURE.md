@@ -24,6 +24,13 @@ Everything about the environments and how to operate them.
 > az resource update -g DIGYCORP-CX-TEST-RG -n shutdown-computevm-digycorp-cx-test-vm \
 >   --resource-type Microsoft.DevTestLab/schedules --set properties.status=Enabled
 > ```
+>
+> 💸 **`PREWARM_PROMPT_CACHE` is `false` on this VM** (1 Sep 2026) and should
+> stay false: every restart with it on writes the full set of prompt prefixes
+> at the 1h-TTL cache-write rate — measured at ~$0.55–0.90 **per restart**,
+> which on a box that redeploys several times a day out-spent all conversations
+> combined. Turn it on only for a demo day. See
+> [DEPLOYMENT.md](DEPLOYMENT.md) §"Do not copy a local .env verbatim".
 
 ## Test environment
 

@@ -123,7 +123,7 @@ The restart is required: `load_dotenv()` runs at import.
 | `PUBLIC_WEB_BASE_URL` | goes into WhatsApp messages **sent to customers**. A stale tunnel URL ships broken links |
 | `REDIS_URL` | Redis is not installed on the test VM. Retrieval falls back to an in-process index and says so |
 | `WHATSAPP_ENABLED` | `true` sends real messages to real numbers |
-| `PREWARM_PROMPT_CACHE` | `true` costs 8 live API calls per boot — i.e. per deploy |
+| `PREWARM_PROMPT_CACHE` | `true` writes every servable prompt prefix per boot — i.e. **per deploy and per restart** — at the 1-hour-TTL cache-write rate (2× base input). Measured 2026-09-01: ~$0.55–0.90 per restart, and 14 restarts in one active day made prewarm cost more than all conversations combined. Keep it `false` on the test VM; turn it on for demo days, where a QR-code wave hitting a cold cache is the thing it exists to prevent |
 
 ### Seeding a fresh database
 
