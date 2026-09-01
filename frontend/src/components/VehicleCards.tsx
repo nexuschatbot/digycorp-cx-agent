@@ -37,7 +37,7 @@
 import { useState } from 'react'
 
 import type { VehicleCard } from '../cards'
-import { fuelLabel, seatsLine, type Lang } from '../i18n'
+import { LABELS, fuelLabel, priceLine, seatsLine, type Lang } from '../i18n'
 
 export type CardVariant = 'compact' | 'full'
 
@@ -101,6 +101,35 @@ function CardImage({ card }: { card: VehicleCard }) {
   return <div className="vcard-img vcard-img--empty" aria-hidden="true">◆</div>
 }
 
+/** TRIM STRIP (2026-09-01) — the trims on the card itself, not only in the
+ *  dialog. Aisha says "the G700 comes in four trims" with the variant list in
+ *  her tool payload, but the thread used to draw one model card and keep the
+ *  list a "View more" away. Same rows as the dialog's Trims section: name and
+ *  list price, an unpublished price says "coming soon", never a number
+ *  (FR-CX-07). Read-only FACTS like the spec chips — no hover, no cursor;
+ *  tapping the card still opens the dialog. */
+function TrimStrip({ card, lang }: { card: VehicleCard; lang: Lang }) {
+  return (
+    <div className="vcard-trims">
+      {card.trims.map((v) => {
+        const price = v.priceAed == null ? null : priceLine(v.priceAed, v.priceAed, lang)
+        return (
+          <div className="vcard-trim" key={v.variantId}>
+            <bdi className="vcard-trim-name">{v.name ?? displayName(card.name)}</bdi>
+            {price ? (
+              <span className="vcard-trim-price">
+                <bdi>{price}</bdi>
+              </span>
+            ) : (
+              <span className="vcard-trim-soon">{LABELS[lang].comingSoon}</span>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /** The card face — identical in both variants: image, then name and price on one
  *  baseline row, then the tagline, then the spec chips.
  *
@@ -110,7 +139,7 @@ function CardImage({ card }: { card: VehicleCard }) {
  *  chose the identical-card trade anyway on 25 Jul 2026. It is a presentation
  *  call, not a grounding one: the figure was always real, and it is now one
  *  swipe rather than one tap away. */
-function CardFace({ card, lang }: { card: VehicleCard; lang: Lang }) {
+function CardFace({ card, lang, showTrims }: { card: VehicleCard; lang: Lang; showTrims?: boolean }) {
   const chips = specChips(card, lang)
   return (
     <>
@@ -130,6 +159,7 @@ function CardFace({ card, lang }: { card: VehicleCard; lang: Lang }) {
           </ul>
         )}
       </div>
+      {showTrims && <TrimStrip card={card} lang={lang} />}
     </>
   )
 }
@@ -154,21 +184,29 @@ function CompactCard({
   lang,
   onViewMore,
   disabled,
+  trimsEligible,
 }: {
   card: VehicleCard
   lang: Lang
   onViewMore?: (card: VehicleCard) => void
   disabled?: boolean
+  trimsEligible?: boolean
 }) {
-  const face = <CardFace card={card} lang={lang} />
+  // Only when there is a CHOICE: one trim (named or not) is already told by the
+  // card's own price line, and the strip would repeat it. `vcard--trims` is the
+  // one modifier allowed to unlock the fixed 238px height — by exactly the rows
+  // present, since every strip row clamps to one line.
+  const showTrims = Boolean(trimsEligible) && card.trims.length > 1
+  const face = <CardFace card={card} lang={lang} showTrims={showTrims} />
+  const cardClass = showTrims ? ' vcard--trims' : ''
 
   if (!onViewMore || card.vehicleId == null) {
-    return <article className="vcard vcard--static">{face}</article>
+    return <article className={`vcard vcard--static${cardClass}`}>{face}</article>
   }
 
   return (
     <button
-      className="vcard vcard--pressable"
+      className={`vcard vcard--pressable${cardClass}`}
       type="button"
       disabled={disabled}
       // Hands the WHOLE card up: the caller opens the dialog on card.vehicleId,
@@ -199,16 +237,26 @@ function CarouselCard({
   lang,
   onViewMore,
   disabled,
+  trimsEligible,
 }: {
   card: VehicleCard
   lang: Lang
   onViewMore?: (card: VehicleCard) => void
   disabled?: boolean
+  trimsEligible?: boolean
 }) {
   const [index, setIndex] = useState(0)
   const frames = card.gallery ?? []
   if (frames.length < 2) {
-    return <CompactCard card={card} lang={lang} onViewMore={onViewMore} disabled={disabled} />
+    return (
+      <CompactCard
+        card={card}
+        lang={lang}
+        onViewMore={onViewMore}
+        disabled={disabled}
+        trimsEligible={trimsEligible}
+      />
+    )
   }
   const step = (d: number) => setIndex((i) => (i + d + frames.length) % frames.length)
   return (
@@ -218,6 +266,7 @@ function CarouselCard({
         lang={lang}
         onViewMore={onViewMore}
         disabled={disabled}
+        trimsEligible={trimsEligible}
       />
       {/* dir="ltr" pins prev to the visual left in Arabic threads too — the
           arrows point at screen directions, not reading order. */}
@@ -265,6 +314,13 @@ export function VehicleCards({
   // rendered by a bubble whose direction already settled the language, so the
   // chips label themselves without asking useChat.
   const lang: Lang = dir === 'rtl' ? 'ar' : 'en'
+  // Trim strips appear ONLY on a single FULL card — "the one you're looking
+  // at". Never on the ambiguous candidates row (a trim list beside a which-one
+  // question pre-answers it — same reason extractInteriorImages skips that
+  // shape) and never on compact search cards, whose base payload carries no
+  // trims live; the cards.length gate keeps a REHYDRATED candidates row —
+  // whose per-id detail fetch does carry them — rendering identically.
+  const trimsEligible = variant === 'full' && cards.length === 1
   return (
     <div className={`vcards vcards--${variant} vcards--${dir}`} dir={dir}>
       {/* EVERY CARD IS PRESSABLE (2026-08-14). `full` used to render a plain
@@ -288,6 +344,7 @@ export function VehicleCards({
           lang={lang}
           onViewMore={onViewMore}
           disabled={disabled}
+          trimsEligible={trimsEligible}
         />
       ))}
     </div>

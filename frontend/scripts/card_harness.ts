@@ -19,6 +19,12 @@ function show(cards: VehicleCard[]) {
   }
   for (const c of cards) {
     console.log(`    → card: name="${c.name}"  image=${c.imageUrl ?? '(none)'}  price=${c.priceLabel ?? '(no price line)'}`)
+    // Trim rows (2026-09-01): the FULL {vehicle} shape carries them, the
+    // ambiguous candidates shape must not — the strip renders only where
+    // there is a choice on ONE identified car (see VehicleCards.tsx).
+    for (const t of c.trims) {
+      console.log(`        trim: ${t.name ?? '(unnamed)'}  price=${t.priceAed ?? '(coming soon — no number)'}`)
+    }
   }
 }
 
@@ -50,6 +56,7 @@ async function main() {
   await query('T2 (ambiguous → expect two variants)', 'Tell me about the Jetour T2, both versions.')
   await query('Single model (expect one card)', 'Tell me about the Jetour X50.')
   await query('Null-price model — JET-T1-IDM (card, no price, never "None")', 'Tell me about the Jetour T1 i-DM.')
+  await query('Multi-trim model — G700 (expect one card, four trim rows)', 'Tell me about the Jetour G700.')
   console.log('\nCard harness complete.')
 }
 
