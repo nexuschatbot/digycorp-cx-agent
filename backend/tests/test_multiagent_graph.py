@@ -947,3 +947,25 @@ def test_trace_steps_carries_the_decision_and_never_the_brief():
     blob = repr(rows)
     for leaked in ("seven-seater", "Deira", "130k"):
         assert leaked not in blob
+
+
+# --------------------------------------------------------------------------- #
+# The trace records what RAN, not what was drawn (2026-09-01)
+#
+# `tool_calls` was empty on all 110 rows on the test VM — turns that provably
+# locked slots and created bookings included — because the runner derived it
+# from card_rows, which holds only the calls that drew a card. Diagnosing
+# "why did the agent say it has no data" then needed SSH archaeology instead
+# of one SQL query, which is the failure the flight recorder exists to
+# prevent.
+# --------------------------------------------------------------------------- #
+def test_the_runner_records_every_tool_call_not_just_the_cards():
+    import inspect
+
+    from app.agent import runner
+
+    src = inspect.getsource(runner)
+    assert "tools_called.append" in src
+    assert "tool_calls=tools_called" in src, (
+        "derived from card_rows again is the defect this replaces"
+    )

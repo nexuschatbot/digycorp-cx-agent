@@ -359,6 +359,14 @@ def run_turn(
     card_rows: list[dict] = []
     # Anchors already drawn this turn — see the tool_event branch below.
     drawn_anchors: set[str] = set()
+    # EVERY tool call this turn, in order, duplicates kept — for turn_trace.
+    # This used to be derived from card_rows, which records only the calls
+    # that DREW A CARD: every other tool this system ever called was invisible
+    # to the flight recorder, and all 110 rows on the test VM carried [] while
+    # slots were being locked and bookings made (2026-09-01). Card anchors
+    # govern reloads; this list is the telemetry, and they are not the same
+    # thing.
+    tools_called: list[str] = []
     # Vehicles already carded this turn, across tools and variants.
     drawn_vehicle_ids: set[int] = set()
     # Cascade routing for turn_trace.steps — see the "cascade" branch below.
@@ -506,6 +514,15 @@ def run_turn(
                 assistant_chunks.append(chunk["text"])
                 on_event("token", {"text": chunk["text"]})
             elif kind == "tool_event":
+                # Recorded BEFORE the card dedupe below: a suppressed duplicate
+                # card was still a real tool call, and the trace records what
+                # ran, not what was drawn. Prefixed with the specialist's name
+                # when one made the call, so `sales:search_knowledge` and
+                # Aisha's own `get_booking` stay tellable apart in aggregates.
+                tools_called.append(
+                    f"{chunk['agent']}:{chunk['tool']}"
+                    if chunk.get("agent") else chunk["tool"]
+                )
                 anchor = _card_anchor(chunk["tool"], chunk["output"])
                 # THE SAME CARD IS NEVER DRAWN TWICE IN ONE TURN (found live,
                 # 2026-08-29: a sales sub-agent called search_vehicles twice on
@@ -670,7 +687,7 @@ def run_turn(
             user_message=None if kickoff else message,
             detected_lang=user_lang,
             customer_id=(prior_facts or {}).get("customer_id"),
-            tool_calls=[row.get("tool") for row in card_rows if row.get("tool")],
+            tool_calls=tools_called,
             # THE CASCADE, which `routed_to` cannot show. That column carries
             # the LEGACY journey router (prefilter/classifier/sticky) and says
             # "testdrive" for a turn sales handled end to end — true of every
