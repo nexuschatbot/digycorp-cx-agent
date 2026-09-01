@@ -191,6 +191,28 @@ def _hermetic_demo_toggles(monkeypatch):
     monkeypatch.setattr(_config, "WHATSAPP_ENABLED", False)
     monkeypatch.setattr(_config, "STRICT_UAE_MOBILE", True)
 
+    # THE MULTI-AGENT AND RETRIEVAL FLAGS GET THE SAME PIN (OPEN-ISSUES #5).
+    #
+    # backend/.env carries the dev settings — MULTI_AGENT_ENABLED=true,
+    # RETRIEVAL_ENABLED=true — and config.py reads them at import, so without
+    # this the suite's RESULT DEPENDS ON THE DEVELOPER: ~1,500 of these tests
+    # are the single-agent contract, and with the cascade on the commercial
+    # writes are the orchestrator's, so every scripted turn that hands Aisha
+    # lock_slot or create_booking fails on a refusal that is itself correct
+    # ("refusing 'lock_slot': not bound to this caller" — ten of the twelve
+    # failures measured 31 August). The multi-agent and retrieval paths have
+    # their own tests, which flip the flag back inside their own scope, exactly
+    # as the routed tests do for ROUTER_ENABLED.
+    monkeypatch.setattr(_config, "MULTI_AGENT_ENABLED", False)
+    monkeypatch.setattr(_config, "RETRIEVAL_ENABLED", False)
+
+    # catalogue.py binds its OWN copy at import (`from app.config import
+    # RETRIEVAL_ENABLED`), so the module copy is pinned too — the same one-more-
+    # step realtime_stt.OPENAI_API_KEY needs below, for the same reason.
+    from app.services import catalogue as _catalogue
+
+    monkeypatch.setattr(_catalogue, "RETRIEVAL_ENABLED", False)
+
     # THE STREAMING STT RELAY IS FORCED OFF THE SAME WAY (P3). make_transcriber
     # keys on the module's own OPENAI_API_KEY copy, and the dev .env carries a
     # real key — without this, any test that opens a call WebSocket would dial

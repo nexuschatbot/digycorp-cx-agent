@@ -1,18 +1,14 @@
 # Open issues — carried out of `multi-agent-migration`
 
-> **#4, #6 and #7 are fixed**, and the entries are kept rather than deleted
-> because how each pair of individually-correct pieces disagreed is the part
-> worth remembering. **Five open here, plus five new ones in the deployment
-> section below**, all found on 31 Aug by putting the app on a real server for the first
-> time since the port. The pipeline itself is now green end to end —
+> **#1, #4, #6 and #7 are fixed**, and the entries are kept rather than deleted
+> — #6 because how a route and a deploy script stayed individually correct for
+> months is the part worth remembering, #1 because the shape of the fix (name
+> the gap, don't ask the model harder) is the lesson this repo keeps
+> re-learning, #4 and #7 because each was two individually-correct pieces
+> disagreeing. **Three open here, plus five new ones in the deployment section
+> below**, all found on 31 Aug by putting the app on a real server for the
+> first time since the port. The pipeline itself is now green end to end —
 > [DEPLOYMENT.md](DEPLOYMENT.md).
-> **#1 and #6 are fixed**, and the entries are kept rather than deleted — #6
-> because how a route and a deploy script stayed individually correct for months
-> is the part worth remembering, #1 because the shape of the fix (name the gap,
-> don't ask the model harder) is the lesson this repo keeps re-learning. **Six
-> open here, plus five new ones in the deployment section below**, all found on
-> 31 Aug by putting the app on a real server for the first time since the port.
-> The pipeline itself is now green end to end — [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Everything here was found by **running the cascade end to end in a browser** on
 31 August 2026, after the wiring work described in
@@ -30,13 +26,11 @@ left**. Ordered by what it costs, not by how hard it is.
 
 | # | Issue | Costs | Size |
 |---|---|---|---|
-| 1 | [A specialist narrates instead of proposing the write](#1-a-specialist-narrates-instead-of-proposing-the-write) | bookings | prompt + guard |
-| 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) — levers built, `fix/latency-floor`; run still owed | ~15s turns | measurement first |
 | ~~1~~ | [~~A specialist narrates instead of proposing the write~~](#1-a-specialist-narrates-instead-of-proposing-the-write) — **FIXED**, `fix/write-gap` | bookings | done |
-| 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) | ~15s turns | measurement first |
+| 2 | [The per-model-call latency floor](#2-the-per-model-call-latency-floor) — levers built, `fix/latency-floor`; run still owed | ~15s turns | measurement first |
 | 3 | [`MAX_CASCADES_PER_TURN = 2` is an unproven guess](#3-max_cascades_per_turn--2-is-an-unproven-guess) | answer quality, unknown | one re-run |
 | ~~4~~ | [~~The card strip follows search rank, not the answer~~](#4-the-card-strip-follows-search-rank-not-the-answer) — **FIXED** upstream, `8776775` (untested) | wrong car on screen | done |
-| 5 | [`.env` leaks flags into pytest — 10 failures](#5-env-leaks-flags-into-pytest--10-failures) | CI trust | small |
+| ~~5~~ | [~~`.env` leaks flags into pytest — 10 failures~~](#5-env-leaks-flags-into-pytest--10-failures) — **FIXED**, `fix/env-leak` | CI trust | done |
 | ~~6~~ | [~~`/health` 404s, so every deploy fails its health gate~~](#6-health-404s-so-every-deploy-fails-its-health-gate) — **FIXED**, `fix/health-route` | deploys | done |
 | ~~7~~ | [~~Finance's CALLBACK prose instructs a write it cannot propose~~](#7-finances-callback-prose-instructs-a-write-it-cannot-propose) — **FIXED**, `fix/latency-floor` | a decided buyer stalls | done |
 | 8 | [Accessories became reachable, and they have no Arabic](#8-accessories-became-reachable-and-they-have-no-arabic) | AR conversations | data |
@@ -285,6 +279,19 @@ would make a red build ambiguous. Do it alone, on a green tree.
 `test_disabled_by_default`) exist to assert the *shipped default*, and a blanket
 `monkeypatch` in `conftest.py` would make them pass without testing anything.
 `ROUTER_ENABLED`'s pin has one test asserting the pin itself; do the same here.
+
+**FIXED on `fix/env-leak`, 1 September 2026 — exactly the S7e pattern.** Both
+flags are pinned false in conftest's hermetic fixture beside `ROUTER_ENABLED`,
+plus one extra step the router never needed: `catalogue.py` binds its own copy
+of `RETRIEVAL_ENABLED` at import, so the module copy is pinned too (the same
+one-more-step `realtime_stt.OPENAI_API_KEY` already documents). Two pin-guard
+tests added, one per flag, mirroring
+`test_the_router_is_off_by_default_in_the_ported_suite`. Verified the way the
+bug was filed: the full suite run **with the dev `.env` leaking** now passes —
+the ten flag failures are gone, and the only remaining failures are the three
+pre-existing ones (two phase6 guardrail asserts broken by an upstream prompt
+rewording, and the voice-persona length test that September's longer spoken
+date pushed one character over its 6,800 budget).
 
 ---
 
