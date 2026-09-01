@@ -106,6 +106,22 @@ prose about booking is not a booking, and a step that was asked to act and \
 neither proposes nor explains is an incomplete answer.
 """
 
+# Appended to the brief ONLY when this session holds no slot and the agent can
+# propose one (`hold_slot` on its card). See the dispatch site in run_step for
+# the live incident this forbids; the summary is: an accepted-but-unlocked slot
+# has no held_by_you protection, so a re-query can omit it while it is still
+# open, and "absent from a 3-slot answer" is not "taken".
+_NO_HOLD_BRIEF = (
+    "No slot is held by this conversation yet. If the customer has already "
+    "accepted a specific offered time, propose hold_slot for that exact "
+    "slot_id first instead of re-checking it with get_available_slots: that "
+    "query returns at most 3 slots, so an open slot can be absent from its "
+    "answer, and absence does NOT mean taken — never report a slot the "
+    "customer accepted as unavailable because a re-query did not list it. "
+    "When you do query availability, carry the customer's stated date and "
+    "daypart."
+)
+
 
 def _client():
     from app.agent.graph import _build_client
@@ -566,6 +582,19 @@ def run_step(
             known.setdefault("held_slot_id", _bstate.slot_id)
             known.setdefault("booking_stage", _bstate.stage)
             known.setdefault("licence_acknowledged", _bstate.licence_acknowledged)
+        elif _bstate is not None and "hold_slot" in proposable:
+            # NO HOLD — THE 2026-08-31 INCIDENT FROM THE OTHER SIDE (found
+            # live, 2026-09-01). A customer accepted the one offered slot IN
+            # WORDS ("Yes, book it!"), so no lock was ever taken, and the step
+            # briefed to finish the booking re-verified with
+            # get_available_slots — where an unheld slot has no held_by_you
+            # protection: the 3-result cap (and a dropped daypart) left the
+            # accepted, still-open slot out, and the step read absence as
+            # "taken". Aisha then told the customer their open slot was gone.
+            # The held case above passes state as DATA; here there is no fact
+            # to pass — only the misreading to forbid — so it is the one place
+            # the brief carries an instruction instead.
+            parts.append(_NO_HOLD_BRIEF)
     except Exception:  # noqa: BLE001 — context enrichment must never kill a step
         log.warning("could not read booking state for %s", step.agent, exc_info=True)
     if known:

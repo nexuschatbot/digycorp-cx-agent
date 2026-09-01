@@ -183,7 +183,9 @@ LOCK_SLOT_SCHEMA = {
         "while you finish the booking. Call it the MOMENT they choose a time — "
         "before the personalisation questions, before the recap — because that "
         "whole exchange takes minutes and other customers are looking at the "
-        "same evening.\n\n"
+        "same evening. A customer saying yes to a time you offered IS choosing "
+        "a time — a typed or spoken yes needs this call every bit as much as a "
+        "tapped one.\n\n"
         "Holding a slot is not booking it. You must still do the personalisation "
         "exchange, the full recap, the driving-licence reminder and the consent "
         "question, and then call create_booking. Never tell the customer they "
@@ -270,9 +272,11 @@ ACKNOWLEDGE_LICENCE_REMINDER_SCHEMA = {
         "Read the response:\n"
         "- {'acknowledged': true}: recorded. Carry on to consent and booking.\n"
         "- {'acknowledged': false, 'reason': 'no_locked_slot'}: this conversation "
-        "is not holding a slot, so there is nothing to book yet. Get the customer "
-        "to choose a time and call lock_slot first, then remind and call this "
-        "again."
+        "is not holding a slot yet. It does NOT mean any slot is taken — never "
+        "tell the customer a time is unavailable because of this. If they have "
+        "already accepted an offered slot, call lock_slot for that exact slot "
+        "now, then remind and call this again; only when no time has been "
+        "chosen do you ask them to pick one."
     ),
     "input_schema": {
         "type": "object",

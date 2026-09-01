@@ -111,7 +111,18 @@ def test_acknowledgement_requires_a_live_lock(slots) -> None:
     """"Remind, then lock" is not the rule 9 sequence. Without a lock there is no
     slot for the reminder to belong to, so there is nothing to record."""
     out = slots_service.acknowledge_licence_reminder(slots, session_id="sess-no-lock")
-    assert out == {"acknowledged": False, "reason": "no_locked_slot"}
+    assert out["acknowledged"] is False
+    assert out["reason"] == "no_locked_slot"
+
+
+def test_no_locked_slot_says_what_it_is_not(slots) -> None:
+    """The detail must forbid the misreading, not merely name the state. Found
+    live 2026-09-01: a customer accepted the one offered slot in words, no lock
+    was taken, and the agent read the bare reason as the slot being GONE — told
+    the customer their still-open time was unavailable and re-offered others."""
+    out = slots_service.acknowledge_licence_reminder(slots, session_id="sess-no-lock")
+    assert "does NOT mean" in out["detail"]
+    assert "lock_slot" in out["detail"]
 
 
 def test_acknowledgement_does_not_survive_a_relock(slots) -> None:
@@ -155,7 +166,8 @@ def test_acknowledgement_is_scoped_to_this_session(slots) -> None:
     slots_service.lock(db, session_id=SESSION, slot_id=slot.id)
 
     other = slots_service.acknowledge_licence_reminder(db, session_id="sess-someone-else")
-    assert other == {"acknowledged": False, "reason": "no_locked_slot"}
+    assert other["acknowledged"] is False
+    assert other["reason"] == "no_locked_slot"
     db.refresh(slot)
     assert slot.licence_ack is False
 
