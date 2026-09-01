@@ -136,6 +136,24 @@ def rt_env(db, monkeypatch, tmp_path):
         rt_module, "AGENT_CHECKPOINT_PATH", str(tmp_path / "checkpoints.db")
     )
 
+    # THE TURN STORE RUNS INLINE HERE, not on the executor. The app posts each
+    # spoken turn to a worker thread so the audio loop never blocks — correct
+    # against a real pool, where every thread gets its own connection. This
+    # harness binds SessionLocal to ONE shared in-memory sqlite connection
+    # (StaticPool, see conftest), and two executor threads reaching it
+    # mid-commit close each other's cursors; the store's fail-open except then
+    # DROPS both rows, and the transcript assert finds only the system row —
+    # measured at roughly one run in fifteen, worse under -n auto. The race is
+    # the harness's, not the app's, so the fix lives here: same guard, same
+    # sync path, no second thread.
+    monkeypatch.setattr(
+        rt_module.RealtimeCallSession, "_store_call_turn",
+        lambda self, speaker, text, lang_code: (
+            None if self.ended or not (text or "").strip()
+            else self._store_call_turn_sync(speaker, text, lang_code)
+        ),
+    )
+
     holder: dict = {}
 
     def install(script: dict, after_tool: list | None = None) -> None:
