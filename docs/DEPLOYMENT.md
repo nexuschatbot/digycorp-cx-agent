@@ -10,14 +10,16 @@ Environment specifics — VM size, SSH, schedules, secrets — are in
 
 ## 1. Start from `test`. Always.
 
-> ### 🔴 `test` is the base branch for **all** work.
+> ### 🔴 `test` is the base branch for **all** work — and you never push to it directly.
 >
-> Branch **from** `test`. Open your PR **into** `test`. Nothing else.
+> Branch **from** `test`. Open your PR **into** `test`. Nothing else. `test`
+> moves only when a pull request merges; you never `git commit` or `git push`
+> onto `test` itself.
 >
 > ```bash
 > git checkout test
 > git pull origin test
-> git checkout -b fix/your-change      # or feat/…, chore/…
+> git checkout -b fix/your-change      # ← branch first, ALWAYS
 > ```
 >
 > `elite-prod` and `general-prod` are **release targets, not places to
@@ -25,15 +27,40 @@ Environment specifics — VM size, SSH, schedules, secrets — are in
 > `.github/workflows/branch-policy.yml` fails any PR into them from anywhere
 > else.
 
-**Why this is a rule and not a preference.** `test` is the only branch that is
-continuously deployed, so it is the only branch whose code has been *seen
-running*. A branch cut from anywhere else is cut from something nobody has
-observed working. Every defect in §5 below was invisible until a real deploy
-ran; none of them could have been caught by reading a diff.
+**Why direct pushes to `test` are forbidden, not just discouraged.** `test`
+deploys on merge (§2), so a commit pushed straight to it ships to the live test
+VM with **no review, no second reader, and no PR to point at when it breaks**.
+`test` is also the only continuously deployed branch, so it is the only branch
+whose code has been *seen running* — and every defect in §5 below was invisible
+until a real deploy ran, so a diff-only self-review is exactly the check that
+has repeatedly failed here. A pull request is where those get caught.
 
-**Nothing enforces the *base* automatically** — `branch-policy.yml` guards the
-production branches, but no check verifies that your feature branch was cut from
-`test`. The PR template asks you to confirm it. Please actually confirm it.
+**If you have already committed onto a local `test`:** do not push it. Rescue the
+work onto a branch and open a PR.
+
+```bash
+git branch fix/your-change     # keep the commits you just made
+git reset --hard origin/test   # restore local test to match the remote
+git checkout fix/your-change   # carry on, then open a PR into test
+```
+
+### How the rule is enforced (three layers)
+
+1. **GitHub branch protection on `test`** — the real gate. In the repo settings,
+   *Branches → Branch protection rules → `test`* must have **Require a pull
+   request before merging** enabled (and **Do not allow bypassing the above
+   settings** so admins are held to it too). With this on, `git push origin test`
+   is rejected by the server. **If a direct push ever succeeds, this setting has
+   been turned off — turn it back on.**
+2. **A local `pre-push` hook** — `scripts/install-git-hooks.sh` installs it, and
+   it refuses a push whose destination is `test` before anything leaves your
+   machine. Run that script once after cloning.
+3. **The PR template** — asks you to confirm the base and that the branch was
+   cut from `test`.
+
+`branch-policy.yml` additionally guards the two production branches; no CI check
+verifies that a *feature* branch was cut from `test`, so branch from an
+up-to-date `test` and confirm it in the PR.
 
 ---
 

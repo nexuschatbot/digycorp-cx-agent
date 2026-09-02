@@ -10,6 +10,8 @@
 
 - [ ] This PR targets `test` (feature work must never target a `*-prod` branch)
 - [ ] My branch was created from an up-to-date `test`
+- [ ] I did **not** push or commit directly to `test` — this change reaches
+      `test` only by merging this PR (see CONTRIBUTING.md)
 
 ## Testing
 

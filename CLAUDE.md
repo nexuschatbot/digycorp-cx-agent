@@ -14,6 +14,12 @@
 
 ## Git
 
+- **NEVER push or commit directly to `test`** (or `elite-prod` / `general-prod`).
+  `test` deploys to the live VM on merge, so a direct push ships unreviewed code.
+  Always: branch from an up-to-date `test` (`git checkout -b type/short-desc`),
+  push the branch, and open a PR into `test`. This holds even when the user says
+  "checkout test and start" — check out `test` to branch FROM it, then move to a
+  feature branch before committing. See CONTRIBUTING.md and docs/DEPLOYMENT.md §1.
 - Commit messages: NEVER add "Co-Authored-By: Claude" or any AI attribution.
 - Keep messages short: imperative, one line, e.g. `add haiku router node`.
 
