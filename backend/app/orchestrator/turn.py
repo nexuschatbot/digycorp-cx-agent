@@ -167,6 +167,7 @@ def execute(
     deadline_seconds: float = 60.0,
     parent_writer=None,
     max_workers: int = MAX_PARALLEL_STEPS,
+    preselected: dict | None = None,
 ) -> run.TurnResult:
     """Run the briefs, forwarding every sub-agent event to the parent stream."""
     per_step = budget_for(len(briefs), deadline_seconds, parallel=max_workers)
@@ -225,7 +226,7 @@ def execute(
     try:
         return run.execute(
             briefs, _runner, known=known, judge=judge, step_timeout=per_step,
-            max_workers=max_workers, on_tick=_drain,
+            max_workers=max_workers, on_tick=_drain, preselected=preselected,
         )
     finally:
         # Whatever a failed or timed-out step already emitted still drew cards

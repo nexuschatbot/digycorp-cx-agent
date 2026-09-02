@@ -108,6 +108,7 @@ def plan_turn(
     *,
     known: set[str] | None = None,
     judge=None,
+    preselected: dict | None = None,
 ) -> tuple[_order.Plan, list[StepResult]]:
     """Select an agent per brief and order them. Returns (plan, unroutable).
 
@@ -135,6 +136,22 @@ def plan_turn(
     # and may call the judge. It touches no database and no shared state, which
     # is what makes this safe where run.execute needed a session factory first.
     #
+    # SPECULATIVE SELECTIONS FIRST (2026-09-02). `preselected` maps brief text
+    # to a Future started while Aisha was still TYPING the briefs — see
+    # orchestrator/speculate.py. A hit collects an answer that has been
+    # computing for the length of her JSON tail instead of paying the judge
+    # round trip cold; a miss, a slow future or a dead one falls through to
+    # exactly the old path. The bounded wait matches the judge's own timeout.
+    def _speculated(text: str):
+        fut = (preselected or {}).get(text)
+        if fut is None:
+            return None
+        try:
+            return fut.result(timeout=8.0) if hasattr(fut, "result") else fut
+        except Exception:  # noqa: BLE001 — fall back to selecting in-line
+            log.warning("speculative selection failed for %r", text[:60], exc_info=True)
+            return None
+
     # Only widened for more than one brief — a pool for a single brief is pure
     # overhead, and six of every ten cascades measured carried exactly one.
     if len(briefs) > 1:
@@ -142,7 +159,9 @@ def plan_turn(
         with ThreadPoolExecutor(
             max_workers=min(len(texts), 4), thread_name_prefix="select"
         ) as pool:
-            chosen_for = list(pool.map(lambda t: _select.select(t, judge=judge), texts))
+            chosen_for = list(pool.map(
+                lambda t: _speculated(t) or _select.select(t, judge=judge), texts
+            ))
     else:
         chosen_for = None
 
@@ -155,7 +174,10 @@ def plan_turn(
         carries = (
             frozenset({"booking_ref"}) if _BOOKING_REF_RE.search(text) else frozenset()
         )
-        chosen = chosen_for[i] if chosen_for is not None else _select.select(text, judge=judge)
+        chosen = (
+            chosen_for[i] if chosen_for is not None
+            else (_speculated(text) or _select.select(text, judge=judge))
+        )
         if chosen.agent is None:
             unroutable.append(
                 StepResult(
@@ -189,6 +211,7 @@ def execute(
     step_timeout: float = DEFAULT_STEP_TIMEOUT,
     max_workers: int = 1,
     on_tick=None,
+    preselected: dict | None = None,
 ) -> TurnResult:
     """Run every brief through its agent. Never raises.
 
@@ -199,7 +222,9 @@ def execute(
     `context` carries the entities produced so far, which is how a result
     threads forward — TestDrive receives the vehicle_id Sales just produced.
     """
-    plan, unroutable = plan_turn(briefs, known=known, judge=judge)
+    plan, unroutable = plan_turn(
+        briefs, known=known, judge=judge, preselected=preselected
+    )
     result = TurnResult(steps=list(unroutable), disagreements=plan.disagreements)
     # WHAT WE KNOW, AND WHAT IT IS (found live, 2026-08-31). `known` used to be
     # a set of NAMES and every value here was seeded None — so the ordering said

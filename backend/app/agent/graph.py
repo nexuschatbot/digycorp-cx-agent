@@ -1011,6 +1011,15 @@ def _stream_once(
         messages=_cached_messages(messages),
         **extra,
     ) as stream:
+        # Speculative selection (2026-09-02): while an emit_briefs input is
+        # still STREAMING, every completed brief string is offered to
+        # orchestrator/speculate, which starts the embedding/judge selection
+        # in parallel with the rest of Aisha's typing. Selection only — no
+        # events, no writes — so a generation the language guard discards
+        # wastes at most a Haiku read. `spec_buf` is None except inside an
+        # emit_briefs block.
+        spec_buf: list[str] | None = None
+
         # Iterate the RAW event stream, not stream.text_stream, for one reason:
         # we need content_block_start to see a tool_use the INSTANT it begins.
         # Text deltas are still forwarded the moment they arrive, so AD-A's
@@ -1066,6 +1075,9 @@ def _stream_once(
             # stop the FINAL answer from streaming and break AD-A.
             if etype == "content_block_start":
                 block = getattr(event, "content_block", None)
+                spec_buf = (
+                    [] if getattr(block, "name", None) == "emit_briefs" else None
+                )
                 if getattr(block, "type", None) == "tool_use" and not sealed:
                     sealed = True
                     if writer:
@@ -1084,6 +1096,17 @@ def _stream_once(
                             "sealing bubble after %d pre-tool token(s) — session=%s", n_tokens, session_id
                         )
                         writer({"type": "text_break"})
+
+            if etype == "input_json" and spec_buf is not None:
+                # The SDK's synthetic input event: .partial_json is the delta
+                # of the tool input being typed. Each completed brief inside
+                # it starts its selection now instead of after the generation.
+                part = getattr(event, "partial_json", "") or ""
+                if part:
+                    spec_buf.append(part)
+                    from app.orchestrator import speculate as _speculate
+
+                    _speculate.offer(session_id, "".join(spec_buf))
 
             if etype == "text" and writer:
                 # The SDK's synthetic text event: .text is the incremental delta.
@@ -1142,6 +1165,16 @@ def _stream_once(
         elapsed_ms=_elapsed_ms, ttft_ms=_ttft_ms, writer=writer,
     )
     return {"role": "assistant", "content": [_normalise_block(b) for b in final.content]}
+
+
+def _speculate_take(session_id: str) -> dict:
+    """This session's speculative selections, or {} — never a broken cascade."""
+    try:
+        from app.orchestrator import speculate as _speculate
+
+        return _speculate.take(session_id)
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _fallback_message() -> dict:
@@ -1948,6 +1981,11 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                 judge=_judge,
                 deadline_seconds=remaining,
                 parent_writer=_stream_sink(_safe_writer()),
+                # Selections started while Aisha was still typing the briefs
+                # (see _stream_once and orchestrator/speculate). take() pops,
+                # so a discarded generation's offers cannot leak into a later
+                # cascade.
+                preselected=_speculate_take(session_id),
             )
             payload = _turn.compose_input(result)
             # THE STRIP, DECIDED ONCE (see _select_cards). Emitted here rather
