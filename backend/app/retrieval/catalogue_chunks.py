@@ -45,7 +45,7 @@ COLLECTION = "catalogue"
 
 # Bumped whenever the wording below changes, so a redeploy re-embeds rather
 # than serving vectors of the old wording from the cache.
-_VERSION = "v1"
+_VERSION = "v2"
 
 
 def _aed(n: int | None) -> str:
@@ -95,7 +95,7 @@ def _chunk(model, heading: str, body: str) -> Chunk:
         heading=heading,
         kind="fact",
         review_status="complete",
-        meta={"vehicle_id": model.id},
+        meta={"vehicle_id": model.id, "name": model.name},
     )
 
 

@@ -1403,12 +1403,58 @@ def _last_user_text(state: AgentState) -> str:
 # default floor of two would hand every slot to the reservations and none to the
 # global ranking. One reserved slot each still guarantees the catalogue's best
 # chunk a place beside the brochure that mentions the car on every page.
-_PREFETCH_K = 5
+# Six (2026-09-02, measured): with the vehicle hint in the query the right
+# catalogue passage is in the top five 94% of the time and in the top six 98%.
+_PREFETCH_K = 6
 _PREFETCH_FLOOR = 1
 _PREFETCH_MAX_CHARS = 4000
 
 
-def _prefetch_passages(state: AgentState) -> str | None:
+# Messages that are answers, not questions — the pre-fetch has nothing to find
+# for them and every passage it attaches is history the model must ignore.
+# Measured on the test VM's 144 pre-fetch-triggering customer messages: these
+# four rules skip 38 and not one of them was a question. There is no chip-tap
+# signal to use instead: option chips send their label as plain typed text by
+# design (frontend/src/options.ts), so the shape of the text is all there is.
+_PHONE_RE = re.compile(r"\d[\d\s-]{7,}\d")
+_PREFILL_TEXTS = frozenset({
+    "i’d like to book a test drive.",
+    "i'd like to book a test drive.",
+    "i’d like to reschedule or cancel my booking.",
+    "i'd like to reschedule or cancel my booking.",
+})
+_ANSWER_OPENERS = frozenset({
+    "yes", "yeah", "yep", "ok", "okay", "sure", "fine", "alright",
+    "no", "nope", "not", "thanks", "thank", "perfect", "great", "good",
+    "نعم", "أيوه", "ايوه", "تمام", "طيب", "أكيد", "اكيد", "ماشي", "لا", "لأ", "شكرا", "شكراً", "ممتاز",
+})
+
+
+def _looks_like_answer(text: str) -> str | None:
+    """Why this message is an answer rather than a question, or None."""
+    low = re.sub(r"\s+", " ", text.strip().lower())
+    if low in _PREFILL_TEXTS or low.startswith(("i'll take ", "i’ll take ")):
+        return "chip"
+    if _PHONE_RE.search(low):
+        return "phone"
+    words = low.split()
+    if words and "?" not in low and len(words) <= 5 and words[0].strip(",.!") in _ANSWER_OPENERS:
+        return "affirmation"
+    try:
+        from app.retrieval import vehicle_mentions
+
+        stripped = re.sub(r"\b(the|a|petrol|hybrid|please|one|model)\b", " ", low)
+        stripped = re.sub(r"[^\w\s-]", " ", stripped)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        found = vehicle_mentions.mentions(stripped)
+        if found and stripped in vehicle_mentions.aliases_for(found[-1]):
+            return "vehicle name only"
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _prefetch_passages(state: AgentState, *, slot_pinned: bool = False) -> str | None:
     """RETRIEVAL_FIRST: the local index's best passages for this message.
 
     LOCAL, ~50ms, NO MODEL, NO TOKENS — measured live, the cascade this
@@ -1428,11 +1474,28 @@ def _prefetch_passages(state: AgentState) -> str | None:
 
         if _prefilter.is_bare_greeting(text):
             return None
+        # A slot-chip tap arrives with its id pinned (ChatRequest.slot_id) —
+        # the one chip the backend can recognise structurally.
+        if slot_pinned:
+            return None
+        why = _looks_like_answer(text)
+        if why:
+            log.info("retrieval prefetch skipped: %s", why)
+            return None
         from app.retrieval import index as _index
+        from app.retrieval import vehicle_mentions
         from app.tools.knowledge_tools import FENCE_CLOSE, FENCE_OPEN
 
+        # THE VEHICLE HINT. A message that names no car is almost always about
+        # the car the conversation is already about; tell the index which one.
+        # See retrieval/vehicle_mentions for the measurement behind this.
+        query = text
+        if not vehicle_mentions.mentions(text):
+            current = vehicle_mentions.last_mentioned(state.get("messages") or [])
+            if current:
+                query = f"{text} {current}"
         hits = _index.search(
-            text,
+            query,
             collections=_index.PREFETCH_COLLECTIONS,
             k=_PREFETCH_K,
             floor=_PREFETCH_FLOOR,
@@ -1564,7 +1627,7 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     # holds its evidence and must not pay the tail twice. None everywhere the
     # flag is off (the shipped default), which keeps the prompt byte-identical.
     passages = (
-        _prefetch_passages(state)
+        _prefetch_passages(state, slot_pinned=cfg.get("provided_slot_id") is not None)
         if RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0
         else None
     )

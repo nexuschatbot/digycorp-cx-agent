@@ -52,6 +52,7 @@ the fast lane is confident or the model is unavailable.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 log = logging.getLogger("app.orchestrator.select")
@@ -183,6 +184,46 @@ def fast_lane(brief: str) -> Selection | None:
     )
 
 
+_ENTITY_RE = re.compile(r"\b([a-z]+(?:_[a-z]+)*_(?:id|ref|aed))\b")
+
+
+def entity_owner(brief: str) -> Selection | None:
+    """The one card that `produces` an entity the brief asks for by name.
+
+    WHY (2026-09-02, seen live). Aisha briefs for an id she needs — "What is
+    the vehicle_id for the Jetour Dashing? I need it to look up slots" — and
+    the Haiku judge answers "none": to it the request is a lookup that fits no
+    specialist's job description. Six turns on the test VM and a booking in a
+    local run ended in an apology that way, with the cascade ceiling reached
+    on a question Sales answers in one round. Retrieval-first makes this more
+    common, not less: when the early questions are answered from passages, no
+    specialist has run yet and no vehicle_id has been harvested, so the first
+    booking brief of the conversation is exactly this shape.
+
+    The cards already say who owns which entity (`produces` in their
+    frontmatter — the same declaration order.resolve plans by). A brief that
+    names an entity exactly one routable card produces goes to that card, with
+    no judge and no embedding margin involved. Names that nobody produces, or
+    that two cards produce, change nothing and fall through to the judge.
+    """
+    from app.orchestrator.order import produces
+
+    wanted = set(_ENTITY_RE.findall((brief or "").lower()))
+    if not wanted:
+        return None
+    owners: set[str] = set()
+    for agent in ROUTABLE:
+        try:
+            if wanted & produces(agent):
+                owners.add(agent)
+        except Exception:  # noqa: BLE001 — a missing card is the judge's problem
+            continue
+    if len(owners) != 1:
+        return None
+    (agent,) = owners
+    return Selection(agent=agent, layer="fast_lane", reason=f"produces {', '.join(sorted(wanted & produces(agent)))}")
+
+
 def select(brief: str, *, judge=None) -> Selection:
     """Pick the agent for one brief. Never raises.
 
@@ -197,6 +238,10 @@ def select(brief: str, *, judge=None) -> Selection:
     hit = fast_lane(brief)
     if hit is not None:
         return hit
+
+    owner = entity_owner(brief)
+    if owner is not None:
+        return owner
 
     if judge is None:
         ranked = score_brief(brief)
