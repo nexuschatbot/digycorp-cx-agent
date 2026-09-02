@@ -484,9 +484,10 @@ def test_a_proposal_reaches_write_execute_all(monkeypatch):
 
     seen = {}
 
-    def _fake(db, sid, proposals, *, customer_id=None, allow=None):
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None):
         seen["proposals"] = proposals
         seen["allow"] = allow
+        seen["allow_for"] = allow_for
         return [write.WriteResult(action="create_booking", status="executed",
                                   result={"booking_ref": "TD-2026-0001"})]
 
@@ -501,9 +502,38 @@ def test_a_proposal_reaches_write_execute_all(monkeypatch):
     out, _ = graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
 
     assert seen["allow"] == {"create_booking"}
+    # The gate is now re-derived per proposal, not just snapshotted.
+    assert callable(seen["allow_for"])
     assert seen["proposals"][0].action == "create_booking"
     assert out == [{"action": "create_booking", "status": "executed",
                     "detail": "", "booking_ref": "TD-2026-0001"}]
+
+
+def test_a_hold_is_ordered_before_the_booking_it_enables(monkeypatch):
+    """THE 2026-09-02 BOOKING BUG, ordering half. A sub-agent sometimes proposes
+    create_booking before the hold_slot it depends on; execute_all stops at the
+    first refusal, so the hold beside it never ran. _execute_proposals now sends
+    holds to the front."""
+    from app.orchestrator import write
+
+    seen = {}
+
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None):
+        seen["order"] = [p.action for p in proposals]
+        return [write.WriteResult(action=p.action, status="executed") for p in proposals]
+
+    monkeypatch.setattr(write, "execute_all", _fake)
+    _patch_state(monkeypatch, {"create_booking", "hold_slot"})
+    monkeypatch.setattr(graph, "_safe_writer", lambda: None)
+
+    result = _run.TurnResult(steps=[_step_with([
+        {"action": "create_booking", "args": {"slot_id": 5}, "agent": "testdrive"},
+        {"action": "hold_slot", "args": {"slot_id": 5}, "agent": "testdrive"},
+    ])])
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    graph._execute_proposals(result, {}, {"db": db, "session_id": "s1"})
+
+    assert seen["order"] == ["hold_slot", "create_booking"]
 
 
 def test_the_reference_surfaces_from_the_nested_booking_result(monkeypatch):
@@ -514,7 +544,7 @@ def test_the_reference_surfaces_from_the_nested_booking_result(monkeypatch):
     landed (found live, 2026-08-31)."""
     from app.orchestrator import write
 
-    def _fake(db, sid, proposals, *, customer_id=None, allow=None):
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None):
         return [write.WriteResult(action="create_booking", status="executed",
                                   result={"created": True, "booking": {
                                       "booking_ref": "TD-2026-0002",

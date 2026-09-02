@@ -149,6 +149,49 @@ def test_a_sequence_stops_at_the_first_refusal(monkeypatch):
     assert "skipped" in results[1].detail
 
 
+def test_a_hold_in_the_batch_unblocks_the_booking_beside_it(monkeypatch):
+    """THE 2026-09-02 BOOKING BUG. A sub-agent proposes hold_slot then
+    create_booking in one turn. The allowed set read ONCE before the batch said
+    "hold stage, create_booking not valid" — so create was refused even though
+    the hold beside it had just locked the slot. `allow_for` re-derives the gate
+    per proposal; here the gate opens the moment the hold has run."""
+    tools = __import__("app.tools", fromlist=["TOOL_FNS"]).TOOL_FNS
+    monkeypatch.setitem(tools, "lock_slot", lambda db, s, **k: {"locked": True})
+    monkeypatch.setitem(tools, "create_booking", lambda db, s, **k: {"ref": "TD-2026-XXXX"})
+
+    # The gate a real booking_state.read would return: create_booking is not
+    # valid until the hold has run, then it is.
+    held = {"flag": False}
+
+    def _allow_now():
+        base = {"hold_slot", "lock_slot", "reschedule_booking", "cancel_booking"}
+        return base | ({"create_booking"} if held["flag"] else set())
+
+    def _lock(db, s, **k):
+        held["flag"] = True
+        return {"locked": True}
+
+    monkeypatch.setitem(tools, "lock_slot", _lock)
+
+    results = write.execute_all(
+        None, "s1",
+        [write.Proposal(action="hold_slot"), write.Proposal(action="create_booking")],
+        allow_for=_allow_now,
+    )
+    assert [r.status for r in results] == ["executed", "executed"], [
+        (r.action, r.status, r.detail) for r in results
+    ]
+
+
+def test_the_static_allow_still_gates_when_no_refresh_is_given(monkeypatch):
+    """Backward compatibility: a caller passing a fixed `allow` (every existing
+    caller before this fix, and every test) is unchanged."""
+    result = write.execute(
+        None, "s1", write.Proposal(action="create_booking"), allow={"hold_slot"}
+    )
+    assert result.status == "refused" and "not valid at this point" in result.detail
+
+
 def test_one_correlation_id_ties_a_sequence_together(monkeypatch):
     monkeypatch.setitem(
         __import__("app.tools", fromlist=["TOOL_FNS"]).TOOL_FNS,

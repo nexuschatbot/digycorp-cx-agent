@@ -1660,6 +1660,15 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
     if not proposals:
         return [], {}
 
+    # HOLDS BEFORE BOOKINGS, ALWAYS (found live 2026-09-02). A sub-agent asked
+    # to book a slot it must first hold sometimes proposes them create-first,
+    # and execute_all stops at the first refusal — so create_booking was
+    # refused for want of a hold and the hold beside it never ran. Hold and
+    # lock go to the front, preserving order otherwise; the only valid sequence
+    # is hold-then-create, so this can reorder nothing that was already right.
+    _HOLD_FIRST = {"hold_slot", "lock_slot"}
+    proposals.sort(key=lambda p: 0 if (p.action or "") in _HOLD_FIRST else 1)
+
     db = cfg.get("db")
     session_id = cfg.get("session_id", "?")
     customer_id = state.get("customer_id")
@@ -1677,8 +1686,18 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
                  "detail": "could not establish where this booking had got to"}
                 for p in proposals], {}
 
+    # THE GATE, RE-DERIVED PER PROPOSAL. A hold and a booking in one batch move
+    # the state between them — the hold locks the slot, which is exactly the
+    # precondition the booking's gate checks — so the set read once above goes
+    # stale mid-batch. This closure re-reads it from the same session (execute
+    # flushes, so the pending hold is visible); a failure degrades to the
+    # snapshot. See write.execute_all.
+    def _allow_now() -> set[str]:
+        return booking_state.read(db, session_id, customer_id=customer_id).allowed
+
     results = write.execute_all(
-        db, session_id, proposals, customer_id=customer_id, allow=allowed,
+        db, session_id, proposals,
+        customer_id=customer_id, allow=allowed, allow_for=_allow_now,
     )
 
     if any(r.ok for r in results):

@@ -177,19 +177,39 @@ def execute_all(
     *,
     customer_id: int | None = None,
     allow: set[str] | None = None,
+    allow_for=None,
 ) -> list[WriteResult]:
     """Several proposals under ONE correlation id, in order.
 
     STOPS AT THE FIRST REFUSAL. Proposals from one turn are a sequence — hold
     then book — and carrying on after a hold was refused would create a booking
     against a slot nobody holds.
+
+    `allow_for` RE-DERIVES THE GATE BEFORE EACH PROPOSAL, and it exists because
+    a static `allow` snapshot was a bug (found live 2026-09-02). A sub-agent may
+    legitimately propose `hold_slot` then `create_booking` in one turn — its
+    card lists both — and the booking state machine's `allowed` set is derived
+    from the slot's live state. Read ONCE before the batch, that snapshot still
+    said "hold stage, create_booking not valid" on the second proposal even
+    though the first had just locked the slot in this very session, so a
+    complete booking was refused and the customer told to phone in. `allow_for`
+    (a zero-arg callable returning the current allowed set) is consulted per
+    proposal instead — execute() does not commit, but it flushes, so the state
+    machine reading the same session sees the pending hold. `allow` stays the
+    fallback for callers that pass a fixed set (and every existing test).
     """
     correlation_id = uuid.uuid4().hex
     out: list[WriteResult] = []
     for proposal in proposals:
+        current_allow = allow
+        if allow_for is not None:
+            try:
+                current_allow = allow_for()
+            except Exception:  # noqa: BLE001 — a bad refresh falls back to `allow`
+                log.warning("allow_for refresh failed; using the prior gate", exc_info=True)
         res = execute(
             db, session_id, proposal,
-            customer_id=customer_id, allow=allow, correlation_id=correlation_id,
+            customer_id=customer_id, allow=current_allow, correlation_id=correlation_id,
         )
         out.append(res)
         if not res.ok:
