@@ -41,6 +41,48 @@ from app.services import slots as slots_service
 SEED_DIR = Path(__file__).resolve().parent.parent / "seed"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _memoise_embeddings():
+    """Embed each distinct text once per worker, not once per test.
+
+    THE SUITE'S BIGGEST TIME SINK, MEASURED. test_retrieval.py resets the index
+    before every test (so ordering cannot matter), and each reset forces the
+    next search to re-embed all 228 corpus chunks through the int8 ONNX model —
+    ~13s on a dev laptop, ~26s on the CI runner, eleven times over. The routing
+    tests re-embed the three agent cards just as often. But `_encode` is a pure
+    function of its input text: the same chunk always yields the same vector, so
+    computing it twice is pure waste.
+
+    This wraps `embed._encode` for the whole session with a memo keyed on the
+    text tuple, caching only real results (a None from an unavailable or
+    monkeypatched model is passed straight through, so every failure-path test
+    still exercises the real branch). It changes no production code and no test
+    logic — index.reset() still clears the index and re-runs the build path;
+    the build is simply no longer paying the model for an answer it already has.
+    Per worker under `-n auto`, and that is fine: each worker embeds the corpus
+    once and then flies.
+    """
+    from app.retrieval import embed
+
+    real_encode = embed._encode
+    cache: dict[tuple, object] = {}
+
+    def _cached(texts, batch_size: int = 16):
+        key = tuple(texts)
+        if key in cache:
+            return cache[key]
+        result = real_encode(texts, batch_size=batch_size)
+        if result is not None:  # never cache a model-unavailable miss
+            cache[key] = result
+        return result
+
+    embed._encode = _cached
+    try:
+        yield
+    finally:
+        embed._encode = real_encode
+
+
 def _load(name: str) -> list[dict]:
     return json.loads((SEED_DIR / name).read_text(encoding="utf-8"))
 

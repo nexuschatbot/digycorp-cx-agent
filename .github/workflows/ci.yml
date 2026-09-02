@@ -73,12 +73,20 @@ jobs:
       - name: Lint
         run: ruff check .
 
-      # -n auto: one worker per vCPU (4 on ubuntu-latest). Measured 2026-09-01:
-      # the serial run was 534s of a ~600s job; 4 workers cut the same suite
-      # from 311s to 219s locally, and the suite is parallel-safe (each worker
-      # is its own process with its own in-memory db).
+      # -n auto: one worker per vCPU (4 on ubuntu-latest). The suite is
+      # parallel-safe — each worker is its own process with its own in-memory db.
+      #
+      # --dist loadscope KEEPS A MODULE ON ONE WORKER, and it is load-bearing for
+      # the retrieval tests. Those re-embed the 228-chunk corpus, which a
+      # session-scoped memo (tests/conftest.py::_memoise_embeddings) now computes
+      # ONCE per worker — so clustering test_retrieval.py onto a single worker
+      # pays that ~15-30s embed once for the whole file instead of once on each
+      # worker the default `load` mode would scatter it across. Measured
+      # 2026-09-02: the memo cut the full suite from 225s to 124s locally, and
+      # loadscope took it to 104s; the retrieval file alone fell from ~180s to
+      # ~19s serially (first test embeds, the rest hit the memo).
       - name: Test
-        run: pytest -q -n auto
+        run: pytest -q -n auto --dist loadscope
 
   frontend:
     needs: changes
