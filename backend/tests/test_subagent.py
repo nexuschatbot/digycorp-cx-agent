@@ -637,3 +637,57 @@ def test_asking_twice_in_one_round_is_one_request(monkeypatch):
          "args": {"ref": "TD-2026-0KXC", "new_slot_id": 530},
          "agent": "testdrive"}
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Terminal reads settle after their tool round (2026-09-02)
+#
+# A knowledge question paid the measured ~2,187ms summary round because
+# search_knowledge produces no card entity, so the harvest gate never fired —
+# a Haiku call writing prose about passages Aisha receives verbatim in
+# `_evidence` anyway. A step whose every call is a self-contained document
+# read now settles straight after its tools; anything that could be a chain
+# (search_vehicles, compare_vehicles, the finance ladder) keeps its rounds.
+# --------------------------------------------------------------------------- #
+def test_a_knowledge_only_step_settles_in_one_round(patched):
+    client = patched(
+        [[_use("search_knowledge", {"query": "warranty of the Dashing"})]],
+        dispatch=lambda *a, **k: {"found": True, "passages": [{"text": "10 years"}]},
+    )
+    out = subagent.run_step(STEP, {}, db=None, session_id="s1")
+    assert len(client.calls) == 1, "the summary round is the defect this removes"
+    assert out["_evidence"][0]["tool"] == "search_knowledge"
+
+
+def test_a_compare_step_keeps_its_summary_round(patched):
+    """compare_vehicles is NOT terminal: a compare brief legitimately follows
+    up ('...and which has the better warranty')."""
+    client = patched([
+        [_use("compare_vehicles", {"names": ["X70", "T2"]})],
+        [_text('{"findings": {}}')],
+    ], dispatch=lambda *a, **k: {"rows": []})
+    subagent.run_step(STEP, {}, db=None, session_id="s1")
+    assert len(client.calls) == 2
+
+
+def test_a_mixed_step_keeps_its_rounds(patched):
+    """search_vehicles in the mix means a chain may be underway — settling on
+    ALL tools called, not just this round's, is what protects it."""
+    client = patched([
+        [_use("search_vehicles", {"min_seats": 7})],
+        [_use("search_knowledge", {"query": "warranty"})],
+        [_text('{"findings": {}}')],
+    ], dispatch=lambda *a, **k: {"found": True, "passages": []})
+    subagent.run_step(STEP, {}, db=None, session_id="s1")
+    assert len(client.calls) == 3
+
+
+def test_an_erroring_terminal_read_still_gets_its_summary_round(patched):
+    """An error envelope is a finding the model should read and react to, not
+    something to settle over silently."""
+    client = patched([
+        [_use("search_knowledge", {"query": ""})],
+        [_text('{"findings": {}}')],
+    ], dispatch=lambda *a, **k: {"error": "missing_query"})
+    subagent.run_step(STEP, {}, db=None, session_id="s1")
+    assert len(client.calls) == 2

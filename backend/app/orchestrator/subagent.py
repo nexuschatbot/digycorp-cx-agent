@@ -191,6 +191,17 @@ def _proposals_clause(agent: str) -> str:
 # is not a different request. Ints arrive as strings for the same reason (the
 # model copies them out of prose), and write.execute passes args straight to the
 # tool function, so they are coerced here or not at all.
+# Self-contained document reads a specialist never chains a further tool call
+# from: the result IS the answer, so a step whose every call is one of these
+# settles straight after its tool round instead of paying a ~2,187ms Haiku
+# summary round (see the settle gate in run_step). compare_vehicles and
+# get_finance_options are deliberately NOT here — see the comment at the gate.
+TERMINAL_READS: frozenset[str] = frozenset({
+    "search_knowledge",
+    "get_colours",
+    "get_accessories",
+})
+
 _PROPOSAL_ALIASES = {"booking_ref": "ref", "reference": "ref"}
 _PROPOSAL_INTS = ("slot_id", "new_slot_id", "vehicle_id", "variant_id")
 
@@ -897,9 +908,28 @@ def run_step(
             got = _harvest_entities(
                 step.agent, seen_results, [e["tool"] for e in evidence]
             )
-            if wanted and wanted <= set(got) and not any(
+            clean = not any(
                 isinstance(r, dict) and r.get("error") for r in seen_results
-            ):
+            )
+            if wanted and wanted <= set(got) and clean:
+                settle_after_tools = True
+            # TERMINAL READS SETTLE TOO (2026-09-02). The gate above never
+            # fires for a knowledge question: search_knowledge produces no
+            # card entity, so a warranty lookup paid the ~2,187ms summary
+            # round the measurement above describes — a Haiku call writing
+            # prose about passages Aisha receives verbatim in `_evidence`
+            # anyway. When EVERY tool this step has called is a
+            # self-contained document read — one that no specialist ever
+            # chains a further tool call from — the tool round IS the answer.
+            #
+            # THE SET IS DELIBERATELY NARROW. compare_vehicles and
+            # get_finance_options are excluded: a compare brief legitimately
+            # follows up with search_knowledge ("...and which has the better
+            # warranty"), and finance's useful chain (details -> variants ->
+            # estimate) must keep its rounds. Settling on ALL tools called,
+            # not just this round's, is what keeps a mixed step — search
+            # first, then read a document — on the normal path.
+            elif clean and called and all(t in TERMINAL_READS for t in called):
                 settle_after_tools = True
 
         if settle_after_tools:
