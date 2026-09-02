@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { fetchVehicle, type VehicleDetail } from '../api'
-import { LABELS, features, fuelLabel, priceLine, type Lang } from '../i18n'
+import { LABELS, features, fuelLabel, priceLine, seatsLine, type Lang } from '../i18n'
 
 // Two aria-labels used only here — kept local rather than added to i18n.ts,
 // whose LABELS table is consumed elsewhere and should not grow for this.
@@ -121,14 +121,6 @@ export default function VehicleDialog({
 
   // "AED 79,000" per trim — reuses the single-value path of priceLine.
   const trimPrice = (aed: number | null) => (aed == null ? null : priceLine(aed, aed, lang))
-  const economy =
-    detail && detail.km_per_l_min != null && detail.km_per_l_max != null
-      ? `${
-          detail.km_per_l_min === detail.km_per_l_max
-            ? detail.km_per_l_min
-            : `${detail.km_per_l_min}–${detail.km_per_l_max}`
-        } ${t.kmPerL}`
-      : null
   const trims = detail?.variants ?? []
   // One unnamed trim is "the only version" — a section naming nothing under a
   // price already shown above would be noise.
@@ -290,12 +282,10 @@ export default function VehicleDialog({
                     <span className="vdlg-stat-label">{t.fuel}</span>
                   </div>
                 )}
-                {economy && (
-                  <div className="vdlg-stat">
-                    <span className="vdlg-stat-value">{economy}</span>
-                    <span className="vdlg-stat-label">{t.economy}</span>
-                  </div>
-                )}
+                {/* NO fuel-economy tile (2026-09-01, reversing 2026-08-29): the
+                    model-level band spans the trims ("8.3–10.3 km/L" is two
+                    different cars), so a tile up here read as one car's figure.
+                    The per-trim figure lives in each trim's accordion below. */}
               </div>
 
               {(detail.interior_colours?.length ?? 0) > 0 && (
@@ -313,25 +303,81 @@ export default function VehicleDialog({
 
               {/* TRIMS, with their list prices. A trim with no published price
                   says "coming soon", never a number (FR-CX-07). Hidden for a
-                  model with one unnamed version — nothing to choose. */}
+                  model with one unnamed version — nothing to choose.
+
+                  EACH ROW IS AN ACCORDION (2026-09-01): expanding shows that
+                  trim's OWN fuel economy — which is where the per-car km/L
+                  went when the model-level tile above was removed. Seats sit
+                  ON the collapsed row beside the trim name (same day, on
+                  request), not in the panel: always visible, and never stated
+                  twice in one box. Native <details>, so keyboard and
+                  screen-reader behaviour come free. A row with no per-trim
+                  figures renders as the plain row it always was — a chevron
+                  that opens onto nothing promises detail we don't have. Rows
+                  the data can't fill are OMITTED, never rendered empty
+                  (FR-CX-07). */}
               {showTrims && (
                 <section className="vdlg-section">
                   <h3 className="vdlg-section-title">{t.trims}</h3>
                   <div className="vdlg-trims">
-                    {trims.map((v) => (
-                      <div className="vdlg-trim" key={v.variant_id}>
-                        <bdi className="vdlg-trim-name">
-                          {v.name ?? displayNameForTrim(detail.name)}
-                        </bdi>
-                        {trimPrice(v.price_aed) ? (
-                          <span className="vdlg-trim-price">
-                            <bdi>{trimPrice(v.price_aed)}</bdi>
+                    {trims.map((v) => {
+                      const specs: Array<[string, string]> = []
+                      if (v.km_per_l_min != null && v.km_per_l_max != null) {
+                        const kml =
+                          v.km_per_l_min === v.km_per_l_max
+                            ? `${v.km_per_l_min}`
+                            : `${v.km_per_l_min}–${v.km_per_l_max}`
+                        specs.push([t.economy, `${kml} ${t.kmPerL}`])
+                      }
+                      const head = (
+                        <>
+                          <span className="vdlg-trim-id">
+                            <bdi className="vdlg-trim-name">
+                              {v.name ?? displayNameForTrim(detail.name)}
+                            </bdi>
+                            {v.seats_min != null && v.seats_max != null && (
+                              <span className="vdlg-trim-seats">
+                                · <bdi>{seatsLine(v.seats_min, v.seats_max, lang)}</bdi>
+                              </span>
+                            )}
                           </span>
-                        ) : (
-                          <span className="vdlg-trim-soon">{t.comingSoon}</span>
-                        )}
-                      </div>
-                    ))}
+                          {trimPrice(v.price_aed) ? (
+                            <span className="vdlg-trim-price">
+                              <bdi>{trimPrice(v.price_aed)}</bdi>
+                            </span>
+                          ) : (
+                            <span className="vdlg-trim-soon">{t.comingSoon}</span>
+                          )}
+                        </>
+                      )
+                      if (specs.length === 0) {
+                        return (
+                          <div className="vdlg-trim" key={v.variant_id}>
+                            {head}
+                          </div>
+                        )
+                      }
+                      return (
+                        <details className="vdlg-trim-acc" key={v.variant_id}>
+                          <summary className="vdlg-trim">
+                            {head}
+                            <span className="vdlg-trim-chevron" aria-hidden="true">
+                              ▾
+                            </span>
+                          </summary>
+                          <div className="vdlg-trim-specs">
+                            {specs.map(([label, value]) => (
+                              <div className="vdlg-trim-spec" key={label}>
+                                <span className="vdlg-trim-spec-label">{label}</span>
+                                <span className="vdlg-trim-spec-value">
+                                  <bdi>{value}</bdi>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )
+                    })}
                   </div>
                 </section>
               )}

@@ -408,9 +408,23 @@ class VehicleModel(Base):
     #   3. NOT PER-VARIANT. The sheet lists one palette per model, spanning its
     #      trims — unlike seats and price, which genuinely differ per trim.
     #
-    # Exterior colours have no column of their own on purpose: they ARE the
-    # Stock key, so they are already queryable per branch.
     interior_colours: Mapped[list] = mapped_column(JSON, default=list)
+    # Exterior colour palette as Elite's Models sheet lists it, one per model.
+    #
+    # THIS COLUMN REVERSES A STANDING NOTE that used to sit here: "exterior
+    # colours have no column of their own on purpose: they ARE the Stock key,
+    # so they are already queryable per branch." That was true of AVAILABILITY
+    # and wrong about EXISTENCE — a colour Elite offers with zero stock rows
+    # anywhere did not exist in the database at all, and live customers asking
+    # "what colours does it come in" were told we do not hold that (2026-09-01).
+    # The workbook lists the palette per MODEL; the converter had parsed it
+    # since day one and dropped it (see seed/convert_workbook.py).
+    #
+    # WHAT STOCK REMAINS FOR: which of these colours can be HAD, and where.
+    # This column is what we make; Stock is what is on the ground. The same
+    # three caveats as interior_colours apply: not paired with an interior,
+    # per-model not per-variant, and never evidence of availability.
+    exterior_colours: Mapped[list] = mapped_column(JSON, default=list)
     # Free-text source/traceability note for the row's data.
     data_provenance: Mapped[str | None] = mapped_column(Text)
     # Relative paths (from the backend repo root) to the model's image files.

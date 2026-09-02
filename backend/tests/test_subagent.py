@@ -183,12 +183,26 @@ def test_the_prompt_is_the_agents_own_body_plus_the_findings_instruction(patched
 def test_the_sub_agent_prompt_carries_no_customer_facing_rules(patched):
     """Persona, Arabic register, one-question and no-markdown live in base/ and
     aisha/ alone. A sub-agent writing prose would be a second voice with none of
-    the guardrails."""
+    the guardrails.
+
+    ASSERTED AS ABSENCE since 2026-09-01. This test used to check only that
+    the findings instruction was present, which passed while the full base
+    prefix — the very persona and output rules its docstring denies — rode on
+    every specialist call (~7.4k tokens). Now the wire prompt itself is
+    checked against the base blocks."""
+    from app.agents import loader
+
     client = patched([[_text('{"findings": {}}')]])
     subagent.run_step(STEP, {}, db=None, session_id="s1")
     system = wire_text(client.calls[0]["system"])
     assert "Do not greet" in system
     assert "do not write to the customer" in system
+    base = loader.sections("base")
+    for name in ("WHO_YOU_ARE", "LANGUAGE", "HOW_YOU_TALK", "OUTPUT_FORMAT",
+                 "CLOSING", "BRINGING_IN_A_PERSON"):
+        assert base[name] not in system, f"specialist wire prompt carries base {name}"
+    for name in loader.SUBAGENT_BASE_ORDER:
+        assert base[name] in system, f"specialist wire prompt lost base {name}"
 
 
 # --------------------------------------------------------------------------- #

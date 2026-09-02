@@ -6,6 +6,16 @@
 import type { VehicleDetail } from './api'
 import { newId } from './id'
 
+/** One trim row for the card's strip. Card data only — the dialog owns the
+ *  full trim record. `name` null = "the only version"; `priceAed` null = not
+ *  published, which the strip must render as "coming soon", never a number
+ *  (FR-CX-07). */
+export interface TrimRow {
+  variantId: number
+  name: string | null
+  priceAed: number | null
+}
+
 export interface VehicleCard {
   id: string
   /** The catalogue row id, when the tool payload carried one. The dialog needs
@@ -37,6 +47,14 @@ export interface VehicleCard {
   seatsMin: number | null
   seatsMax: number | null
   fuel: string | null
+  /** Trim rows (2026-09-01). Populated only when the payload carried the
+   *  variant list — the FULL get_vehicle_details shape and the dialog detail
+   *  do; the base dict behind search results and ambiguous candidates does
+   *  not, and stays []. Whether the strip actually renders is VehicleCards'
+   *  call (single full card, >1 trim), so a rehydrated card that resolves
+   *  through /api/vehicles/{id} — which always has the trims — still renders
+   *  identically to its live original. */
+  trims: TrimRow[]
 }
 
 interface VehicleDict {
@@ -50,6 +68,7 @@ interface VehicleDict {
   seats_min?: number | null
   seats_max?: number | null
   fuel?: string | null
+  variants?: unknown
 }
 
 function fmt(n: number): string {
@@ -70,6 +89,25 @@ export function priceLabel(v: VehicleDict): string | null {
   return `Up to AED ${fmt(max as number)}`
 }
 
+/** Trim rows from a variants payload (grounding as ever — rule 18: rows come
+ *  from the data or not at all). Tolerates the two shapes that carry them:
+ *  the tool's _variant_full dicts and the dialog's VehicleDialogVariant. */
+function extractTrims(raw: unknown): TrimRow[] {
+  if (!Array.isArray(raw)) return []
+  const rows: TrimRow[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const v = item as Record<string, unknown>
+    if (typeof v.variant_id !== 'number') continue
+    rows.push({
+      variantId: v.variant_id,
+      name: typeof v.name === 'string' && v.name.trim() ? v.name : null,
+      priceAed: typeof v.price_aed === 'number' ? v.price_aed : null,
+    })
+  }
+  return rows
+}
+
 function toCard(v: VehicleDict): VehicleCard {
   return {
     id: String(v.vehicle_id ?? v.name ?? newId()),
@@ -81,6 +119,7 @@ function toCard(v: VehicleDict): VehicleCard {
     seatsMin: typeof v.seats_min === 'number' ? v.seats_min : null,
     seatsMax: typeof v.seats_max === 'number' ? v.seats_max : null,
     fuel: typeof v.fuel === 'string' ? v.fuel : null,
+    trims: extractTrims(v.variants),
   }
 }
 
@@ -104,6 +143,7 @@ export function cardFromDetail(v: VehicleDetail): VehicleCard {
     seats_min: v.seats_min,
     seats_max: v.seats_max,
     fuel: v.fuel,
+    variants: v.variants,
   })
 }
 

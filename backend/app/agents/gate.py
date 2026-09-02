@@ -145,14 +145,26 @@ def check_tool_reachability() -> list[str]:
     try:
         from evals import differential
 
-        reports = differential.check_all()
+        # BOTH surfaces: the legacy journeys over REGISTRY and, since
+        # 2026-09-01, the sub-agent cards over SUBAGENT_REGISTRY — the check
+        # was blind to the cards for a whole phase, which is how a tool could
+        # sit bound-and-unnamed on the sales card while customers were told we
+        # held no such data. They stay two calls because `testdrive` names an
+        # agent in both worlds; see differential.check_all's docstring.
+        reports = list(differential.check_all().items())
+        reports += list(differential.check_cards().items())
     except Exception:  # noqa: BLE001
         log.warning("differential harness unavailable — tool reachability unchecked")
         return []
     out: list[str] = []
-    for agent, rep in reports.items():
-        for rule in getattr(rep, "orphaned", []) or []:
-            out.append(f"{agent}:{rule}")
+    for agent, rep in reports:
+        # `orphaned_rules`, the field AgentReport actually has. This read
+        # `rep.orphaned` until 2026-09-01 — an attribute that never existed —
+        # so the getattr default made this function return [] forever and the
+        # gate's differential check had never once run. A defensive default on
+        # a misspelled name is how a check dies without a death notice.
+        for module_name, const, tool in rep.orphaned_rules:
+            out.append(f"{agent}:{module_name}.{const} -> {tool}")
     return out
 
 

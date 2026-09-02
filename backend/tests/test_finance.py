@@ -280,3 +280,16 @@ def test_a_partial_on_road_price_is_refused_rather_than_summed(db):
     out = finance.on_road_price(db, v.id)
     assert out["error"] == "incomplete_on_road_price"
     assert "on_road_aed" not in out
+
+
+def test_the_bank_panel_is_reachable_as_a_tool_with_no_car(db):
+    """finance.options had no tool while the finance card claimed "which banks
+    do you work with" as its own utterance — so the one financing question a
+    cold session can ask ("tell me the installment plans", observed live three
+    times in one morning, 2026-09-01) was unanswerable by construction."""
+    from app.tools.finance_tools import get_finance_options
+
+    out = get_finance_options(db, "s")
+    assert [b["bank"] for b in out["banks"]]
+    assert "max_tenure_months" in out["regulatory_caps"]
+    assert out["indicative"] is True

@@ -327,6 +327,10 @@ def db() -> Session:
                 headline_features_ar=r["headline_features_ar"],
                 showroom_ids=r["showroom_ids"],
                 interior_colours=r["interior_colours"],
+                # Same rule as the Arabic bullets above: a .get() default of []
+                # here is exactly how the palette went missing in production —
+                # tests must run against the palette that ships.
+                exterior_colours=r["exterior_colours"],
                 data_provenance=r["data_provenance"],
                 images=r["images"],
             )

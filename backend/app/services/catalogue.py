@@ -400,6 +400,9 @@ def _vehicle_dict(
         out["data_provenance"] = v.data_provenance
         out["images"] = list(v.images or [])
         out["interior_colours"] = list(v.interior_colours or [])
+        # The palette Elite MAKES the model in — availability stays a stock
+        # question (see VehicleModel.exterior_colours).
+        out["exterior_colours"] = list(v.exterior_colours or [])
         # Interior photos, so "what's it like inside?" can be SHOWN. On the
         # full dict only — search cards stay one hero image each. Empty list,
         # never absent: "no photos" is a fact the agent must not invent around.
@@ -481,6 +484,7 @@ def detail_for_dialog(db: Session, vehicle_id: int) -> dict | None:
         # — a trim with no published price carries null and renders as "coming
         # soon", never a number.
         "interior_colours": list(v.interior_colours or []),
+        "exterior_colours": list(v.exterior_colours or []),
         "km_per_l_min": min(e[0] for e in economy) if economy else None,
         "km_per_l_max": max(e[1] for e in economy) if economy else None,
         "variants": [
@@ -975,6 +979,7 @@ def get_variants(db: Session, vehicle_id: int) -> dict:
         # repeated fifteen times. NOT paired with an exterior colour and not
         # stocked — see VehicleModel.interior_colours before answering with it.
         "interior_colours": list(v.interior_colours or []),
+        "exterior_colours": list(v.exterior_colours or []),
         # A trim named `null` means "the only version", not "unknown". Said
         # explicitly so the agent renders the model name alone rather than the
         # word None.

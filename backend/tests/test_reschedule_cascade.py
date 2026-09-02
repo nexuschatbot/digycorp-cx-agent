@@ -50,7 +50,15 @@ def booked(db):
     slot the conversation does not own, which is the service guard underneath
     the write gate and is exactly what happened live before lock_slot ran.
     """
-    base = datetime(2026, 9, 1, 13, 0)
+    # RELATIVE TO NOW, NOT A LITERAL DATE. This read `datetime(2026, 9, 1,
+    # 13, 0)` and detonated on 2026-09-01 itself: by that evening the "new"
+    # slot was in the past and lock_slot honestly refused it with
+    # slot_in_the_past — four errors that had nothing to do with any change
+    # under test. The lock's past-check is real behaviour; the fixture must
+    # simply stay ahead of it.
+    base = (datetime.now() + timedelta(days=7)).replace(
+        hour=13, minute=0, second=0, microsecond=0
+    )
     old = Slot(location_type=LocationType.showroom, showroom_id=1, vehicle_id=1,
                start=base, end=base + timedelta(minutes=90), status=SlotStatus.booked)
     new = Slot(location_type=LocationType.showroom, showroom_id=1, vehicle_id=1,

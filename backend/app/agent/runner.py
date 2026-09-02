@@ -359,6 +359,19 @@ def run_turn(
     card_rows: list[dict] = []
     # Anchors already drawn this turn — see the tool_event branch below.
     drawn_anchors: set[str] = set()
+    # Per-turn token totals for turn_trace — summed across every model CALL in
+    # the turn (the tool loop makes 2-3), because the columns answer "what did
+    # this turn cost", not "what did one call cost". The per-call detail stays
+    # in the `agent usage` log line.
+    usage_totals = {"prompt": 0, "output": 0, "cache_read": 0, "calls": 0}
+    # EVERY tool call this turn, in order, duplicates kept — for turn_trace.
+    # This used to be derived from card_rows, which records only the calls
+    # that DREW A CARD: every other tool this system ever called was invisible
+    # to the flight recorder, and all 110 rows on the test VM carried [] while
+    # slots were being locked and bookings made (2026-09-01). Card anchors
+    # govern reloads; this list is the telemetry, and they are not the same
+    # thing.
+    tools_called: list[str] = []
     # Vehicles already carded this turn, across tools and variants.
     drawn_vehicle_ids: set[int] = set()
     # Cascade routing for turn_trace.steps — see the "cascade" branch below.
@@ -506,6 +519,15 @@ def run_turn(
                 assistant_chunks.append(chunk["text"])
                 on_event("token", {"text": chunk["text"]})
             elif kind == "tool_event":
+                # Recorded BEFORE the card dedupe below: a suppressed duplicate
+                # card was still a real tool call, and the trace records what
+                # ran, not what was drawn. Prefixed with the specialist's name
+                # when one made the call, so `sales:search_knowledge` and
+                # Aisha's own `get_booking` stay tellable apart in aggregates.
+                tools_called.append(
+                    f"{chunk['agent']}:{chunk['tool']}"
+                    if chunk.get("agent") else chunk["tool"]
+                )
                 anchor = _card_anchor(chunk["tool"], chunk["output"])
                 # THE SAME CARD IS NEVER DRAWN TWICE IN ONE TURN (found live,
                 # 2026-08-29: a sales sub-agent called search_vehicles twice on
@@ -591,6 +613,11 @@ def run_turn(
                 if chunk.get("agent"):
                     event["agent"] = chunk["agent"]
                 on_event("tool_event", event)
+            elif kind == "usage":
+                usage_totals["prompt"] += int(chunk.get("prompt_total") or 0)
+                usage_totals["output"] += int(chunk.get("output") or 0)
+                usage_totals["cache_read"] += int(chunk.get("cache_read") or 0)
+                usage_totals["calls"] += 1
             elif kind == "cascade":
                 # Which specialist took which brief, how it was chosen, how long
                 # it took and whether it worked. Appended rather than assigned:
@@ -670,7 +697,7 @@ def run_turn(
             user_message=None if kickoff else message,
             detected_lang=user_lang,
             customer_id=(prior_facts or {}).get("customer_id"),
-            tool_calls=[row.get("tool") for row in card_rows if row.get("tool")],
+            tool_calls=tools_called,
             # THE CASCADE, which `routed_to` cannot show. That column carries
             # the LEGACY journey router (prefilter/classifier/sticky) and says
             # "testdrive" for a turn sales handled end to end — true of every
@@ -679,6 +706,12 @@ def run_turn(
             # unchanged.
             steps=cascade_steps or None,
             agent_response=reply,
+            # Turn totals from the `usage` stream chunks — see _log_usage.
+            # None, not 0, when no usage arrived: absence must read as "not
+            # recorded", never as a free turn.
+            tokens_in=usage_totals["prompt"] if usage_totals["calls"] else None,
+            tokens_out=usage_totals["output"] if usage_totals["calls"] else None,
+            cache_hits=usage_totals["cache_read"] if usage_totals["calls"] else None,
             router_latency_ms=router_ms,
             latency_ms=int((time.perf_counter() - turn_started) * 1000),
         )

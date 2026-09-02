@@ -116,14 +116,109 @@ def check(agent: str) -> AgentReport:
 
 
 def check_all() -> dict[str, AgentReport]:
+    """The LEGACY journeys over REGISTRY — the single-agent path's surface.
+
+    NOT the whole story since Phase 5: the sub-agent cards have their own
+    surface (their frontmatter over SUBAGENT_REGISTRY) and their own check,
+    check_cards() below. They are separate dicts because `testdrive` names an
+    agent in both worlds — a legacy journey AND a card — and one merged dict
+    silently replaces one report with the other. Callers that want the whole
+    picture (the gate, the CI tests) consult both.
+    """
     return {a: check(a) for a in tool_binding.AGENTS}
+
+
+# THE TRACKED INVENTORY of card orphans, shared by the boot gate and the CI
+# test so the two cannot disagree — the same pattern KNOWN_ANCHOR_ORPHANS set.
+#
+# EVERY ENTRY IS PORTED PROSE DESCRIBING A JOINT SEQUENCE. The brochure and
+# booking sequences were written for the single agent, who both talked and
+# wrote; on the fan-out path the WRITES in them are Aisha's (identity, consent,
+# the licence acknowledgement, the send) and the sub-agent's share is the data
+# and the proposals. Each card already carries authored prose saying so —
+# sales' frontmatter note on send_brochure, testdrive's
+# THE_VISIT_DETAILS_ARE_IN_THE_BRIEF — and rule zero forbids editing the ported
+# sections themselves. So these are ACKNOWLEDGED, not defects; an orphan NOT in
+# this list is a defect and fails the gate and the suite alike. Shrink this
+# list when the prose is properly superseded; never grow it to make a failure
+# go away.
+KNOWN_CARD_ORPHANS: frozenset[tuple[str, str, str]] = frozenset({
+    ("sales", "BROCHURE", "find_or_create_customer"),
+    ("sales", "BROCHURE", "record_consent"),
+    ("sales", "BROCHURE", "send_brochure"),
+    ("testdrive", "MANAGING_EXISTING", "identify_by_reference_or_mobile"),
+    ("testdrive", "BOOKING_SEQUENCE", "find_or_create_customer"),
+    ("testdrive", "BOOKING_SEQUENCE", "record_consent"),
+    ("testdrive", "BOOKING_SEQUENCE", "acknowledge_licence_reminder"),
+})
+
+
+def check_card(agent: str) -> AgentReport:
+    """The differential for one SUB-AGENT card: its own body vs its own tools.
+
+    OWN SECTIONS ONLY, deliberately. A sub-agent's shipped body is its card's
+    sections plus the two base blocks SUBAGENT_BASE_ORDER names (the full base
+    prefix was dropped 2026-09-01 — see loader.py). Of the two kept blocks,
+    GROUNDING names get_available_slots, which only testdrive holds — shared
+    prose, one owner, the same known asymmetry the base prefix always had,
+    just one tool wide now instead of six. Checking the shared blocks per card
+    would flag that on sales and finance forever; the card's OWN prose is
+    where a new defect can actually appear.
+
+    A TOOL NAMED IN PROSE IS REACHABLE two ways: bound on the card, or
+    interceptable as a proposal — ported prose says "call lock_slot", and
+    subagent.py reads a proposable write named as a tool call as the proposal
+    it is. `hold_slot` is the proposal spelling of the lock_slot tool.
+    """
+    from app.agents import loader
+    from app.tools import SUBAGENT_REGISTRY
+
+    fm = loader.frontmatter(agent) or {}
+    declared = list(fm.get("tools") or [])
+    proposes = set(fm.get("proposes") or [])
+    reachable = set(declared) | proposes
+    if "hold_slot" in proposes:
+        reachable.add("lock_slot")
+
+    report = AgentReport(agent=agent)
+
+    # A card naming a tool the registry does not hold ran an agent with NO
+    # tools at all once (see subagent.py's _schemas_for) — a binding defect of
+    # the same severity as an orphaned rule, reported in the same list.
+    for tool in declared:
+        if tool not in SUBAGENT_REGISTRY:
+            report.orphaned_rules.append((agent, "frontmatter", tool))
+
+    try:
+        blocks = loader.sections(agent)
+    except loader.PromptError:
+        blocks = {}
+
+    for tool in SUBAGENT_REGISTRY:
+        named_in = [name for name, text in blocks.items() if _mentions(text, tool)]
+        if tool not in reachable:
+            for section in named_in:
+                if (agent, section, tool) not in KNOWN_CARD_ORPHANS:
+                    report.orphaned_rules.append((agent, section, tool))
+        elif tool in declared and not named_in:
+            report.unguided_tools.append(tool)
+
+    return report
+
+
+def check_cards() -> dict[str, AgentReport]:
+    return {a: check_card(a) for a in SUB_AGENTS}
 
 
 def render(reports: dict[str, AgentReport]) -> str:
     lines = []
     for agent, r in reports.items():
         lines.append(f"\n{agent}  —  {'OK' if r.ok else 'FAIL'}")
-        lines.append(f"  tools bound: {len(tool_binding.tools_for(agent))}")
+        try:
+            bound = len(tool_binding.tools_for(agent))
+        except ValueError:  # a sub-agent card, not a legacy journey
+            bound = len(_card_tools(agent))
+        lines.append(f"  tools bound: {bound}")
         if r.orphaned_rules:
             lines.append("  ORPHANED RULES (prose names a tool this agent cannot call):")
             for module_name, const, tool in r.orphaned_rules:

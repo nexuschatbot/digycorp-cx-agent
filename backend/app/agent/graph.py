@@ -545,26 +545,51 @@ def _cached_messages(messages: list) -> list:
 
 
 def _prefixes_to_warm() -> list[tuple[str, list]]:
-    """Every distinct (label, tool schema list) worth a cache entry.
+    """Every (label, tools, system) THE LIVE PATH CAN ACTUALLY READ — no more.
 
-    DEDUPED BY THE SCHEMA LIST ITSELF: two journeys binding identical tools
-    share one cache entry, and warming it twice would pay the write twice for
-    nothing. Falls back to the full set if the binding module cannot enumerate.
+    GATED ON THE SAME FLAG THE SERVING PATH READS (2026-09-01). This used to
+    warm the single-agent prefixes (`full` and the two journeys) UNCONDITIONALLY
+    and add the multi-agent pair beside them — so with MULTI_AGENT_ENABLED on,
+    three of five Sonnet writes (~83k tokens a boot, at the 1h-TTL 2x write
+    rate) warmed keys graph's own binding selection (see the `tools=` ternary
+    in _agent_node) makes unreachable: every multi-agent call sends
+    aisha_schemas(), never TOOL_SCHEMAS or a journey binding. That is the
+    warm-a-key-nothing-reads bug this function was already patched for once —
+    the comment below records the first occurrence — happening again on the
+    other side of the flag. Measured on the test VM: 14 restarts since Aug 31
+    made prewarm the single largest line on the bill, bigger than every
+    conversation combined.
+
+    DEDUPED BY THE SCHEMA LIST ITSELF on the single-agent side: two journeys
+    binding identical tools share one cache entry, and warming it twice would
+    pay the write twice for nothing.
     """
-    out: list[tuple[str, list, object]] = [("full", TOOL_SCHEMAS, system_prompt_parts())]
-    seen = {tuple(s["name"] for s in TOOL_SCHEMAS)}
-    try:
-        from app.agent import tool_binding
+    out: list[tuple[str, list, object]] = []
 
-        for agent in getattr(tool_binding, "AGENTS", ()) or ():
-            schemas = tool_binding.schemas_for(agent)
-            key = tuple(s["name"] for s in schemas)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append((agent, schemas, system_prompt_parts(agent=agent)))
+    multi_agent = False
+    try:
+        from app.orchestrator import turn as _turn
+
+        multi_agent = _turn.enabled()
     except Exception:  # noqa: BLE001 — a warm-up must never break a boot
-        log.warning("could not enumerate per-agent tool bindings — warming the full set only")
+        log.warning("could not read the multi-agent flag — warming the single-agent set")
+
+    if not multi_agent:
+        out.append(("full", TOOL_SCHEMAS, system_prompt_parts()))
+        seen = {tuple(s["name"] for s in TOOL_SCHEMAS)}
+        try:
+            from app.agent import tool_binding
+
+            for agent in getattr(tool_binding, "AGENTS", ()) or ():
+                schemas = tool_binding.schemas_for(agent)
+                key = tuple(s["name"] for s in schemas)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append((agent, schemas, system_prompt_parts(agent=agent)))
+        except Exception:  # noqa: BLE001 — a warm-up must never break a boot
+            log.warning("could not enumerate per-agent tool bindings — warming the full set only")
+        return out
 
     # THE PREFIX A LIVE CHAT TURN ACTUALLY READS (found 2026-08-31). This
     # function varied the TOOLS correctly and passed system_prompt_parts() with
@@ -574,17 +599,26 @@ def _prefixes_to_warm() -> list[tuple[str, list]]:
     # sent. The warm-up spent an API call per boot writing an entry nothing could
     # read, and every first customer still paid the cold write it exists to
     # avoid.
+    #
+    # `aisha:unrouted` IS LIVE TOO (2026-09-01): a first turn the router settles
+    # as FALLBACK with no previous agent runs with agent=None, whose stable text
+    # is the un-routed body plus DELEGATING — a third multi-agent prefix that
+    # was served daily and never warmed, so the very first customer of a boot
+    # often paid the one cold write prewarm exists to prevent.
     try:
-        from app.orchestrator import turn as _turn
         from app.tools import aisha_schemas as _aisha_schemas
 
-        if _turn.enabled():
-            for journey in ("testdrive", "bookingmanagement"):
-                out.append((
-                    f"aisha:{journey}",
-                    _aisha_schemas(),
-                    system_prompt_parts(agent=journey, multi_agent=True),
-                ))
+        out.append((
+            "aisha:unrouted",
+            _aisha_schemas(),
+            system_prompt_parts(multi_agent=True),
+        ))
+        for journey in ("testdrive", "bookingmanagement"):
+            out.append((
+                f"aisha:{journey}",
+                _aisha_schemas(),
+                system_prompt_parts(agent=journey, multi_agent=True),
+            ))
     except Exception:  # noqa: BLE001
         log.warning("could not enumerate the multi-agent prefixes", exc_info=True)
 
@@ -691,6 +725,7 @@ def _log_usage(
     streamed: int,
     elapsed_ms: int | None = None,
     ttft_ms: int | None = None,
+    writer=None,
 ) -> None:
     """Record what one model CALL actually cost. Never raises.
 
@@ -746,6 +781,18 @@ def _log_usage(
             getattr(final, "stop_reason", "?"),
             timing,
         )
+        # ONTO THE STREAM AS WELL AS THE LOG (2026-09-01). turn_trace has
+        # carried tokens_in/tokens_out columns since T3.5 and every row was
+        # NULL — the numbers lived only in journald, so the token audit that
+        # should have been one SQL query took ssh archaeology. The runner
+        # accumulates these per turn and hands them to turn_trace.record.
+        if writer is not None:
+            writer({
+                "type": "usage",
+                "prompt_total": uncached + cache_write + cache_read,
+                "output": _count("output_tokens"),
+                "cache_read": cache_read,
+            })
     except Exception:  # noqa: BLE001 — telemetry must never break a live turn
         log.debug("usage logging failed — session=%s", session_id, exc_info=True)
 
@@ -1091,7 +1138,7 @@ def _stream_once(
     )
     _log_usage(
         final, session_id=session_id, streamed=n_tokens,
-        elapsed_ms=_elapsed_ms, ttft_ms=_ttft_ms,
+        elapsed_ms=_elapsed_ms, ttft_ms=_ttft_ms, writer=writer,
     )
     return {"role": "assistant", "content": [_normalise_block(b) for b in final.content]}
 

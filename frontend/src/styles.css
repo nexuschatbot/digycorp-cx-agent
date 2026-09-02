@@ -903,6 +903,60 @@ html, body, #root { height: 100%; }
   white-space: nowrap;
 }
 
+/* TRIM STRIP (2026-09-01) — trim name and list price rows under the body, the
+   dialog's Trims section brought onto the card. Rendered ONLY on a single FULL
+   card with more than one trim (see VehicleCards.tsx), so search rows and the
+   ambiguous candidates row keep the fixed geometry the 238px card promises.
+   This modifier is the ONE place that height may unlock: every strip row
+   clamps to one line, so the card grows by exactly its row count and nothing
+   else — the image's 134px and the body's 98px above are untouched. */
+.vcard--trims { height: auto; min-height: 238px; }
+.vcard-trims {
+  border-top: 2px solid var(--line-hairline);
+  padding: 8px 22px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vcard-trim {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.vcard-trim-name {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vcard-trim-price {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+/* Unpublished price — the same "coming soon" the dialog shows, at chip scale.
+   Never a number (FR-CX-07). */
+.vcard-trim-soon {
+  color: var(--warn-ink);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
 /* --- booking card (get_booking / reload from booking_refs) ----------------
  *
  * A VERTICAL STACK (product decision 2026-07-28). This REVERSES the horizontal
@@ -2016,6 +2070,19 @@ html, body, #root { height: 100%; }
   padding: 0.6rem 0.85rem;
 }
 .vdlg-trim-name { font-weight: 600; font-size: 0.9rem; }
+/* Name and seat count grouped on the row's leading side, so the price keeps
+   the trailing edge to itself under space-between. */
+.vdlg-trim-id {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.vdlg-trim-seats {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
 .vdlg-trim-price { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
 .vdlg-trim-soon {
   background: var(--warn-wash);
@@ -2025,6 +2092,51 @@ html, body, #root { height: 100%; }
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+
+/* TRIM ACCORDION (2026-09-01) — the box moves from the row onto the <details>
+   wrapper, so the open state stays ONE box with a hairline between summary and
+   specs, not two stacked boxes. The plain .vdlg-trim keeps its own box for the
+   no-specs fallback row. */
+.vdlg-trim-acc {
+  border: 1px solid var(--line-hairline);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+}
+.vdlg-trim-acc > .vdlg-trim {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  list-style: none;
+}
+/* Safari draws its own disclosure triangle unless told not to. */
+.vdlg-trim-acc > .vdlg-trim::-webkit-details-marker { display: none; }
+.vdlg-trim-chevron {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  flex: 0 0 auto;
+  transition: transform 0.15s;
+}
+.vdlg-trim-acc[open] .vdlg-trim-chevron { transform: rotate(180deg); }
+.vdlg-trim-specs {
+  border-top: 1px solid var(--line-hairline);
+  padding: 0.5rem 0.85rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.vdlg-trim-spec {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.vdlg-trim-spec-label { color: var(--color-text-muted); font-size: 0.8rem; }
+.vdlg-trim-spec-value {
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

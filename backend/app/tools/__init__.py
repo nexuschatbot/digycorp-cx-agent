@@ -77,10 +77,16 @@ from app.tools.catalogue_tools import (
     get_vehicle_details,
     search_vehicles,
 )
+from app.tools.colour_tools import (
+    GET_COLOURS_SCHEMA,
+    get_colours,
+)
 from app.tools.finance_tools import (
     GET_FINANCE_ESTIMATE_SCHEMA,
+    GET_FINANCE_OPTIONS_SCHEMA,
     GET_ON_ROAD_PRICE_SCHEMA,
     get_finance_estimate,
+    get_finance_options,
     get_on_road_price,
 )
 from app.tools.knowledge_tools import (
@@ -287,7 +293,7 @@ READ_TOOLS: frozenset[str] = frozenset(REGISTRY) - WRITE_TOOLS
 # live one, so adding a tool to REGISTRY today would change what customers meet
 # before the T0.1 baseline has been re-measured against the new stack.
 #
-# So the five reads the sub-agent CARDS declare live here instead. Sub-agents
+# So the reads the sub-agent CARDS declare live here instead. Sub-agents
 # resolve their tools from this registry (orchestrator/subagent._schemas_for);
 # nothing else does, and TOOL_SCHEMAS is untouched.
 #
@@ -311,14 +317,26 @@ SUBAGENT_ONLY: dict[str, dict] = {
     # of Elite's accessories the whole time; nothing read it, so a customer who
     # asked the price of the alloy wheel upgrade was told we did not have it.
     "get_accessories": {"schema": GET_ACCESSORIES_SCHEMA, "fn": get_accessories},
+    # The open colour question — "what colours does it come in" — which
+    # check_stock only ever answered by accident, on its wrong-colour path.
+    # Wired 2026-09-01; the service it wraps had been tested and orphaned
+    # since T0.8. See colour_tools.py.
+    "get_colours": {"schema": GET_COLOURS_SCHEMA, "fn": get_colours},
     "get_on_road_price": {"schema": GET_ON_ROAD_PRICE_SCHEMA, "fn": get_on_road_price},
     "get_finance_estimate": {
         "schema": GET_FINANCE_ESTIMATE_SCHEMA,
         "fn": get_finance_estimate,
     },
+    # The bank panel, needing no car — the one financing question a cold
+    # session can ask. Wired 2026-09-01; services/finance.options had no tool
+    # while the finance card claimed "which banks do you work with" as its own.
+    "get_finance_options": {
+        "schema": GET_FINANCE_OPTIONS_SCHEMA,
+        "fn": get_finance_options,
+    },
 }
 
-# What a sub-agent may reach: everything Aisha can read, plus the six above.
+# What a sub-agent may reach: everything Aisha can read, plus the reads above.
 SUBAGENT_REGISTRY: dict[str, dict] = {**REGISTRY, **SUBAGENT_ONLY}
 SUBAGENT_TOOL_FNS = {name: entry["fn"] for name, entry in SUBAGENT_REGISTRY.items()}
 

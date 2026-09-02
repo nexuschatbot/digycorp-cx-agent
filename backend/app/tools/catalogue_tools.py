@@ -141,12 +141,14 @@ SEARCH_VEHICLES_SCHEMA = {
                     "seven-seaters.\n\n"
                     "Pass feature_query ONLY for a detail the catalogue actually "
                     "holds, the equipment and character in these examples. Do "
-                    "NOT reach for it to chase something we do not keep at all, "
-                    "such as paint or interior colours, warranty terms, stock or "
-                    "arrival dates, or an exact power output: there is nothing to "
-                    "find, so the search comes back with unrelated cars. Answer "
-                    "honestly that you do not have that detail and offer a "
-                    "specialist instead."
+                    "NOT reach for it to chase a detail this search does not "
+                    "carry — paint colours, warranty terms, stock or arrival "
+                    "dates, or an exact power output: there is nothing to find "
+                    "HERE, so the search comes back with unrelated cars. Those "
+                    "details belong to the dedicated colour, knowledge, stock "
+                    "and accessory tools where you hold them; only when no tool "
+                    "you hold answers it do you say honestly that you do not "
+                    "have that detail and offer a specialist instead."
                 ),
             },
             "basis": {

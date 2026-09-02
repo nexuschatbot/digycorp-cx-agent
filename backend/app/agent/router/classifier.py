@@ -181,8 +181,17 @@ def _get_client():
     return _client
 
 
-def _live_generate(system: str, user: str, *, model: str) -> dict:
-    """The real Haiku call. Client is pooled — see _get_client."""
+def _live_generate(system: str, user: str, *, model: str, tool: dict | None = None) -> dict:
+    """The real Haiku call. Client is pooled — see _get_client.
+
+    `tool` DEFAULTS TO THIS ROUTER'S OWN ROUTE_TOOL and exists for the
+    orchestrator's judge, whose roster is different (found live, 2026-09-01):
+    the judge reused this function as-is, so its Haiku call was FORCED into the
+    legacy enum (testdrive / bookingmanagement / fallback) and could never
+    answer `sales` or `finance` however clearly the brief named them. A caller
+    with its own roster must pass its own tool.
+    """
+    tool = tool or ROUTE_TOOL
     response = _get_client().messages.create(
         model=model,
         max_tokens=256,
@@ -193,8 +202,8 @@ def _live_generate(system: str, user: str, *, model: str) -> dict:
         # saying the same words twice, which no threshold can fix downstream.
         temperature=0,
         system=system,
-        tools=[ROUTE_TOOL],
-        tool_choice={"type": "tool", "name": "route"},
+        tools=[tool],
+        tool_choice={"type": "tool", "name": tool["name"]},
         messages=[{"role": "user", "content": user}],
     )
     for block in response.content:

@@ -30,6 +30,51 @@ from sqlalchemy.orm import Session
 from app.services import finance
 
 # --------------------------------------------------------------------------- #
+# get_finance_options
+# --------------------------------------------------------------------------- #
+# WRAPS services/finance.options, WHICH HAD NO TOOL (2026-09-01). The finance
+# card lists "which banks do you work with" as one of its own utterances, and
+# its only tools required a variant_id — so the one financing question that
+# needs NO car ("tell me the installment plans", asked cold, observed live
+# three times in one morning) was unanswerable by construction and fell
+# through to a callback offer.
+GET_FINANCE_OPTIONS_SCHEMA = {
+    "name": "get_finance_options",
+    "description": (
+        "The financing panel itself: which banks Elite works with, their "
+        "indicative rates, minimum down payment, maximum tenure, and whether "
+        "a Shariah-compliant option exists — plus the UAE regulatory caps "
+        "that bound every plan. Use it when the customer asks about financing "
+        "IN GENERAL and no specific car or trim is on the table yet: 'which "
+        "banks do you work with', 'do you do Islamic finance', 'what are the "
+        "installment plans', 'how does financing work'.\n\n"
+        "NEEDS NO variant_id, and that is the point — it answers before a car "
+        "is chosen. The moment the customer names a trim, get_finance_estimate "
+        "is the tool for actual monthly figures; this one carries no monthly "
+        "amount because there is no price to compute one from.\n\n"
+        "Read the response:\n"
+        "- 'banks' is one entry per bank: bank, rate_percent, islamic, "
+        "min_down_payment_percent, max_tenure_months, is_sample.\n"
+        "- 'regulatory_caps' carries the UAE Central Bank limits (maximum "
+        "financed share, minimum down payment, maximum tenure, debt burden). "
+        "They bound what any bank may offer and are safe to state.\n"
+        "- 'all_rates_are_samples': true means every rate is illustrative. "
+        "This is never a bank quote; say so."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+
+def get_finance_options(db: Session, session_id: str, **_) -> dict:
+    """The bank panel and regulatory caps. No inputs. Never raises."""
+    return finance.options(db)
+
+
+# --------------------------------------------------------------------------- #
 # get_on_road_price
 # --------------------------------------------------------------------------- #
 GET_ON_ROAD_PRICE_SCHEMA = {

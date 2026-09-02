@@ -431,3 +431,27 @@ def test_no_bullet_still_quotes_a_fuel_economy_figure():
     for m in _fixture("vehicle_models.json"):
         for bullet in m["headline_features"]:
             assert "km/L" not in bullet, f"{m['name']}: {bullet}"
+
+
+# --------------------------------------------------------------------------- #
+# 5. the exterior palette the converter used to drop (2026-09-01)
+# --------------------------------------------------------------------------- #
+def test_every_model_ships_an_exterior_palette(db):
+    """parse_models collected the palette from the Models sheet since day one
+    and the emitter never read it back out, so it shipped nowhere — customers
+    asking "what colours does it come in" were told we do not hold that while
+    the workbook listed six. The seeder now fails outright on a model without
+    one; this pins the fixture so a re-import cannot regress it silently."""
+    for r in _fixture("vehicle_models.json"):
+        assert r.get("exterior_colours"), r["model_code"]
+    for m in db.scalars(select(VehicleModel)).all():
+        assert m.exterior_colours, m.model_code
+
+
+def test_the_g700_palette_is_the_workbook_s_in_the_workbook_s_order(db):
+    """One pinned sample, order included: the sheet's order is Elite's, exactly
+    as it is for trims."""
+    m = db.scalar(select(VehicleModel).where(VehicleModel.model_code == "JET-G700"))
+    assert m.exterior_colours == [
+        "Night Black", "White", "Highway Grey", "Sand", "Dark Blue", "Matte Orange",
+    ]

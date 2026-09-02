@@ -947,3 +947,87 @@ def test_trace_steps_carries_the_decision_and_never_the_brief():
     blob = repr(rows)
     for leaked in ("seven-seater", "Deira", "130k"):
         assert leaked not in blob
+
+
+# --------------------------------------------------------------------------- #
+# The trace records what RAN, not what was drawn (2026-09-01)
+#
+# `tool_calls` was empty on all 110 rows on the test VM — turns that provably
+# locked slots and created bookings included — because the runner derived it
+# from card_rows, which holds only the calls that drew a card. Diagnosing
+# "why did the agent say it has no data" then needed SSH archaeology instead
+# of one SQL query, which is the failure the flight recorder exists to
+# prevent.
+# --------------------------------------------------------------------------- #
+def test_the_runner_records_every_tool_call_not_just_the_cards():
+    import inspect
+
+    from app.agent import runner
+
+    src = inspect.getsource(runner)
+    assert "tools_called.append" in src
+    assert "tool_calls=tools_called" in src, (
+        "derived from card_rows again is the defect this replaces"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Prewarm warms only what the live path can read (2026-09-01)
+#
+# With MULTI_AGENT_ENABLED on, every chat call sends aisha_schemas() — yet
+# prewarm unconditionally wrote the `full` and journey prefixes beside the
+# multi-agent pair: three 1h-TTL cache writes per boot (~83k tokens, 2x rate)
+# for keys no live turn could read, on a VM that restarted 14 times in a day.
+# And the third LIVE multi-agent prefix — agent=None, the un-routed first turn
+# — was served daily and never warmed at all.
+# --------------------------------------------------------------------------- #
+def _warm_labels(monkeypatch, multi_agent: bool) -> list[str]:
+    from app.orchestrator import turn as turn_module
+
+    monkeypatch.setattr(
+        turn_module, "enabled", lambda *a, **k: multi_agent
+    )
+    from app.agent import graph
+
+    return [label for label, _, _ in graph._prefixes_to_warm()]
+
+
+def test_prewarm_on_the_multiagent_path_warms_only_readable_prefixes(monkeypatch):
+    labels = _warm_labels(monkeypatch, multi_agent=True)
+    assert "aisha:unrouted" in labels, "the un-routed first turn is live and must be warm"
+    assert "aisha:testdrive" in labels and "aisha:bookingmanagement" in labels
+    assert {"subagent:sales", "subagent:testdrive", "subagent:finance"} <= set(labels)
+    for unreadable in ("full", "testdrive", "bookingmanagement"):
+        assert unreadable not in labels, (
+            f"{unreadable!r} is a single-agent prefix no multi-agent call can read"
+        )
+
+
+def test_prewarm_on_the_single_agent_path_warms_no_specialists(monkeypatch):
+    labels = _warm_labels(monkeypatch, multi_agent=False)
+    assert labels[0] == "full"
+    assert not any(label.startswith(("aisha:", "subagent:")) for label in labels), (
+        "specialist prefixes are unreadable while the fan-out is off"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Token usage reaches turn_trace (2026-09-01)
+#
+# tokens_in / tokens_out / cache_hits existed since T3.5 and every row was
+# NULL: the numbers lived only in the `agent usage` journald line, so a token
+# audit took ssh archaeology instead of one SQL query.
+# --------------------------------------------------------------------------- #
+def test_usage_is_emitted_on_the_stream_and_recorded_per_turn():
+    import inspect
+
+    from app.agent import graph, runner
+
+    src = inspect.getsource(graph._log_usage)
+    assert '"type": "usage"' in src
+
+    rsrc = inspect.getsource(runner)
+    assert 'kind == "usage"' in rsrc
+    assert 'tokens_in=' in rsrc and 'tokens_out=' in rsrc and 'cache_hits=' in rsrc, (
+        "accumulated but not passed to record() is the defect this replaces"
+    )

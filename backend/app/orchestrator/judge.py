@@ -47,8 +47,43 @@ finance ("on-road price with insurance", "monthly instalments").
 - Negotiation and buying are finance, not a refusal: it answers what it can and \
 hands over to a person.
 
-Reply with ONLY a JSON object: {"agent": "sales"} — or {"agent": null} if no \
-specialist owns the request."""
+Answer with the route tool: name the one specialist that owns the request, or \
+"none" when no specialist does."""
+
+
+def _route_tool(agents: list[str]) -> dict:
+    """The forced-output tool, built from THIS router's roster.
+
+    BUILT HERE, NOT BORROWED (2026-09-01). The judge used to reuse the legacy
+    classifier's ROUTE_TOOL wholesale, and forced tool use made that schema the
+    law: its enum is (testdrive, bookingmanagement, fallback), so the judge's
+    Haiku call was STRUCTURALLY UNABLE to answer `sales` or `finance` — every
+    finance brief came back "fallback", failed the roster check below, and was
+    dropped as unroutable. 110 traced turns on the test VM and not one reached
+    a specialist the legacy enum did not happen to contain.
+
+    "none" is in the enum because forced tool use permits no other way to
+    decline: there is always a tool_use block, so the deliberate null has to be
+    a value the schema allows.
+    """
+    return {
+        "name": "route",
+        "description": "Record which specialist owns this request.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string",
+                    "enum": list(agents) + ["none"],
+                    "description": (
+                        'The specialist that owns the request, or "none" when '
+                        "no specialist does."
+                    ),
+                }
+            },
+            "required": ["agent"],
+        },
+    }
 
 
 def _examples() -> str:
@@ -91,6 +126,9 @@ def judge(brief: str, agents: list[str], *, model: str | None = None) -> str | N
             SYSTEM + "\n\nExamples:\n" + _examples(),
             f"Request: {text}",
             model=model or config.CLAUDE_MODEL,
+            # THE JUDGE'S OWN ROSTER, never the legacy classifier's — see
+            # _route_tool for what borrowing that schema cost.
+            tool=_route_tool(agents),
         )
     except Exception:  # noqa: BLE001 — a routing call must never break a turn
         log.warning("routing judge call failed", exc_info=True)
@@ -105,6 +143,10 @@ def judge(brief: str, agents: list[str], *, model: str | None = None) -> str | N
         except Exception:  # noqa: BLE001
             chosen = None
 
+    if chosen == "none":
+        # The deliberate decline, spelled as a value because forced tool use
+        # cannot emit an absence. Not an error and not worth a warning.
+        return None
     if chosen not in agents:
         # Includes the deliberate null. Not an error — some briefs belong to no
         # specialist, and inventing one is worse than saying so.
