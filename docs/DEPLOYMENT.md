@@ -151,6 +151,8 @@ The restart is required: `load_dotenv()` runs at import.
 | `REDIS_URL` | Redis is not installed on the test VM. Retrieval falls back to an in-process index and says so |
 | `WHATSAPP_ENABLED` | `true` sends real messages to real numbers |
 | `PREWARM_PROMPT_CACHE` | `true` writes every servable prompt prefix per boot — i.e. **per deploy and per restart** — at the 1-hour-TTL cache-write rate (2× base input). Measured 2026-09-01: ~$0.55–0.90 per restart, and 14 restarts in one active day made prewarm cost more than all conversations combined. Keep it `false` on the test VM; turn it on for demo days, where a QR-code wave hitting a cold cache is the thing it exists to prevent |
+| `PROMPT_CACHE_KEEPALIVE_MINUTES` | with `PREWARM_PROMPT_CACHE=true`, re-warms every prefix on this interval so the 1-hour cache TTL never lapses on an idle booth. A re-warm of a live entry is a cache **read** (~23k tokens per prefix, roughly $0.04 per tick across the eight prefixes), not a write. `0` (default) is off; `50` is the demo-day number. Pointless with prewarm off |
+| `TURN_CONTEXT_IN_MESSAGE` | `true` (default) sends the per-message context (confirmed facts, live bookings, pre-fetched passages) as a trailing block on the customer's message instead of in the system tail, so the conversation history stays byte-stable and reads from the prompt cache. Measured 2026-09-02 before this: one 38-turn chat re-wrote 462k tokens of history ($1.73 as writes, $0.14 as reads). `false` restores the old placement without a deploy |
 
 ### Seeding a fresh database
 

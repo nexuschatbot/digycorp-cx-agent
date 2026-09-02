@@ -47,7 +47,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.prompt import SYSTEM_PROMPT, system_prompt_parts
+from app.agent.prompt import SYSTEM_PROMPT, system_prompt_parts, turn_context
 from app.agent.sanitise import MarkdownStripper
 from app.agent.tool_node import tool_node
 # Read-only, for the bookings anchor built in _agent_node. The agent node reads
@@ -57,6 +57,7 @@ from app.config import (
     CALL_AGENT_EFFORT,
     CALL_AGENT_MODEL,
     RETRIEVAL_FIRST,
+    TURN_CONTEXT_IN_MESSAGE,
     SIMPLE_TURN_MODEL,
     AGENT_EFFORT,
     AGENT_MODEL,
@@ -214,6 +215,14 @@ MAX_TOKENS = 2048
 # Affordable because both the system prompt and the message list are cache
 # breakpoints (see _cached_messages) — a longer window is mostly cache reads.
 TRIM_KEEP = 40
+# The low-water mark for _window_start: when the history outgrows TRIM_KEEP the
+# window is cut back to the last TRIM_LOW messages and then LEFT ALONE until it
+# outgrows TRIM_KEEP again. A window that always holds exactly the last 40 moves
+# its first message on every turn, and a prefix cache cannot survive a moving
+# start: measured live, every turn past the fortieth message re-wrote the whole
+# window. 24 is about eight exchanges, well inside what the facts and bookings
+# anchors already cover for anything older.
+TRIM_LOW = 24
 
 # A graceful, honest dead-end (behaviour rule 13 flavour): no fabricated policy,
 # no stack trace, offer a human. The one place a tripped bound surfaces to the
@@ -222,6 +231,11 @@ FALLBACK_TEXT = (
     "I'm sorry — I'm having trouble completing that just now. Let me have one of "
     "our specialists follow up with you so nothing falls through the cracks."
 )
+
+
+def _merge_dicts(a: dict | None, b: dict | None) -> dict:
+    """Reducer for turn_context: later keys win, earlier keys survive."""
+    return {**(a or {}), **(b or {})}
 
 
 class AgentState(TypedDict):
@@ -237,6 +251,15 @@ class AgentState(TypedDict):
     """
 
     messages: Annotated[list, operator.add]
+    # Per-message context blocks (TURN_CONTEXT_IN_MESSAGE), keyed by the index
+    # of the customer message they belong to, as a string so the checkpoint
+    # serialiser has nothing to guess about. Merged, never replaced: a block
+    # written for turn 3 must be sent identically on turn 30, or the prefix
+    # cache misses from that point on — see _attach_context.
+    turn_context: Annotated[dict, _merge_dicts]
+    # Where the window sent to the model starts (see _window_start). Moves in
+    # jumps, not by one each turn, so the prefix stays stable between jumps.
+    history_start: int
     iterations: int
     customer_id: int | None
     # Rule 19: set by a successful close_conversation, read by the post-tools
@@ -798,6 +821,24 @@ def _log_usage(
         log.debug("usage logging failed — session=%s", session_id, exc_info=True)
 
 
+def start_cache_keepalive(minutes: int):
+    """Re-run prewarm_cache every `minutes` on a daemon thread; returns the
+    Event that stops it. On a still-live entry the re-warm is a cache READ of
+    the prefix, which is what refreshes the 1h TTL — the cold write only ever
+    happens once, at boot or after midnight rolls the date anchor."""
+    import threading
+
+    stop = threading.Event()
+
+    def _loop() -> None:
+        while not stop.wait(minutes * 60):
+            prewarm_cache()
+
+    threading.Thread(target=_loop, name="prompt-cache-keepalive", daemon=True).start()
+    log.info("prompt cache keep-alive every %d min", minutes)
+    return stop
+
+
 def _default_generate(messages: list, *, model: str, system: str, tools: list, config: RunnableConfig | None = None) -> dict:
     """Production model call: raw Anthropic SDK STREAMING (AD-A, literal).
 
@@ -1212,6 +1253,11 @@ def _is_turn_start(msg: Any) -> bool:
 def _trim_messages(messages: list, keep: int = TRIM_KEEP) -> list:
     """The last `keep` messages, but never splitting a tool_use/tool_result pair.
 
+    NO LONGER ON THE LIVE PATH (2026-09-02): _agent_node slices from the
+    remembered _window_start instead, because a window that always ends at
+    "the last 40" moves its first message every turn and defeats the prefix
+    cache. Kept for the callers and tests that want the plain "last N" cut.
+
     The Anthropic API rejects a message list that starts on an orphaned tool_result
     (a tool_result with no preceding tool_use) or that does not begin on a user
     turn. So we take the last `keep` as a floor, then walk the window START BACKWARD
@@ -1232,6 +1278,72 @@ def _trim_messages(messages: list, keep: int = TRIM_KEEP) -> list:
     while start > 0 and not _is_turn_start(messages[start]):
         start -= 1
     return messages[start:]
+
+
+def _window_start(messages: list, prev_start: int) -> int:
+    """Where the window sent to the model begins — stable between jumps.
+
+    _trim_messages keeps the LAST `keep` messages, which means the window's
+    first message changes on every turn once the history is long enough, and a
+    prefix cache is only ever as good as its first differing byte: past the
+    fortieth message every turn re-wrote the whole window (measured live). So
+    the start is remembered in state and only moves when the window has
+    outgrown TRIM_KEEP, jumping forward to the last TRIM_LOW messages — walked
+    back to a turn boundary exactly as _trim_messages does, so a tool_use is
+    never split from its result. Between jumps the prefix is byte-stable and
+    the conversation reads from the cache.
+    """
+    n = len(messages)
+    if n - prev_start <= TRIM_KEEP:
+        return prev_start
+    start = n - TRIM_LOW
+    while start > prev_start and not _is_turn_start(messages[start]):
+        start -= 1
+    return start
+
+
+def _turn_context_key(state: AgentState) -> str | None:
+    """The index of this turn's customer message, as the string key the
+    context block is stored under — the last turn start in the history."""
+    msgs = state.get("messages") or []
+    for i in range(len(msgs) - 1, -1, -1):
+        if _is_turn_start(msgs[i]):
+            return str(i)
+    return None
+
+
+def _attach_context(messages: list, blocks: dict) -> list:
+    """The message list with each stored context block appended to its customer
+    message as a trailing text block. COPIES — never mutates graph state.
+
+    The block goes LAST in the message so _cached_messages' moving breakpoint
+    lands on it, and it is attached on every later call as well: the cache is a
+    prefix cache, so a block sent on turn 3 has to be sent, byte for byte, on
+    every request after it. A message with no stored block is sent untouched,
+    which keeps a fresh customer's request identical to what it always was.
+    """
+    if not blocks:
+        return messages
+    out = list(messages)
+    for key, text in blocks.items():
+        try:
+            i = int(key)
+        except (TypeError, ValueError):
+            continue
+        if not text or i < 0 or i >= len(out) or not _is_turn_start(out[i]):
+            continue
+        msg = dict(out[i])
+        content = msg.get("content")
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+        elif isinstance(content, list):
+            content = list(content)
+        else:
+            continue
+        content.append({"type": "text", "text": text})
+        msg["content"] = content
+        out[i] = msg
+    return out
 
 
 def _is_simple_turn(state: AgentState) -> bool:
@@ -1286,11 +1398,63 @@ def _last_user_text(state: AgentState) -> str:
 # question (the search's own floor guarantees each collection its best), and
 # a hard character cap keeps a long brochure section from tripling the
 # uncached tail.
-_PREFETCH_K = 4
+# Five, not four, with a floor of ONE per collection (2026-09-02): the pre-fetch
+# now spans three collections (brochures, knowledge, catalogue), and the index's
+# default floor of two would hand every slot to the reservations and none to the
+# global ranking. One reserved slot each still guarantees the catalogue's best
+# chunk a place beside the brochure that mentions the car on every page.
+# Six (2026-09-02, measured): with the vehicle hint in the query the right
+# catalogue passage is in the top five 94% of the time and in the top six 98%.
+_PREFETCH_K = 6
+_PREFETCH_FLOOR = 1
 _PREFETCH_MAX_CHARS = 4000
 
 
-def _prefetch_passages(state: AgentState) -> str | None:
+# Messages that are answers, not questions — the pre-fetch has nothing to find
+# for them and every passage it attaches is history the model must ignore.
+# Measured on the test VM's 144 pre-fetch-triggering customer messages: these
+# four rules skip 38 and not one of them was a question. There is no chip-tap
+# signal to use instead: option chips send their label as plain typed text by
+# design (frontend/src/options.ts), so the shape of the text is all there is.
+_PHONE_RE = re.compile(r"\d[\d\s-]{7,}\d")
+_PREFILL_TEXTS = frozenset({
+    "i’d like to book a test drive.",
+    "i'd like to book a test drive.",
+    "i’d like to reschedule or cancel my booking.",
+    "i'd like to reschedule or cancel my booking.",
+})
+_ANSWER_OPENERS = frozenset({
+    "yes", "yeah", "yep", "ok", "okay", "sure", "fine", "alright",
+    "no", "nope", "not", "thanks", "thank", "perfect", "great", "good",
+    "نعم", "أيوه", "ايوه", "تمام", "طيب", "أكيد", "اكيد", "ماشي", "لا", "لأ", "شكرا", "شكراً", "ممتاز",
+})
+
+
+def _looks_like_answer(text: str) -> str | None:
+    """Why this message is an answer rather than a question, or None."""
+    low = re.sub(r"\s+", " ", text.strip().lower())
+    if low in _PREFILL_TEXTS or low.startswith(("i'll take ", "i’ll take ")):
+        return "chip"
+    if _PHONE_RE.search(low):
+        return "phone"
+    words = low.split()
+    if words and "?" not in low and len(words) <= 5 and words[0].strip(",.!") in _ANSWER_OPENERS:
+        return "affirmation"
+    try:
+        from app.retrieval import vehicle_mentions
+
+        stripped = re.sub(r"\b(the|a|petrol|hybrid|please|one|model)\b", " ", low)
+        stripped = re.sub(r"[^\w\s-]", " ", stripped)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        found = vehicle_mentions.mentions(stripped)
+        if found and stripped in vehicle_mentions.aliases_for(found[-1]):
+            return "vehicle name only"
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _prefetch_passages(state: AgentState, *, slot_pinned: bool = False) -> str | None:
     """RETRIEVAL_FIRST: the local index's best passages for this message.
 
     LOCAL, ~50ms, NO MODEL, NO TOKENS — measured live, the cascade this
@@ -1310,10 +1474,32 @@ def _prefetch_passages(state: AgentState) -> str | None:
 
         if _prefilter.is_bare_greeting(text):
             return None
+        # A slot-chip tap arrives with its id pinned (ChatRequest.slot_id) —
+        # the one chip the backend can recognise structurally.
+        if slot_pinned:
+            return None
+        why = _looks_like_answer(text)
+        if why:
+            log.info("retrieval prefetch skipped: %s", why)
+            return None
         from app.retrieval import index as _index
+        from app.retrieval import vehicle_mentions
         from app.tools.knowledge_tools import FENCE_CLOSE, FENCE_OPEN
 
-        hits = _index.search(text, k=_PREFETCH_K)
+        # THE VEHICLE HINT. A message that names no car is almost always about
+        # the car the conversation is already about; tell the index which one.
+        # See retrieval/vehicle_mentions for the measurement behind this.
+        query = text
+        if not vehicle_mentions.mentions(text):
+            current = vehicle_mentions.last_mentioned(state.get("messages") or [])
+            if current:
+                query = f"{text} {current}"
+        hits = _index.search(
+            query,
+            collections=_index.PREFETCH_COLLECTIONS,
+            k=_PREFETCH_K,
+            floor=_PREFETCH_FLOOR,
+        )
         if not hits:
             return None
         parts: list[str] = []
@@ -1436,8 +1622,41 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
         model_for_turn = SIMPLE_TURN_MODEL
     else:
         model_for_turn = AGENT_MODEL
+    # RETRIEVAL_FIRST: the local index's passages for this message, first
+    # generation of the turn only — the compose call after a cascade already
+    # holds its evidence and must not pay the tail twice. None everywhere the
+    # flag is off (the shipped default), which keeps the prompt byte-identical.
+    passages = (
+        _prefetch_passages(state, slot_pinned=cfg.get("provided_slot_id") is not None)
+        if RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0
+        else None
+    )
+    # TURN_CONTEXT_IN_MESSAGE (2026-09-02): facts, bookings and passages travel
+    # BEHIND the history, as a trailing block on this turn's customer message,
+    # and stay there for the rest of the session. Rendered once per turn (the
+    # compose call re-reads the same bytes, which is the point) and stored in
+    # state under the message's index so later turns re-attach it unchanged.
+    in_message = TURN_CONTEXT_IN_MESSAGE
+    context_key = _turn_context_key(state)
+    context_blocks = dict(state.get("turn_context") or {})
+    new_context: str | None = None
+    if in_message and iterations == 0 and context_key is not None:
+        new_context = turn_context(
+            session_facts=state.get("session_facts"),
+            live_bookings=live_bookings,
+            held_slot=held_slot,
+            retrieved_passages=passages,
+        )
+        if new_context:
+            context_blocks[context_key] = new_context
+    outgoing = (
+        _attach_context(state["messages"], context_blocks)
+        if in_message else state["messages"]
+    )
+    prev_start = state.get("history_start") or 0
+    start = _window_start(outgoing, prev_start)
     assistant = generate(
-        _trim_messages(state["messages"]),
+        outgoing[start:],
         model=model_for_turn,
         system=system_prompt_parts(
             agent=active_agent,
@@ -1451,16 +1670,8 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
             held_slot=held_slot,
             voice_call=bool(cfg.get("voice_call")),
             returning=returning,
-            # RETRIEVAL_FIRST: the local index's passages for this message,
-            # first generation of the turn only — the compose call after a
-            # cascade already holds its evidence and must not pay the tail
-            # twice. None everywhere the flag is off (the shipped default),
-            # which keeps the prompt byte-identical.
-            retrieved_passages=(
-                _prefetch_passages(state)
-                if RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0
-                else None
-            ),
+            retrieved_passages=None if in_message else passages,
+            context_in_message=in_message,
         ),
         # PER-AGENT TOOL BINDING (S7). The allowlist is enforced by what the
         # model is handed, not by asking it to behave: BookingManagement is not
@@ -1485,6 +1696,10 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
         config=config,
     )
     out: dict = {"messages": [assistant], "iterations": iterations + 1}
+    if new_context:
+        out["turn_context"] = {context_key: new_context}
+    if start != prev_start:
+        out["history_start"] = start
     # Stamp the turn the question was asked on, ONCE (see AgentState). Written
     # only on the first render so a customer who ignores the question and answers
     # it three turns later still gets through — re-stamping every turn would move

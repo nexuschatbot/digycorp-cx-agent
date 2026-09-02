@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import uuid
 from datetime import date
@@ -123,10 +124,30 @@ _NO_HOLD_BRIEF = (
 )
 
 
-def _client():
-    from app.agent.graph import _build_client
+_pooled_client = None
+_pooled_lock = threading.Lock()
 
-    return _build_client()
+
+def _client():
+    """One pooled client for the process, built on first use.
+
+    THIS USED TO BUILD A FRESH CLIENT PER STEP. A new anthropic.Anthropic() is
+    a new TLS handshake to the API, which the router classifier measured at
+    ~1.5s p50 against ~250ms on a reused connection and pooled for that reason
+    (router/classifier._get_client). Aisha's own client is pooled the same way
+    (graph._default_generate). The specialists were the one caller still paying
+    the handshake — on every step of every cascade. The SDK client is
+    thread-safe, so the parallel waves share it; the lock only keeps two
+    first-callers from building it twice.
+    """
+    global _pooled_client
+    if _pooled_client is None:
+        with _pooled_lock:
+            if _pooled_client is None:
+                from app.agent.graph import _build_client
+
+                _pooled_client = _build_client()
+    return _pooled_client
 
 
 def _schemas_for(agent: str) -> list[dict]:

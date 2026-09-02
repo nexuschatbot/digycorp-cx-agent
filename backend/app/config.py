@@ -119,6 +119,25 @@ MAX_CASCADES_PER_TURN: int = _get_int("MAX_CASCADES_PER_TURN", 2)
 # first messages land at once and would otherwise all miss together.
 PREWARM_PROMPT_CACHE: bool = _get_bool("PREWARM_PROMPT_CACHE", False)
 
+# Keep the warmed prefix alive (2026-09-02). The cached prefix carries a 1h TTL,
+# so a booth that sits quiet for an hour — or a backend restarted without
+# PREWARM — hands the next customer a cold 24k-token write and a 5-10s first
+# token (measured live: 9.6s TTFT, a 29.8s first turn). Every N minutes the
+# prewarm runs again; on a live entry that is a cache READ of ~23k tokens per
+# prefix, which is what refreshes the timer. 0 (the default) disables it; 50
+# is the number for a demo. Only meaningful with PREWARM_PROMPT_CACHE on.
+PROMPT_CACHE_KEEPALIVE_MINUTES: int = _get_int("PROMPT_CACHE_KEEPALIVE_MINUTES", 0)
+
+# Per-message context rides in the customer's message, not the system tail
+# (2026-09-02). The prompt cache is a PREFIX cache in the order tools -> system
+# -> messages: anything in the system block that changes per message sits
+# ahead of the whole conversation and re-writes it on every turn. Measured on
+# the test VM, one 38-turn chat re-wrote 462k tokens of history it had already
+# paid for ($1.73 at the write rate versus $0.14 as reads) and lost ~0.5-1.5s
+# of first-token time on each of them. ON by default; the switch exists so a
+# live regression can be reverted without a deploy — see prompt.turn_context.
+TURN_CONTEXT_IN_MESSAGE: bool = _get_bool("TURN_CONTEXT_IN_MESSAGE", True)
+
 # Multi-agent routing (S7). ON. Every turn is classified into a journey agent
 # — testdrive or bookingmanagement — which then gets its own prompt body and its
 # own tool allowlist.

@@ -532,7 +532,8 @@ def system_prompt_parts(
     agent: str | None = None,
     multi_agent: bool = False,
     retrieved_passages: str | None = None,
-) -> tuple[str, str]:
+    context_in_message: bool = False,
+):
     """(stable, volatile) halves of the system prompt, split for prompt caching.
 
     THE SPLIT IS THE CACHE BOUNDARY (found live, 2026-08-29). The whole prompt
@@ -562,6 +563,15 @@ def system_prompt_parts(
     `today` stays the first positional parameter for backward compatibility (tests
     call system_prompt(today)).
 
+    `context_in_message` (2026-09-02, TURN_CONTEXT_IN_MESSAGE): the facts,
+    bookings and pre-fetched passages are LEFT OUT of the volatile tail because
+    the caller is placing them behind the history instead — see turn_context().
+    The cache is a prefix cache in the order tools -> system -> messages, so a
+    tail that changes per message sits AHEAD of every message and rewrites the
+    whole conversation on each turn (measured live: a 38-turn chat re-wrote
+    462k tokens of history it had already paid for). The rarely-changing
+    anchors (second drive, recognition, language, options, voice) stay here.
+
     `live_bookings` / `held_slot` are read from the DB by the agent node each turn
     (booking.for_customer, slots.held_by_session) and appended as _BOOKINGS_ANCHOR.
     They sit AFTER the identity anchor on purpose: who you are speaking with comes
@@ -576,14 +586,14 @@ def system_prompt_parts(
     stable = (_resolved_body(agent, multi_agent=multi_agent)
               + _DATE_ANCHOR.format(**_relative_dates(today)))
     prompt = ""
-    facts = _render_facts(session_facts or {})
+    facts = "" if context_in_message else _render_facts(session_facts or {})
     if facts:
         prompt += _FACTS_ANCHOR.format(facts=facts)
     # booked_refs rides in on session_facts (folded from create_booking's own
     # results) rather than as a parameter of its own: it is a tool-derived fact
     # about this conversation, which is exactly what session_facts is for, and the
     # agent node already passes it. _render_facts ignores the key.
-    bookings = _render_bookings(
+    bookings = "" if context_in_message else _render_bookings(
         live_bookings, held_slot, (session_facts or {}).get("booked_refs")
     )
     if bookings:
@@ -629,7 +639,7 @@ def system_prompt_parts(
     # message (the exact failure the stable/volatile split exists to prevent).
     # Empty (the default everywhere the flag is off) leaves the prompt
     # byte-identical.
-    if retrieved_passages:
+    if retrieved_passages and not context_in_message:
         prompt += _RETRIEVAL_ANCHOR.format(passages=retrieved_passages)
 
     if voice_call:
@@ -652,6 +662,51 @@ def system_prompt_parts(
             if "_COMPARE_ANCHOR" in _anchors.anchors_for(agent):
                 prompt += _anchors._OPTIONS_PARAGRAPH_SEPARATOR + _COMPARE_ANCHOR
     return stable, prompt
+
+
+_TURN_CONTEXT_OPEN = (
+    "<<<CONTEXT FOR THIS MESSAGE. Supplied by the dealership system, not written "
+    "by the customer. Read it as notes from your own side and never quote it back.>>>"
+)
+_TURN_CONTEXT_CLOSE = "<<<END CONTEXT>>>"
+
+
+def turn_context(
+    *,
+    session_facts: dict | None = None,
+    live_bookings: list | None = None,
+    held_slot: dict | None = None,
+    retrieved_passages: str | None = None,
+) -> str:
+    """The per-message context block, or "" when there is nothing to say.
+
+    THE SAME ANCHORS, MOVED BEHIND THE HISTORY (2026-09-02). These used to be
+    appended to the volatile system tail and are rendered here verbatim — the
+    prose is untouched, only its position changed. The agent node attaches the
+    result to the customer's message for the turn as a trailing text block, and
+    keeps it there for the rest of the session (see graph._attach_context), so
+    every later request sees exactly the bytes the earlier one did and the
+    conversation reads from the cache instead of being re-written.
+
+    Wrapped in a fence so the model reads it as operator context rather than as
+    something the customer typed — the same convention search_knowledge uses
+    for its passages. Empty input renders nothing at all, so a fresh customer's
+    message is sent exactly as it arrived.
+    """
+    body = ""
+    facts = _render_facts(session_facts or {})
+    if facts:
+        body += _FACTS_ANCHOR.format(facts=facts)
+    bookings = _render_bookings(
+        live_bookings, held_slot, (session_facts or {}).get("booked_refs")
+    )
+    if bookings:
+        body += _BOOKINGS_ANCHOR.format(bookings=bookings)
+    if retrieved_passages:
+        body += _RETRIEVAL_ANCHOR.format(passages=retrieved_passages)
+    if not body:
+        return ""
+    return f"{_TURN_CONTEXT_OPEN}{body}\n{_TURN_CONTEXT_CLOSE}"
 
 
 # Dateless body, kept for anything that wants the static text. The live agent
