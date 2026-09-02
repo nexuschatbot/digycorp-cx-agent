@@ -237,3 +237,44 @@ def test_the_compare_paragraph_travels_with_testdrive_only():
 
     assert "compare_vehicles" in system_prompt(agent="testdrive")
     assert "compare_vehicles" not in system_prompt(agent="bookingmanagement")
+
+
+# --------------------------------------------------------------------------- #
+# rules_only: the multi-agent chat path skips the classifier (2026-09-02)
+#
+# On that path the routed agent picks only a prompt-body flavour (tool binding
+# short-circuits to aisha_schemas() first) and the un-routed body is a strict
+# superset — so the p50 1,829ms Haiku classification bought nothing. The free
+# layers keep working; only the paid one is gone.
+# --------------------------------------------------------------------------- #
+def test_rules_only_never_reaches_the_model():
+    """_explodes would take the turn down if the classifier were called."""
+    r = route("do you have anything hybrid", rules_only=True, generate=_explodes)
+    assert r.layer == "skipped"
+    assert r.agent == "fallback"  # no active agent: degrade to unrouted
+
+
+def test_rules_only_keeps_the_free_layers():
+    assert route("cancel my booking", rules_only=True, generate=_explodes).layer == "prefilter"
+    assert route("yes", current_agent="testdrive", rules_only=True,
+                 generate=_explodes).layer == "sticky"
+
+
+def test_rules_only_stays_with_the_active_agent():
+    """A customer mid-booking who says something unclassifiable is still
+    mid-booking — same instinct as the degraded path."""
+    r = route("I have a completely different question about something else now",
+              current_agent="bookingmanagement", rules_only=True, generate=_explodes)
+    assert r.agent == "bookingmanagement" and r.layer == "skipped"
+
+
+def test_the_runner_skips_the_classifier_when_the_fanout_is_on():
+    """The wiring, pinned at the source like the trace-recording tests: the
+    chat path must pass rules_only from orchestrator.turn.enabled()."""
+    import inspect
+
+    from app.agent import runner
+
+    src = inspect.getsource(runner)
+    assert "rules_only=_rules_only" in src
+    assert "_orch_turn.enabled(voice_call=voice_call)" in src

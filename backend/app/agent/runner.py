@@ -458,6 +458,14 @@ def run_turn(
                 log.warning("could not read prior agent from checkpoint", exc_info=True)
 
             if not (kickoff or voice_failed):
+                # THE CLASSIFIER IS SKIPPED ON THE MULTI-AGENT CHAT PATH
+                # (2026-09-02): its answer there picks only a prompt-body
+                # flavour whose superset is served daily, at a measured p50
+                # 1,829ms Haiku call on 59% of turns. The free layers
+                # (prefilter, sticky) still run — see route()'s docstring.
+                from app.orchestrator import turn as _orch_turn
+
+                _rules_only = _orch_turn.enabled(voice_call=voice_call)
                 _routed_at = time.perf_counter()
                 routing = _route(
                     message,
@@ -471,6 +479,7 @@ def run_turn(
                     # shows follow-ups misrouting for want of it, add the read
                     # then — measured, not assumed.
                     live_bookings=list(prior_facts.get("booked_refs") or []),
+                    rules_only=_rules_only,
                 )
                 router_ms = int((time.perf_counter() - _routed_at) * 1000)
         config = build_config(

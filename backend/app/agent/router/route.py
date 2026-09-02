@@ -30,8 +30,25 @@ def route(
     history: list[str] | None = None,
     generate: Callable[..., dict] | None = None,
     model: str | None = None,
+    rules_only: bool = False,
 ) -> Routing:
-    """Decide which agent answers `message`."""
+    """Decide which agent answers `message`.
+
+    `rules_only` SKIPS THE CLASSIFIER — the multi-agent chat path's mode
+    (2026-09-02). On that path the routed agent selects a prompt-body FLAVOUR
+    and nothing else: the tool binding ignores it (graph hands Aisha
+    aisha_schemas() before the per-journey branch is ever reached, and the
+    dispatch allowlist short-circuits the same way), and the un-routed body is
+    a strict superset of both journey bodies, served daily. The classifier was
+    measured at p50 1,829ms on 59% of production turns — a Haiku call per turn
+    buying a narrower prompt of unmeasured value. The free layers stay: a
+    booking reference or an explicit manage-signal still routes, and a bare
+    follow-up still sticks with the active agent, so the sticky seed keeps
+    carrying. When neither rule fires, FALLBACK degrades to the active agent
+    or the combined prompt — exactly the classifier-outage path below, minus
+    the outage. Voice and the single-agent path never pass this flag: their
+    journey tool binding is real.
+    """
     hit = prefilter.decide(message, current_agent)
     if hit:
         return Routing(hit, "pre-filter: explicit booking-management signal",
@@ -41,6 +58,15 @@ def route(
     if hit:
         return Routing(hit, "sticky: follow-up stays with the active agent",
                        layer="sticky")
+
+    if rules_only:
+        from app.agent.router.policy import FALLBACK
+
+        return Routing(
+            current_agent or FALLBACK,
+            "classifier skipped: multi-agent path serves the combined prompt",
+            layer="skipped",
+        )
 
     decision = classifier.classify(
         message,
