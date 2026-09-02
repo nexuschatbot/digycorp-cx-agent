@@ -39,12 +39,41 @@ log = logging.getLogger("app.retrieval.index")
 
 # Directories under content/ that get indexed. `cards` joins this in Phase 2,
 # when app/agents/*/v1.md exists — see the module docstring.
-COLLECTIONS: tuple[str, ...] = ("brochures", "knowledge")
+COLLECTIONS: tuple[str, ...] = ("brochures", "knowledge", "catalogue")
 
 # Collections a customer question is answered from. Kept separate from
 # COLLECTIONS so adding the routing cards cannot accidentally make them
 # retrievable as facts.
+#
+# search_knowledge searches DOCUMENTS ONLY. The catalogue collection is for the
+# RETRIEVAL_FIRST pre-fetch (PREFETCH_COLLECTIONS): the specialists already
+# hold the catalogue tools, and a knowledge search that returned the price list
+# would have Sales quoting from a passage instead of from get_variants, which
+# is the tool the evidence channel expects it to cite.
 KNOWLEDGE_COLLECTIONS: tuple[str, ...] = ("brochures", "knowledge")
+
+# What the pre-fetch searches (2026-09-02): documents AND the catalogue facts
+# rendered by retrieval/catalogue_chunks, so a colour, a price or a trim
+# question is answered in Aisha's first generation instead of by a cascade.
+PREFETCH_COLLECTIONS: tuple[str, ...] = ("brochures", "knowledge", "catalogue")
+
+
+def _collect(collection: str) -> list:
+    """The chunks of one collection — from disk, or from the database for the
+    catalogue. The only place that knows which is which."""
+    if collection == "catalogue":
+        from app.retrieval import catalogue_chunks
+
+        return catalogue_chunks.collect()
+    return chunker.collect(collection)
+
+
+def _content_hash(collection: str) -> str:
+    if collection == "catalogue":
+        from app.retrieval import catalogue_chunks
+
+        return catalogue_chunks.content_hash()
+    return chunker.content_hash(collection)
 
 _memo: dict = {}
 
@@ -75,7 +104,7 @@ def _decode(blob: bytes):
 
 def _build(collection: str) -> tuple[list, object] | None:
     """Chunk and embed from disk. None when either step cannot run."""
-    chunks = chunker.collect(collection)
+    chunks = _collect(collection)
     if not chunks:
         log.warning("no content to index in %s", collection)
         return None
@@ -93,7 +122,7 @@ def load(collection: str) -> tuple[list, object] | None:
     deserialising on every query; the cache keeps a restart from re-embedding;
     the build is what makes both possible. A miss at any layer is normal.
     """
-    digest = chunker.content_hash(collection)
+    digest = _content_hash(collection)
     memo_key = (collection, digest)
     if memo_key in _memo:
         return _memo[memo_key]

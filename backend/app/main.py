@@ -36,6 +36,7 @@ from app.config import (
     NOTIFY_DISPATCH_ENABLED,
     NOTIFY_POLL_SECONDS,
     PREWARM_PROMPT_CACHE,
+    PROMPT_CACHE_KEEPALIVE_MINUTES,
     RETRIEVAL_ENABLED,
     RTC_DEBUG,
 )
@@ -90,10 +91,15 @@ async def lifespan(app: FastAPI):
     # the demo reads it rather than creating it. Off by default — one live API
     # call per boot. Imported here, not at module scope, so importing app.main
     # never pulls in the agent's SDK client.
+    keepalive_stop = None
     if PREWARM_PROMPT_CACHE:
-        from app.agent.graph import prewarm_cache
+        from app.agent.graph import prewarm_cache, start_cache_keepalive
 
         prewarm_cache()
+        # The prefix has a 1h TTL; the keep-alive re-warms it before that runs
+        # out so an idle hour does not hand the next customer a cold write.
+        if PROMPT_CACHE_KEEPALIVE_MINUTES > 0:
+            keepalive_stop = start_cache_keepalive(PROMPT_CACHE_KEEPALIVE_MINUTES)
 
     # Prompt versions (T2.3/T2.4): verify every live version BEFORE serving, and
     # record an audit row if the activation changed since last boot.
@@ -167,7 +173,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown: stop the scheduler cleanly if it was started.
+    # Shutdown: stop the keep-alive and the scheduler cleanly if they were started.
+    if keepalive_stop is not None:
+        keepalive_stop.set()
     if scheduler is not None:
         scheduler.shutdown(wait=False)
 
