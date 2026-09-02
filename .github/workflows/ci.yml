@@ -43,6 +43,16 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    # SHARDED ACROSS PARALLEL JOBS (2026-09-02). One job on four vCPUs ran the
+    # suite in ~270s of test time; three jobs, each taking a balanced third via
+    # pytest-split, run concurrently so the slowest finishes in ~90s. Each shard
+    # still uses -n auto within itself, so the effective parallelism is 3 × 4.
+    # The cost is 3× the runner minutes — a deliberate trade of money for the
+    # sub-3-minute feedback loop this project asked for.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     defaults:
       run:
         working-directory: backend
@@ -76,17 +86,18 @@ jobs:
       # -n auto: one worker per vCPU (4 on ubuntu-latest). The suite is
       # parallel-safe — each worker is its own process with its own in-memory db.
       #
-      # --dist loadscope KEEPS A MODULE ON ONE WORKER, and it is load-bearing for
-      # the retrieval tests. Those re-embed the 228-chunk corpus, which a
-      # session-scoped memo (tests/conftest.py::_memoise_embeddings) now computes
-      # ONCE per worker — so clustering test_retrieval.py onto a single worker
-      # pays that ~15-30s embed once for the whole file instead of once on each
-      # worker the default `load` mode would scatter it across. Measured
-      # 2026-09-02: the memo cut the full suite from 225s to 124s locally, and
-      # loadscope took it to 104s; the retrieval file alone fell from ~180s to
-      # ~19s serially (first test embeds, the rest hit the memo).
+      # THREE THINGS COMPOSE HERE:
+      #   --splits/--group  this job's balanced third of the suite (pytest-split,
+      #                     using .test_durations so cost is even, not count)
+      #   -n auto           four workers inside this shard, one per vCPU
+      #   the embedding memo (tests/conftest.py::_memoise_embeddings) embeds the
+      #                     228-chunk corpus once per worker instead of once per
+      #                     retrieval test — the single biggest cut, ~180s → ~19s
+      #                     for that file.
+      # Measured 2026-09-02: the memo alone took the single-job test step from
+      # 455s to 270s; sharding three ways brings the slowest shard to ~90s.
       - name: Test
-        run: pytest -q -n auto --dist loadscope
+        run: pytest -q -n auto --splits 3 --group ${{ matrix.shard }}
 
   frontend:
     needs: changes
