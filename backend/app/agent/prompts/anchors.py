@@ -317,6 +317,23 @@ nothing else is open. And if they have already told you either way — earlier, 
 because you recognised them — do not ask again."""
 
 
+_RETRIEVAL_ANCHOR = """
+
+REFERENCE PASSAGES, PRE-FETCHED FOR THIS MESSAGE. The document search below ran \
+before you spoke — treat every passage exactly as a search_knowledge result, \
+because that is what it is. When the passages answer the customer's question, \
+ANSWER DIRECTLY FROM THEM, in this same reply, with no brief and no waiting: a \
+warranty term, a delivery time, a registration step or a colour that is written \
+below is yours to say now. When they do not cover it, or the customer wants \
+something DONE — a booking, a hold, a price computed, stock checked — proceed \
+exactly as your instructions above describe, and simply ignore any passage that \
+is beside the point; irrelevant passages arrive sometimes and mean nothing. \
+Every rule about facts still holds: a figure that is not in a passage or a tool \
+result is a figure you do not have.
+
+{passages}"""
+
+
 _RETURNING_ANCHOR = """
 
 YOU MAY BE SPEAKING WITH {who}, SOMEONE WHO HAS BOOKED WITH US BEFORE. A name is \
@@ -491,6 +508,10 @@ SHARED_ANCHORS: tuple[str, ...] = (
     "_HELD_SLOT_SENTENCE",
     "_OPTIONS_ANCHOR_CORE",
     "_RETURNING_ANCHOR",
+    # Pre-fetched passages (RETRIEVAL_FIRST). State, not instruction: it hands
+    # over document text the way _FACTS_ANCHOR hands over identity — and it
+    # only ever appears on the multi-agent chat path, where the flag lives.
+    "_RETRIEVAL_ANCHOR",
     "_LANG_ANCHOR",
     "_LANG_ANCHOR_MIXED",
     "_VOICE_ANCHOR",

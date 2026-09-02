@@ -219,6 +219,7 @@ from app.agent.prompts.anchors import (  # noqa: F401, E402  (re-exported below 
     _OPTIONS_ANCHOR,
     _OPTIONS_ANCHOR_CORE,
     _OTHER_LANG,
+    _RETRIEVAL_ANCHOR,
     _RETURNING_ANCHOR,
     _SECOND_DRIVE_ANCHOR,
     _VOICE_ANCHOR,
@@ -530,6 +531,7 @@ def system_prompt_parts(
     returning: dict | None = None,
     agent: str | None = None,
     multi_agent: bool = False,
+    retrieved_passages: str | None = None,
 ) -> tuple[str, str]:
     """(stable, volatile) halves of the system prompt, split for prompt caching.
 
@@ -620,6 +622,16 @@ def system_prompt_parts(
                 other_name=_OTHER_LANG[current_lang],
                 short_example=_LANG_SHORT_EXAMPLES[current_lang],
             )
+    # RETRIEVAL-FIRST (2026-09-02, RETRIEVAL_FIRST flag): passages the local
+    # index pre-fetched for THIS message, framed as the tool result they are.
+    # In the VOLATILE tail on purpose — they change every turn, and putting
+    # them ahead of the cache breakpoint would rewrite the whole prefix each
+    # message (the exact failure the stable/volatile split exists to prevent).
+    # Empty (the default everywhere the flag is off) leaves the prompt
+    # byte-identical.
+    if retrieved_passages:
+        prompt += _RETRIEVAL_ANCHOR.format(passages=retrieved_passages)
+
     if voice_call:
         # Last on purpose: the register instruction should be the freshest
         # thing in the model's ear, the way the language anchor is. Off (the

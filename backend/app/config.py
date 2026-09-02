@@ -173,6 +173,22 @@ RETRIEVAL_ENABLED: bool = _get_bool("RETRIEVAL_ENABLED", False)
 # 1088ms p50). Voice keeps its own fast path until Phase 9.
 MULTI_AGENT_ENABLED: bool = _get_bool("MULTI_AGENT_ENABLED", False)
 
+# RETRIEVAL-FIRST (2026-09-02). Off by default, same contract as the flags
+# above: flipping it changes what a customer meets and the quality run that
+# earns a default lives on the test VM, not in this file.
+#
+# WHAT IT DOES. On the multi-agent chat path, the customer's message is run
+# through the LOCAL retrieval index (~50ms, no model, no tokens) BEFORE
+# Aisha's first generation, and the top passages ride into her volatile
+# context as a pre-supplied search_knowledge result. A fact question —
+# warranty, delivery, registration, colours, accessories copy — is then one
+# Sonnet call instead of the full cascade: measured live, that cascade spent
+# five model calls (~14s) to execute a document lookup the index answers in
+# milliseconds. The grounding rule is intact: the passages ARE a tool result,
+# delivered early. When they do not cover the question, or the turn needs an
+# action, she briefs exactly as before — the DELEGATING prose says so.
+RETRIEVAL_FIRST: bool = _get_bool("RETRIEVAL_FIRST", False)
+
 # Slot lock TTL (minutes) — abandoned conversations release inventory (FR-SL).
 SLOT_LOCK_TTL_MINUTES: int = _get_int("SLOT_LOCK_TTL_MINUTES", 10)
 

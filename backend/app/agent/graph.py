@@ -56,6 +56,7 @@ from app.services import booking, recognition, slots
 from app.config import (
     CALL_AGENT_EFFORT,
     CALL_AGENT_MODEL,
+    RETRIEVAL_FIRST,
     SIMPLE_TURN_MODEL,
     AGENT_EFFORT,
     AGENT_MODEL,
@@ -1231,6 +1232,71 @@ def _is_simple_turn(state: AgentState) -> bool:
         return False
 
 
+def _last_user_text(state: AgentState) -> str:
+    """The customer's message this turn, or "" — factored from _is_simple_turn."""
+    for m in reversed(state.get("messages") or []):
+        if isinstance(m, dict) and m.get("role") == "user":
+            c = m.get("content")
+            if isinstance(c, str):
+                return c
+            if isinstance(c, list):
+                return " ".join(
+                    b.get("text") or ""
+                    for b in c
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+            break
+    return ""
+
+
+# The pre-fetch keeps the volatile tail small: four passages cover a fact
+# question (the search's own floor guarantees each collection its best), and
+# a hard character cap keeps a long brochure section from tripling the
+# uncached tail.
+_PREFETCH_K = 4
+_PREFETCH_MAX_CHARS = 4000
+
+
+def _prefetch_passages(state: AgentState) -> str | None:
+    """RETRIEVAL_FIRST: the local index's best passages for this message.
+
+    LOCAL, ~50ms, NO MODEL, NO TOKENS — measured live, the cascade this
+    short-circuits spent five model calls (~14s) executing this exact lookup
+    for a warranty question. Formatted the way search_knowledge formats its
+    passages, because the prompt presents them as precisely that: a tool
+    result delivered early. Returns None — prompt byte-identical — for a
+    bare greeting or answer-shaped message, on any failure, and always when
+    the flag is off at the call site. Never raises: the turn matters, the
+    shortcut does not.
+    """
+    try:
+        text = _last_user_text(state).strip()
+        if not text or len(text.split()) < 3:
+            return None
+        from app.agent.router import prefilter as _prefilter
+
+        if _prefilter.is_bare_greeting(text):
+            return None
+        from app.retrieval import index as _index
+        from app.tools.knowledge_tools import FENCE_CLOSE, FENCE_OPEN
+
+        hits = _index.search(text, k=_PREFETCH_K)
+        if not hits:
+            return None
+        parts: list[str] = []
+        total = 0
+        for chunk, _score in hits:
+            block = f"{FENCE_OPEN % chunk.citation}\n{chunk.body}\n{FENCE_CLOSE}"
+            if total + len(block) > _PREFETCH_MAX_CHARS and parts:
+                break
+            parts.append(block)
+            total += len(block)
+        return "\n\n".join(parts) or None
+    except Exception:  # noqa: BLE001 — the shortcut must never cost a turn
+        log.warning("retrieval prefetch failed; proceeding without", exc_info=True)
+        return None
+
+
 def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     """One model turn, guarded by the loop bound and the AD-D ceiling.
 
@@ -1352,6 +1418,16 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
             held_slot=held_slot,
             voice_call=bool(cfg.get("voice_call")),
             returning=returning,
+            # RETRIEVAL_FIRST: the local index's passages for this message,
+            # first generation of the turn only — the compose call after a
+            # cascade already holds its evidence and must not pay the tail
+            # twice. None everywhere the flag is off (the shipped default),
+            # which keeps the prompt byte-identical.
+            retrieved_passages=(
+                _prefetch_passages(state)
+                if RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0
+                else None
+            ),
         ),
         # PER-AGENT TOOL BINDING (S7). The allowlist is enforced by what the
         # model is handed, not by asking it to behave: BookingManagement is not
