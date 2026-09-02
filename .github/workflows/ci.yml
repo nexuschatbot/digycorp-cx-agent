@@ -43,6 +43,16 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    # SHARDED ACROSS PARALLEL JOBS (2026-09-02). One job on four vCPUs ran the
+    # suite in ~270s of test time; three jobs, each taking a balanced third via
+    # pytest-split, run concurrently so the slowest finishes in ~90s. Each shard
+    # still uses -n auto within itself, so the effective parallelism is 3 × 4.
+    # The cost is 3× the runner minutes — a deliberate trade of money for the
+    # sub-3-minute feedback loop this project asked for.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     defaults:
       run:
         working-directory: backend
@@ -73,12 +83,21 @@ jobs:
       - name: Lint
         run: ruff check .
 
-      # -n auto: one worker per vCPU (4 on ubuntu-latest). Measured 2026-09-01:
-      # the serial run was 534s of a ~600s job; 4 workers cut the same suite
-      # from 311s to 219s locally, and the suite is parallel-safe (each worker
-      # is its own process with its own in-memory db).
+      # -n auto: one worker per vCPU (4 on ubuntu-latest). The suite is
+      # parallel-safe — each worker is its own process with its own in-memory db.
+      #
+      # THREE THINGS COMPOSE HERE:
+      #   --splits/--group  this job's balanced third of the suite (pytest-split,
+      #                     using .test_durations so cost is even, not count)
+      #   -n auto           four workers inside this shard, one per vCPU
+      #   the embedding memo (tests/conftest.py::_memoise_embeddings) embeds the
+      #                     228-chunk corpus once per worker instead of once per
+      #                     retrieval test — the single biggest cut, ~180s → ~19s
+      #                     for that file.
+      # Measured 2026-09-02: the memo alone took the single-job test step from
+      # 455s to 270s; sharding three ways brings the slowest shard to ~90s.
       - name: Test
-        run: pytest -q -n auto
+        run: pytest -q -n auto --splits 3 --group ${{ matrix.shard }}
 
   frontend:
     needs: changes

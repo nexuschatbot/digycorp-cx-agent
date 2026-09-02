@@ -24,6 +24,16 @@ pytest==8.3.4
 # test_call_realtime_mode.rt_env, not papered over here.
 pytest-xdist==3.8.0
 
+# Shards the suite across parallel CI JOBS (2026-09-02). xdist already uses all
+# four vCPUs within one job; splitting the tests across several jobs multiplies
+# that — three jobs of ~580 tests each run concurrently, so the wall-clock is a
+# third of the single-job time. `.test_durations` (committed beside this file)
+# lets it balance the shards by measured cost rather than test count, which
+# matters because the retrieval and one-time embedding tests are far heavier
+# than the rest. Regenerate it with:
+#   pytest -n auto --store-durations
+pytest-split==0.9.0
+
 # Lint, run by .github/workflows/ci.yml. Not in the source repo's dev deps —
 # added here because this repo's CI gates on `ruff check .`.
 ruff==0.8.4

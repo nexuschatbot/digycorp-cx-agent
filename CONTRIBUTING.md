@@ -1,19 +1,39 @@
 # Contributing
 
-> ## 🔴 The one rule: branch from `test`, PR into `test`.
+> ## 🔴 The one rule: branch from `test`, PR into `test`. Never push to `test` directly.
 >
 > ```bash
 > git checkout test && git pull origin test
-> git checkout -b feat/your-feature
+> git checkout -b feat/your-feature        # ← always work on a branch
+> ```
+>
+> **`test` is deploy-on-merge, so a commit pushed straight to it ships to the
+> live test VM with no review and no second pair of eyes.** Every change reaches
+> `test` through a pull request — yours or anyone's, one line or a thousand,
+> code or docs. There is no "small enough to push directly" exception: the
+> defects that have actually bitten this project were the ones no diff showed
+> (see [docs/DEPLOYMENT.md §5](docs/DEPLOYMENT.md#5-failures-this-pipeline-has-actually-produced)),
+> and a PR is the only place they get a chance to be caught before customers meet
+> them.
+>
+> If you have already committed onto a local `test`, do not push it — move the
+> commits onto a branch and open a PR:
+>
+> ```bash
+> git branch feat/your-feature            # name the work you just did
+> git reset --hard origin/test            # put local test back to the remote
+> git checkout feat/your-feature          # continue on the branch, then PR
 > ```
 >
 > `test` is the only continuously deployed branch, which makes it the only one
 > whose code has been seen *running*. A branch cut from anywhere else is cut
-> from something nobody has observed working — and the defects that matter here
-> have consistently been ones no diff could show. See
-> [docs/DEPLOYMENT.md §5](docs/DEPLOYMENT.md#5-failures-this-pipeline-has-actually-produced).
+> from something nobody has observed working.
 >
-> No automation checks where your branch came from. The PR template asks.
+> **Enforcement.** GitHub branch protection on `test` rejects a direct push (see
+> [docs/DEPLOYMENT.md §1](docs/DEPLOYMENT.md#1-start-from-test-always)); the PR
+> template asks you to confirm the base; and `scripts/install-git-hooks.sh`
+> installs a local `pre-push` hook that stops the push before it leaves your
+> machine.
 
 ## Branches
 
@@ -24,8 +44,9 @@
 | `general-prod` | General production release line      | Gen prod VM   |
 
 `test` is the only branch you branch from, and the only branch you open pull
-requests against. The two production branches are release targets, not places
-to develop.
+requests against. You never commit or push to `test` itself — it moves only
+when a pull request merges. The two production branches are release targets, not
+places to develop.
 
 ## Developer workflow
 
@@ -51,7 +72,9 @@ to develop.
 
 4. Open a pull request **into `test`**. It is the default base, so you should
    not have to change it — if the base shows anything else, correct it before
-   requesting review.
+   requesting review. **Never `git push origin test` to land the work directly**
+   — branch protection will reject it, and even if it did not, it would ship to
+   the live VM unreviewed.
 
 5. CI must pass and the PR needs an approval before it can merge.
 

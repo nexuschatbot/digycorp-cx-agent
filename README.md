@@ -2,13 +2,15 @@
 
 Customer-experience agent. FastAPI backend, React frontend.
 
-> ## 🔴 New here? Start from `test`.
+> ## 🔴 New here? Start from `test`. Never push to `test` directly.
 >
 > **`test` is the base branch for all work.** Branch from it, PR back into it.
+> `test` deploys on merge, so a direct push ships to the live test VM unreviewed
+> — every change, however small, goes through a pull request.
 >
 > ```bash
 > git checkout test && git pull origin test
-> git checkout -b fix/your-change
+> git checkout -b fix/your-change        # ← work on a branch, never on test
 > ```
 >
 > `elite-prod` and `general-prod` are release targets, not places to develop —
@@ -39,14 +41,19 @@ feature branch  →  test  →  elite-prod
                         →  general-prod
 ```
 
-Branch from `test`, open a PR back into `test`. After QA verifies the test VM,
-a release approver promotes `test` into a production branch. Production never
+Branch from `test`, open a PR back into `test`, and **never commit or push to
+`test` directly** — it moves only when a PR merges. After QA verifies the test
+VM, a release approver promotes `test` into a production branch. Production never
 receives a PR from anywhere but `test` — `branch-policy.yml` enforces this.
 
-**Nothing enforces the base automatically.** `branch-policy.yml` guards the
-production branches; no check verifies your feature branch was cut from `test`.
-The PR template asks you to confirm it — please actually confirm it, because a
-branch cut from anywhere else is cut from code nobody has watched run.
+**How the direct-push rule is enforced.** GitHub branch protection on `test`
+requires a pull request and rejects a direct push (see
+[docs/DEPLOYMENT.md §1](docs/DEPLOYMENT.md)); `scripts/install-git-hooks.sh`
+adds a local `pre-push` hook that stops it before it leaves your machine; and
+the PR template asks you to confirm the base. `branch-policy.yml` additionally
+guards the production branches — no check verifies your feature branch was cut
+from `test`, so a branch cut from anywhere else is cut from code nobody has
+watched run.
 
 Full workflow and commands: [CONTRIBUTING.md](CONTRIBUTING.md).
 Deployment pipeline: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

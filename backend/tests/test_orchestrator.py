@@ -296,27 +296,40 @@ def test_a_bare_finance_brief_is_not_blocked():
 
 def test_plan_turn_detects_the_reference_the_customer_said():
     """The TD shape is fixed and separators are read, not required — the same
-    forgiveness booking._normalise_ref applies to a spoken or typed ref."""
+    forgiveness booking._normalise_ref applies to a spoken or typed ref.
+
+    A JUDGE IS SUPPLIED because this test is about REF DETECTION, not routing:
+    a cancel brief scores right at the fast-lane margin, and int8 embedding
+    kernels differ by CPU (select.py) — so on some CI hardware the lane
+    declines it and, with no judge, the step is unroutable for reasons that
+    have nothing to do with what this test checks. The judge makes the routing
+    deterministic; `carries` is what is actually asserted."""
     from app.orchestrator import run as run_module
 
-    for text in ("Cancel the test drive booking TD-2026-0KXC",
-                 "cancel the customer's test drive, reference td 2026 htxe",
-                 "cancel the booking with reference td2026htxe"):
-        plan, unroutable = run_module.plan_turn([{"brief": text}])
+    cancels = {
+        "Cancel the test drive booking TD-2026-0KXC": "testdrive",
+        "cancel the customer's test drive, reference td 2026 htxe": "testdrive",
+        "cancel the booking with reference td2026htxe": "testdrive",
+    }
+    judge = _judge(cancels)
+    for text in cancels:
+        plan, unroutable = run_module.plan_turn([{"brief": text}], judge=judge)
         assert not unroutable and plan.ok, text
         assert plan.steps[0].carries == frozenset({"booking_ref"}), text
-    plan, _ = run_module.plan_turn([{"brief": "book me a test drive"}])
+    plan, _ = run_module.plan_turn([{"brief": "book me a test drive"}], judge=judge)
     assert not plan.ok  # no ref, no vehicle: still honestly blocked
 
 
 def test_a_bare_string_plans_exactly_like_the_wrapped_brief():
     """OPEN-ISSUES #2: the wrapper object is output tokens Aisha types at 20ms
-    each, so the schema now allows the question string alone."""
+    each, so the schema now allows the question string alone. A judge keeps the
+    routing deterministic across CPUs — see the ref-detection test above."""
     from app.orchestrator import run as run_module
 
     text = "cancel the test drive booking TD-2026-0KXC"
-    wrapped, un_w = run_module.plan_turn([{"brief": text}])
-    bare, un_b = run_module.plan_turn([text])
+    judge = _judge({text: "testdrive"})
+    wrapped, un_w = run_module.plan_turn([{"brief": text}], judge=judge)
+    bare, un_b = run_module.plan_turn([text], judge=judge)
 
     assert not un_w and not un_b
     assert [s.agent for s in bare.steps] == [s.agent for s in wrapped.steps]
@@ -325,14 +338,20 @@ def test_a_bare_string_plans_exactly_like_the_wrapped_brief():
 
 
 def test_string_and_object_briefs_mix_in_one_call():
-    """The object form survives beside the strings — depends_on still needs it."""
+    """The object form survives beside the strings — depends_on still needs it.
+    A judge routes both cancels deterministically (int8 margins drift by CPU,
+    select.py); the shape of the briefs is what this asserts."""
     from app.orchestrator import run as run_module
 
+    judge = _judge({
+        "cancel the test drive booking TD-2026-0KXC": "testdrive",
+        "cancel the booking with reference td2026htxe": "testdrive",
+    })
     plan, unroutable = run_module.plan_turn([
         "cancel the test drive booking TD-2026-0KXC",
         {"brief": "cancel the booking with reference td2026htxe",
          "depends_on": [0]},
-    ])
+    ], judge=judge)
     assert not unroutable
     assert len(plan.steps) == 2
     assert plan.steps[1].depends_on == (0,) or plan.steps[0].depends_on == (0,)
