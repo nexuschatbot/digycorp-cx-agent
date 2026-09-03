@@ -332,7 +332,11 @@ def create(
             ),
         }
 
-    if slot.start < now:
+    if slot.start < now or slot.end <= now:
+        # `end` as well as `start`: the buffer that governs what is OFFERED is
+        # deliberately not applied here (see slots._lead_cutoff), so this is the
+        # only bar a booking crosses, and a drive that is already over is not a
+        # booking whichever of its two ends says so.
         return {"error": "slot_in_the_past", "slot_id": sid}
 
     # The slot IS the appointment: its vehicle is not negotiable. Without this,
@@ -852,7 +856,7 @@ def reschedule(
             ),
         }
 
-    if new_slot.start < now:
+    if new_slot.start < now or new_slot.end <= now:
         return {"error": "slot_in_the_past", "slot_id": nsid}
 
     # SAME VEHICLE ONLY (decision 4): a reschedule moves the time, it never

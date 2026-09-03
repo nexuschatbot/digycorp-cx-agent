@@ -317,6 +317,14 @@ def query_available(
             Slot.vehicle_id == vid,
             visible,
             Slot.start >= _lead_cutoff(now),
+            # BOTH ENDS IN THE FUTURE, STATED SEPARATELY. The lead buffer on
+            # `start` already implies this whenever end > start, so this bar
+            # catches only the case that implication does not cover: a row whose
+            # end is at or before its start, or at or before now. That is a data
+            # defect rather than a schedule, and inventory is the last place it
+            # should surface — a slot the customer cannot physically attend must
+            # never be offered, whatever shape the row is in.
+            Slot.end > now,
         )
         .order_by(Slot.start)
     )
