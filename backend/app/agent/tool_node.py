@@ -376,6 +376,76 @@ def _recognition_refusal(state: dict) -> dict | None:
     }
 
 
+def _is_catalogue_read(name: str) -> bool:
+    from app.tools import AISHA_CATALOGUE_READ_TOOLS
+
+    return name in AISHA_CATALOGUE_READ_TOOLS
+
+
+def _aisha_catalogue_reads(cfg: dict) -> bool:
+    """Whether Aisha's own catalogue results establish facts this turn.
+
+    True only on the multi-agent chat path with config.AISHA_CATALOGUE_READS on
+    — the one path where she holds the reads AND a later TestDrive step will
+    ask order.resolve whether vehicle_id is known. Voice and the single agent
+    book directly and never consult `known`, so their facts stay byte-identical.
+    """
+    from app import config
+    from app.orchestrator import turn as _turn
+
+    return bool(config.AISHA_CATALOGUE_READS) and _turn.enabled(
+        voice_call=bool(cfg.get("voice_call"))
+    )
+
+
+def _name_for_vehicle(node: object, vehicle_id: object) -> str | None:
+    """The `name` on the first dict carrying this vehicle_id, or None."""
+    if isinstance(node, dict):
+        if node.get("vehicle_id") == vehicle_id and isinstance(node.get("name"), str):
+            return node["name"]
+        for value in node.values():
+            hit = _name_for_vehicle(value, vehicle_id)
+            if hit:
+                return hit
+    elif isinstance(node, list):
+        for item in node:
+            hit = _name_for_vehicle(item, vehicle_id)
+            if hit:
+                return hit
+    return None
+
+
+def _fold_catalogue_facts(name: str, result: object, facts: dict) -> dict:
+    """Aisha's OWN search / details / compare result establishes the car.
+
+    FOUND LIVE ON THE FIRST REAL RUN (2026-09-03). With AISHA_CATALOGUE_READS
+    on, she searched, compared and offered a slot herself — and then her
+    TestDrive brief came back `blocked: needs booking_ref|vehicle_id`, twice,
+    until the cascade ceiling and an apology. The Sales STEP used to be the
+    thing that put vehicle_id into session_facts (graph._fold_cascade_facts
+    reading subagent._harvest_entities off the step's tool results); with no
+    Sales step, nothing did. This is that same fold applied to the same tool
+    results at the place they now arrive: the harvest is the specialist's own
+    (first row of a ranked search wins, offers-not-facts respected), and the
+    name is read off the row the id came from — tool result only, never prose.
+    """
+    if not isinstance(result, dict):
+        return facts
+    from app.orchestrator.subagent import _harvest_entities
+
+    found = _harvest_entities("sales", [result], [name])
+    if not found:
+        return facts
+    updated = dict(facts)
+    for key in ("vehicle_id", "variant_id"):
+        if found.get(key) is not None:
+            updated[key] = found[key]
+    vehicle_name = _name_for_vehicle(result, found.get("vehicle_id"))
+    if vehicle_name:
+        updated["vehicle_name"] = vehicle_name
+    return updated
+
+
 def _fold_session_facts(db, name: str, result: object, facts: dict) -> dict:
     """Fold ONE tool RESULT into session_facts — the date-anchor pattern applied to
     identity (2026-07-24). Returns a NEW dict; the caller replaces its running copy.
@@ -626,6 +696,11 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         # (identity from find_or_create_customer, the car from lock_slot, cleared by
         # a confirmed forget_me). Results only, never the model's args (rule 2).
         session_facts = _fold_session_facts(db, name, result, session_facts)
+        if _is_catalogue_read(name) and _aisha_catalogue_reads(cfg):
+            # The car she just looked up is now established, so a TestDrive
+            # brief later this session is not blocked for want of vehicle_id
+            # — see _fold_catalogue_facts.
+            session_facts = _fold_catalogue_facts(name, result, session_facts)
 
         # (3) STREAM the tool activity (AD-B): tool_event for the console/UI, and
         # a booking event ONLY when a booking was NEWLY created — an idempotent

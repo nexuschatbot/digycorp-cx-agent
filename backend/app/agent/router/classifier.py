@@ -164,8 +164,15 @@ def _get_client():
     if _client is None:
         import anthropic
 
+        from app.services.anthropic_http import pooled_http_client
+
+        # Idle keep-alive longer than the SDK's 5s, so the judge's first call
+        # of a turn does not re-handshake — see services/anthropic_http.
+        http_client = pooled_http_client()
+        extra = {"http_client": http_client} if http_client is not None else {}
         _client = anthropic.Anthropic(
             api_key=config.ANTHROPIC_API_KEY,
+            **extra,
             # FAIL FAST, DO NOT RETRY. The SDK defaults to retrying with
             # backoff, which is right for the agent's own call — that reply is
             # the product — and wrong here. A routing decision has a fallback

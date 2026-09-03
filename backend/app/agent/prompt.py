@@ -492,7 +492,13 @@ def _delegating_body() -> str:
     Appended LAST, after the journey prose it amends, because that is the order
     it reads in: the sequences say what happens, this says who now performs it.
     """
-    return _loader.sections("aisha").get("DELEGATING", "")
+    body = _loader.sections("aisha").get("DELEGATING", "")
+    if config.AISHA_CATALOGUE_READS:
+        # She holds the three catalogue reads again (config.AISHA_CATALOGUE_READS).
+        # CATALOGUE_READS amends DELEGATING the way DELEGATING amends the
+        # journey prose: appended after it, saying which lookups are hers now.
+        body = body + "\n\n" + _loader.sections("aisha").get("CATALOGUE_READS", "")
+    return body
 
 
 def system_prompt(

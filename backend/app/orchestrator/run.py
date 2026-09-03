@@ -36,6 +36,8 @@ the whole cascade offline; Phase 5 passes the real Haiku sub-graphs.
 
 from __future__ import annotations
 
+import dataclasses
+
 import logging
 import re
 import time
@@ -142,15 +144,42 @@ def plan_turn(
     # computing for the length of her JSON tail instead of paying the judge
     # round trip cold; a miss, a slow future or a dead one falls through to
     # exactly the old path. The bounded wait matches the judge's own timeout.
-    def _speculated(text: str):
-        fut = (preselected or {}).get(text)
-        if fut is None:
-            return None
+    # THE MESSAGE-LEVEL SELECTION (SPECULATE_ON_MESSAGE, 2026-09-03) was judged
+    # on the customer's words before Aisha wrote a brief. It stands in for the
+    # brief's judge ONLY when (a) this cascade carries exactly one brief — with
+    # two, the message spans both and names neither — and (b) the free layers
+    # on the brief itself (fast lane, entity owner) had nothing to say. Those
+    # run first, at ~ms, because they are calibrated on the brief's own text.
+    from app.orchestrator.speculate import MESSAGE_KEY as _MESSAGE_KEY
+
+    message_fut = (
+        (preselected or {}).get(_MESSAGE_KEY) if len(briefs) == 1 else None
+    )
+
+    def _resolve(fut, label: str):
         try:
             return fut.result(timeout=8.0) if hasattr(fut, "result") else fut
         except Exception:  # noqa: BLE001 — fall back to selecting in-line
-            log.warning("speculative selection failed for %r", text[:60], exc_info=True)
+            log.warning("speculative selection failed for %r", label[:60], exc_info=True)
             return None
+
+    def _speculated(text: str):
+        fut = (preselected or {}).get(text)
+        if fut is not None:
+            return _resolve(fut, text)
+        if message_fut is None:
+            return None
+        local = _select.select(text, judge=None)
+        if local.agent is not None:
+            return local
+        chosen = _resolve(message_fut, "customer message")
+        if chosen is None or getattr(chosen, "agent", None) is None:
+            return None
+        log.info("selection for %r taken from the customer message: %s (%s)",
+                 text[:60], chosen.agent, chosen.layer)
+        return dataclasses.replace(
+            chosen, reason=f"{chosen.reason}; judged on the customer message"
+        )
 
     # Only widened for more than one brief — a pool for a single brief is pure
     # overhead, and six of every ten cascades measured carried exactly one.

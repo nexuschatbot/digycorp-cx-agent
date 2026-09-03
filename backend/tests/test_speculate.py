@@ -119,4 +119,5 @@ def test_the_stream_offers_and_the_orchestrator_takes():
 
     src = inspect.getsource(graph)
     assert '_speculate.offer(session_id, "".join(spec_buf))' in src
-    assert "preselected=_speculate_take(session_id)" in src
+    assert "preselected=_speculate_take(" in src
+    assert "_speculate_take(\n                    session_id, first_generation=" in src
