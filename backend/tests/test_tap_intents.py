@@ -165,3 +165,19 @@ def test_consent_refusal_is_recorded_not_rejected(db, client, slots, checkpoint)
     r = client.post("/api/intent/consent", json={"session_id": SESSION, "whatsapp": False})
     assert r.status_code == 200
     assert "error" in r.json() or r.json().get("messaging") is False
+
+
+def test_a_slot_tap_establishes_the_car_in_the_facts(db, client, slots, checkpoint):
+    """tool_node folds the locked slot's car into session_facts when the model
+    calls lock_slot; a tap must do the same, or the 'established' vehicle stays
+    whatever an earlier search led with (found live, 2026-09-03)."""
+    slot = _open_slot(db)
+    graph = build_graph(new_sqlite_checkpointer(checkpoint))
+    config = {"configurable": {"thread_id": SESSION}}
+    graph.update_state(config, {"session_facts": {"vehicle_id": slot.vehicle_id + 100, "name": "Ali"}})
+    r = client.post("/api/intent/lock-slot", json={"session_id": SESSION, "slot_id": slot.id})
+    assert r.json()["locked"] is True
+    facts = graph.get_state(config).values["session_facts"]
+    assert facts["vehicle_id"] == slot.vehicle_id
+    assert facts["name"] == "Ali", "other facts survive the fold"
+    assert facts.get("daypart")
