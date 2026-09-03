@@ -84,6 +84,20 @@ def _current():
     return _memo[1], _memo[2]
 
 
+# Compiled matchers for CALLER-SUPPLIED name lists, keyed by the names
+# themselves — the same "content decides the key" rule the process memo above
+# follows, so a re-seed addresses a different entry rather than staling this
+# one. Bounded by the number of distinct catalogues a process ever sees, which
+# is one in production and a handful across a test run.
+_by_names: dict[tuple[str, ...], tuple] = {}
+
+
+def _for(names: tuple[str, ...]):
+    if names not in _by_names:
+        _by_names[names] = _matcher(list(names)) if names else (None, {})
+    return _by_names[names]
+
+
 def model_names(db=None) -> list[str]:
     """Every catalogue model name, in id order. [] when the catalogue cannot
     be read — the hint simply does nothing that turn."""
@@ -105,11 +119,26 @@ def model_names(db=None) -> list[str]:
         return []
 
 
-def mentions(text: str) -> list[str]:
-    """Full catalogue names mentioned in `text`, in order of appearance."""
+def mentions(text: str, *, names: list[str] | None = None) -> list[str]:
+    """Full catalogue names mentioned in `text`, in order of appearance.
+
+    `names` MATCHES AGAINST A CALLER'S OWN CATALOGUE instead of the process
+    one, and it exists because the default is a hidden dependency (found in CI,
+    2026-09-03). With it omitted the names come from `model_names()`, which
+    opens its OWN SessionLocal — so a caller holding a perfectly good Session
+    still matched against whatever the process database happened to hold, and
+    against nothing at all where there is no database to open. CI has no
+    elite_demo.db: every call returned [], and services/vehicle_guard silently
+    stopped guarding while its unit tests passed locally.
+
+    For a retrieval HINT that failure is invisible and harmless, which is why
+    it went unnoticed. For a guard it is the whole behaviour. A caller inside a
+    transaction passes its names; the hint keeps the zero-argument call it has
+    always had.
+    """
     if not text:
         return []
-    pattern, table = _current()
+    pattern, table = _for(tuple(names)) if names is not None else _current()
     if pattern is None:
         return []
     return [table[m.group(1).lower()] for m in pattern.finditer(text)]
@@ -142,3 +171,4 @@ def last_mentioned(messages: list, *, lookback: int = _MAX_LOOKBACK) -> str | No
 def reset() -> None:
     global _memo
     _memo = None
+    _by_names.clear()

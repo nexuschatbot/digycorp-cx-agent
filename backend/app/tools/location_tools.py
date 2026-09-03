@@ -13,7 +13,7 @@ import urllib.parse
 from sqlalchemy.orm import Session
 
 from app.models import Showroom
-from app.services import catalogue, maps, salesforce
+from app.services import catalogue, maps, salesforce, vehicle_guard
 
 
 def _dest_label(showroom, disp: dict) -> str | None:
@@ -125,7 +125,14 @@ NEAREST_SHOWROOM_SCHEMA = {
                     "that model are then ranked, so 'the closest one' can never "
                     "be a branch that does not carry the car. Omit it only when "
                     "the customer is asking about branches generally, with no "
-                    "model in mind."
+                    "model in mind.\n\n"
+                    "PASS AN ID YOU LOOKED UP, never one you reached for. "
+                    "reason 'vehicle_id_not_discussed' means the id names a car "
+                    "nobody here has mentioned; the reply names the car they "
+                    "have been asking about, so look ITS id up with "
+                    "get_vehicle_details and call again. Say nothing to the "
+                    "customer about it — no branch is missing and no car is "
+                    "unavailable."
                 ),
             },
         },
@@ -180,6 +187,22 @@ def nearest_showroom(
     vehicle_id: object = None,
     **_ignored: object,
 ) -> dict:
+    # THE ID MUST MATCH THE CONVERSATION (2026-09-03). Checked BEFORE the
+    # geocode: a wrong car here is not a wrong distance, it is the wrong fleet
+    # placement — the branches that stock somebody else's model — and every
+    # later call in the booking inherits the id from this one. That is exactly
+    # how the live failure spread. See services/vehicle_guard.
+    clash = vehicle_guard.contradiction(db, session_id, vehicle_id)
+    if clash is not None:
+        return {
+            "resolved": False,
+            "reason": "vehicle_id_not_discussed",
+            "detail": vehicle_guard.detail(clash),
+            "vehicle_id": clash["passed"],
+            "vehicle_name": clash["passed_name"],
+            "discussed": clash["discussed"],
+        }
+
     coords, origin_label, url_origin, precise, cust_emirate, err = _resolve_origin(
         location, latitude, longitude)
     if err is not None:
