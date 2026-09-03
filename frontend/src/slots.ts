@@ -11,11 +11,15 @@ export interface SlotChip {
   startIso: string
   locationType: 'showroom' | 'doorstep'
   location: string // showroom name, or doorstep service area — verbatim from the tool
+  /** The trim this demo car is, when the model has more than one. Null for a
+   *  single-version model — the seed's convention, not a missing value. */
+  variantName: string | null
 }
 
 interface SlotDict {
   slot_id?: number
   start_iso?: string
+  variant_name?: string | null
   location_type?: string
   showroom?: { name?: string | null } | null
   service_area?: string | null
@@ -40,6 +44,9 @@ export function extractSlotChips(output: unknown): SlotChip[] {
         startIso: String(s.start_iso ?? ''),
         locationType: doorstep ? 'doorstep' : 'showroom',
         location: (doorstep ? s.service_area : s.showroom?.name) ?? '',
+        variantName: typeof s.variant_name === 'string' && s.variant_name.trim()
+          ? s.variant_name
+          : null,
       } as SlotChip
     })
     .filter((c) => Number.isFinite(c.slotId) && c.startIso)
@@ -68,6 +75,27 @@ export function slotChipLabel(chip: SlotChip, dir: 'rtl' | 'ltr'): { when: strin
  *  one decision — "which hour?" — rather than three near-identical sentences. */
 export function slotTimeLabel(chip: SlotChip, dir: 'rtl' | 'ltr'): string {
   return fmt(chip.startIso, dir, { hour: 'numeric', minute: '2-digit', hour12: true })
+}
+
+/** The pill's text: the hour, plus the trim WHEN THE TRIM IS WHAT VARIES.
+ *
+ *  FOUND IN A BROWSER, 2026-09-03. Inventory became per-trim, so a branch that
+ *  used to hold one G700 at 5pm now holds three — Comfort, Luxury and Flagship —
+ *  and a row that shows only the hour drew "5:00 pm  5:00 pm  5:00 pm". Three
+ *  identical pills, three different cars, AED 71,450 apart. The heading carries
+ *  the day and the place for exactly this reason (see groupSlotChips) and the
+ *  pill has always carried "the one thing that varies within a group"; on this
+ *  data that is no longer only the hour.
+ *
+ *  ONLY WHEN IT DISAMBIGUATES. Adding the trim to every pill would make the
+ *  common row — one trim, three times — longer to read for nothing. */
+export function slotPillLabel(
+  chip: SlotChip,
+  dir: 'rtl' | 'ltr',
+  trimVaries: boolean,
+): string {
+  const time = slotTimeLabel(chip, dir)
+  return trimVaries && chip.variantName ? `${time} · ${chip.variantName}` : time
 }
 
 /** One group of chips: a day AT A PLACE, with the times offered there.
@@ -123,7 +151,11 @@ export function slotPickText(chip: SlotChip): string {
     minute: '2-digit',
     hour12: true,
   })
+  // The trim rides along whenever there is one: the tap SENDS this sentence, and
+  // "I'll take Thursday 3 September at 5:00 pm at Jetour Al Quoz" names one of
+  // three different cars once inventory is per trim.
+  const car = chip.variantName ? ` in the ${chip.variantName}` : ''
   return chip.locationType === 'doorstep'
-    ? `I'll take ${when} — a doorstep drive in ${chip.location}.`
-    : `I'll take ${when} at ${chip.location}.`
+    ? `I'll take ${when}${car} — a doorstep drive in ${chip.location}.`
+    : `I'll take ${when}${car} at ${chip.location}.`
 }

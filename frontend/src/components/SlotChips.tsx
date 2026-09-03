@@ -21,7 +21,7 @@
 // superseded offer) is orthogonal: a superseded row with no pick is all disabled
 // and unmarked; a picked row keeps its one selected chip.
 
-import { groupSlotChips, slotPickText, slotTimeLabel, type SlotChip } from '../slots'
+import { groupSlotChips, slotPillLabel, slotPickText, type SlotChip } from '../slots'
 
 export function SlotChips({
   slots,
@@ -46,6 +46,8 @@ export function SlotChips({
         // not only which pill.
         const holdsSelection =
           selectedSlotId != null && group.chips.some((c) => c.slotId === selectedSlotId)
+        const trimVaries =
+          new Set(group.chips.map((c) => c.variantName ?? '')).size > 1
         return (
           <div className="slot-group" key={group.key}>
             <div className="slot-group-head">
@@ -62,6 +64,11 @@ export function SlotChips({
             </div>
 
             <div className="slot-group-times">
+              {/* Does the TRIM vary inside this group? The heading already
+                  carries the day and the place, so the pill's job is whatever
+                  is left that distinguishes one tap from another — the hour
+                  normally, the hour AND the trim when one branch is offering
+                  the same time in three different cars. */}
               {group.chips.map((chip) => {
                 const selected = selectedSlotId != null && chip.slotId === selectedSlotId
                 return (
@@ -84,7 +91,7 @@ export function SlotChips({
                     // prose re-match.
                     onClick={() => onPick(slotPickText(chip), chip.slotId)}
                   >
-                    {slotTimeLabel(chip, dir)}
+                    {slotPillLabel(chip, dir, trimVaries)}
                   </button>
                 )
               })}
