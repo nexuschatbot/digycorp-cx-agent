@@ -933,3 +933,42 @@ def test_a_failed_step_is_reported_once_not_twice():
     payload = turn_mod.compose_input(run_mod.TurnResult(steps=[bad]))
 
     assert [u["status"] for u in payload["unavailable"]] == ["failed"]
+
+
+# --------------------------------------------------------------------------- #
+# A specialist's showroom lookup draws no picker (found live 2026-09-03)
+# --------------------------------------------------------------------------- #
+def test_a_specialists_get_showrooms_never_reaches_the_customer(monkeypatch):
+    """Mid-reschedule, a testdrive step resolved a branch name to an id and two
+    showroom pills appeared under a reply that had asked nothing. On this path
+    only a specialist can call get_showrooms — Aisha holds no showroom tool —
+    so its pills are always drawn by a step that is not talking. The branch
+    question is hers, and she asks it with offer_options.
+
+    nearest_showroom still forwards: its card names the one branch her answer
+    names, so it matches what she just said.
+    """
+    from app.orchestrator import select as select_mod
+    from app.orchestrator import turn as turn_mod
+
+    monkeypatch.setattr(
+        select_mod, "select",
+        lambda text, judge=None: select_mod.Selection(
+            agent="testdrive", layer="fast_lane", reason="stub"
+        ),
+    )
+
+    def runner_fn(step, ctx, *, emit=None, timeout=20.0, max_iterations=6):
+        for tool in ("get_booking", "get_showrooms", "nearest_showroom", "search_vehicles"):
+            emit("tool_event", {"tool": tool, "input": {}, "output": {}})
+        return {"agent": step.agent}
+
+    runner_fn.thread_safe = True
+    seen: list = []
+    turn_mod.execute(
+        ["Reschedule booking TD-2026-BJN2 to slot_id 1478"],
+        runner_fn,
+        known={"vehicle_id"},
+        parent_writer=lambda kind, payload: seen.append(payload.get("tool")),
+    )
+    assert seen == ["get_booking", "nearest_showroom"]

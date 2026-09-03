@@ -418,3 +418,88 @@ def test_the_dispatch_loop_folds_after_the_identity_fold():
     assert src.index("_fold_session_facts(db, name, result, session_facts)") < src.index(
         "_fold_catalogue_facts(name, result, session_facts)"
     )
+
+
+# --------------------------------------------------------------------------- #
+# One question draws one strip of cars, however many searches it took
+# (found live 2026-09-03: four cards under a single answer)
+# --------------------------------------------------------------------------- #
+def _search(call_id: str, **args) -> dict:
+    return {"type": "tool_use", "id": call_id, "name": "search_vehicles", "input": args}
+
+
+def _run_tools(db, monkeypatch, blocks: list, *, reads=True, multi=True) -> list:
+    """Run one tool_node batch and return everything it wrote to the stream."""
+    from app.agent import build_config
+    from app.agent import tool_node as tool_node_mod
+
+    monkeypatch.setattr("app.config.AISHA_CATALOGUE_READS", reads)
+    monkeypatch.setattr("app.config.MULTI_AGENT_ENABLED", multi)
+    seen: list = []
+    monkeypatch.setattr(tool_node_mod, "_safe_writer", lambda: seen.append)
+    state = {
+        "messages": [
+            {"role": "user", "content": "which seven seaters do you have?"},
+            {"role": "assistant", "content": blocks},
+        ],
+        "customer_id": None,
+    }
+    tool_node_mod.tool_node(state, build_config(db, "strip-sess"))
+    return seen
+
+
+def _searches(seen: list) -> list:
+    return [e for e in seen if e.get("type") == "tool_event" and e.get("tool") == "search_vehicles"]
+
+
+def test_two_searches_in_one_generation_draw_one_merged_strip(db, monkeypatch):
+    seen = _run_tools(db, monkeypatch, [
+        _search("t1", min_seats=5, fuel="phev"),
+        _search("t2", min_seats=5),
+    ])
+    events = _searches(seen)
+    assert len(events) == 1, "one question, one strip"
+    rows = events[0]["output"]["matches"]
+    ids = [r["vehicle_id"] for r in rows]
+    assert len(ids) == len(set(ids)), "the same car must not appear twice"
+    assert 0 < len(ids) <= 3, "the product rule is at most three cards"
+
+
+def test_a_single_search_still_streams_exactly_as_it_did(db, monkeypatch):
+    """The curation only fires on more than one search — the common case must
+    keep its own event, arguments and all."""
+    seen = _run_tools(db, monkeypatch, [_search("t1", min_seats=5)])
+    events = _searches(seen)
+    assert len(events) == 1
+    assert events[0]["input"] == {"min_seats": 5}, "the real call, not a synthetic strip"
+
+
+def test_with_the_flag_off_nothing_is_curated(db, monkeypatch):
+    """Off means off: the cascade owns the cards on that path and this code
+    must not touch the stream at all."""
+    seen = _run_tools(db, monkeypatch, [
+        _search("t1", min_seats=5, fuel="phev"),
+        _search("t2", min_seats=5),
+    ], reads=False)
+    assert len(_searches(seen)) == 2
+
+
+def test_the_merge_keeps_the_first_car_seen_and_caps_at_three():
+    from app.agent.tool_node import _merged_search_strip
+
+    strip = _merged_search_strip([
+        {"matches": [{"vehicle_id": 7}, {"vehicle_id": 8}]},
+        {"matches": [{"vehicle_id": 8}, {"vehicle_id": 3}, {"vehicle_id": 9}]},
+    ])
+    assert [r["vehicle_id"] for r in strip] == [7, 8, 3]
+
+
+def test_the_merge_falls_back_to_the_nearest_alternatives():
+    from app.agent.tool_node import _merged_search_strip
+
+    strip = _merged_search_strip([
+        {"matches": [], "nearest_alternatives": [{"vehicle_id": 5}]},
+        {"error": "boom"},
+        "not a dict",
+    ])
+    assert [r["vehicle_id"] for r in strip] == [5]
