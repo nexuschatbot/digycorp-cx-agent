@@ -56,8 +56,22 @@ MAX_TURNS = 60
 
 
 def _discussed_names(db, session_id: str) -> set[str]:
-    """Catalogue model names anyone named this session, newest turns first."""
+    """Catalogue model names anyone named this session, newest turns first.
+
+    THE NAMES COME FROM `db`, NOT FROM THE PROCESS CATALOGUE (found in CI,
+    2026-09-03). vehicle_mentions.mentions() defaults to opening its own
+    SessionLocal, and where there is no database to open it matches nothing and
+    says so by returning [] — which for a retrieval hint is a harmless
+    degradation and for this guard is the difference between guarding and
+    silently not. Locally it passed on the developer's own elite_demo.db; in CI
+    all three guard assertions failed. We already hold the Session the write is
+    happening in, so it is the one thing here that is certainly right.
+    """
     from app.retrieval import vehicle_mentions
+
+    names = vehicle_mentions.model_names(db)
+    if not names:
+        return set()
 
     rows = db.scalars(
         select(ConversationTurn.text)
@@ -68,7 +82,7 @@ def _discussed_names(db, session_id: str) -> set[str]:
     found: set[str] = set()
     for text in rows:
         if text:
-            found.update(vehicle_mentions.mentions(text))
+            found.update(vehicle_mentions.mentions(text, names=names))
     return found
 
 

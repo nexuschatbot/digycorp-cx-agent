@@ -133,6 +133,28 @@ def test_existing_validators_still_own_their_errors(slots, bad):
     assert out.get("error") != "vehicle_id_not_discussed"
 
 
+def test_guards_without_a_process_catalogue(slots, monkeypatch):
+    """The names must come from the caller's Session, not from SessionLocal.
+
+    THIS IS THE CI FAILURE (2026-09-03). vehicle_mentions.mentions() defaults
+    to opening its own SessionLocal; CI has no elite_demo.db, so it matched
+    nothing, and all three guard assertions failed on a build whose full suite
+    passed on the developer's machine. A guard that only works where a stray
+    database file happens to exist is not a guard.
+    """
+    from app.retrieval import vehicle_mentions
+
+    def _no_process_catalogue():  # what an unopenable database looks like
+        return (None, {})
+
+    monkeypatch.setattr(vehicle_mentions, "_current", _no_process_catalogue)
+    _say(slots, Speaker.customer, "i want to book a test drive of g700")
+
+    out = get_available_slots(slots, SESSION, vehicle_id=_id_of(slots, "Jetour Dashing"))
+    assert out["error"] == "vehicle_id_not_discussed"
+    assert out["discussed"] == ["Jetour G700"]
+
+
 def test_a_broken_catalogue_never_costs_the_read(db, monkeypatch):
     """The guard fails open — the customer's turn matters, the check does not."""
     from app.retrieval import vehicle_mentions
