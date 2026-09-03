@@ -57,6 +57,7 @@ from app.config import (
     CALL_AGENT_EFFORT,
     CALL_AGENT_MODEL,
     RETRIEVAL_FIRST,
+    SPECULATE_ON_MESSAGE,
     TURN_CONTEXT_IN_MESSAGE,
     SIMPLE_TURN_MODEL,
     AGENT_EFFORT,
@@ -423,7 +424,15 @@ def _build_client():
             )
         from anthropic import Anthropic
 
+        from app.services.anthropic_http import pooled_http_client
+
         log.info("agent model provider=anthropic-direct model=%s", AGENT_MODEL)
+        # Longer idle keep-alive than the SDK's 5s — see services/anthropic_http.
+        # None (dial at 0) hands the SDK its own default client, byte-for-byte
+        # the old construction.
+        http_client = pooled_http_client()
+        if http_client is not None:
+            return _traced(Anthropic(api_key=ANTHROPIC_API_KEY, http_client=http_client))
         return _traced(Anthropic(api_key=ANTHROPIC_API_KEY))
 
     if not AZURE_FOUNDRY_API_KEY or not AZURE_FOUNDRY_RESOURCE:
@@ -435,10 +444,15 @@ def _build_client():
         )
     from anthropic import AnthropicFoundry
 
+    from app.services.anthropic_http import pooled_http_client
+
     log.info("agent model provider=azure-foundry model=%s", AGENT_MODEL)
+    http_client = pooled_http_client()
+    extra = {"http_client": http_client} if http_client is not None else {}
     return _traced(AnthropicFoundry(
         api_key=AZURE_FOUNDRY_API_KEY,
         resource=AZURE_FOUNDRY_RESOURCE,
+        **extra,
     ))
 
 
@@ -1208,12 +1222,41 @@ def _stream_once(
     return {"role": "assistant", "content": [_normalise_block(b) for b in final.content]}
 
 
-def _speculate_take(session_id: str) -> dict:
-    """This session's speculative selections, or {} — never a broken cascade."""
+def _offer_message_selection(state: AgentState, session_id: str, *, slot_pinned: bool) -> None:
+    """Start selecting a specialist for the customer's message. Never raises.
+
+    THE SAME GATE AS THE PRE-FETCH, on purpose: a greeting, a name-and-number,
+    a chip tap or a bare "yes" produces no brief a judge could help with, and
+    each judge call is a Haiku read we would otherwise not have paid. What
+    passes the gate is a question, and a question is what gets briefed.
+    """
+    try:
+        text = _last_user_text(state).strip()
+        if not text or len(text.split()) < 3:
+            return
+        from app.agent.router import prefilter as _prefilter
+
+        if _prefilter.is_bare_greeting(text) or slot_pinned or _looks_like_answer(text):
+            return
+        from app.orchestrator import speculate as _speculate
+
+        _speculate.offer_message(session_id, text)
+    except Exception:  # noqa: BLE001 — a head start must never cost the turn
+        log.warning("message-level speculation failed", exc_info=True)
+
+
+def _speculate_take(session_id: str, *, first_generation: bool = True) -> dict:
+    """This session's speculative selections, or {} — never a broken cascade.
+
+    `first_generation` is False for a cascade that follows a tool round: the
+    message-level selection was judged on the customer's whole message, and a
+    brief written AFTER a tool ran is about whatever is left of it, which may
+    be a different specialist. That entry is dropped; brief-level ones stay.
+    """
     try:
         from app.orchestrator import speculate as _speculate
 
-        return _speculate.take(session_id)
+        return _speculate.take(session_id, include_message=first_generation)
     except Exception:  # noqa: BLE001
         return {}
 
@@ -1631,6 +1674,16 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
         if RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0
         else None
     )
+    # SPECULATE_ON_MESSAGE (2026-09-03): the specialist selection starts NOW,
+    # on the customer's own words, and runs under the whole generation below.
+    # The brief-level offer in _stream_once fires on the brief's closing quote,
+    # which is the last few bytes of the tool input — 9ms p50 before the
+    # generation ends, so the judge still ran serially. First generation of a
+    # chat turn only: a re-entry after a tool has no customer message to read.
+    if SPECULATE_ON_MESSAGE and _multi_agent(cfg) and iterations == 0:
+        _offer_message_selection(
+            state, session_id, slot_pinned=cfg.get("provided_slot_id") is not None
+        )
     # TURN_CONTEXT_IN_MESSAGE (2026-09-02): facts, bookings and passages travel
     # BEHIND the history, as a trailing block on this turn's customer message,
     # and stay there for the rest of the session. Rendered once per turn (the
@@ -2219,7 +2272,11 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                 # (see _stream_once and orchestrator/speculate). take() pops,
                 # so a discarded generation's offers cannot leak into a later
                 # cascade.
-                preselected=_speculate_take(session_id),
+                # The agent node has already counted its generation, so 1 here
+                # means "the brief came from this turn's first generation".
+                preselected=_speculate_take(
+                    session_id, first_generation=(state.get("iterations") or 0) <= 1
+                ),
             )
             payload = _turn.compose_input(result)
             # THE STRIP, DECIDED ONCE (see _select_cards). Emitted here rather

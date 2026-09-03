@@ -360,6 +360,21 @@ AISHA_ONLY: dict[str, dict] = {
     "emit_briefs": {"schema": EMIT_BRIEFS_SCHEMA},
 }
 
+# THE CATALOGUE READS SHE GETS BACK BEHIND config.AISHA_CATALOGUE_READS
+# (2026-09-03). All three are REGISTRY reads the single agent — and voice,
+# today — already calls, and aisha/v2.md still carries their prose (COMPARE,
+# MODEL_LOOKUP, FINDING_THE_RIGHT_CAR). Measured on the test VM: 70 of 97
+# cascades were a read with nothing to propose, each paying a ~1.4s judge and a
+# ~2.6s Haiku round for a query that runs in milliseconds. In THIS order, and
+# before emit_briefs, so the prefix is stable across processes. Flag off, the
+# list is byte-identical to before. The five SUBAGENT_ONLY reads are NOT here:
+# she has no prose for them (see the header above SUBAGENT_ONLY).
+AISHA_CATALOGUE_READ_TOOLS: tuple[str, ...] = (
+    "search_vehicles",
+    "get_vehicle_details",
+    "compare_vehicles",
+)
+
 
 def aisha_schemas() -> list[dict]:
     """Aisha's `tools=` payload on the multi-agent path.
@@ -368,6 +383,7 @@ def aisha_schemas() -> list[dict]:
     is a cache prefix like any other and a set-iteration order would quietly
     reshuffle it between processes.
     """
+    from app import config
     from app.agents import loader
 
     declared = list(loader.frontmatter("aisha").get("tools") or [])
@@ -378,6 +394,13 @@ def aisha_schemas() -> list[dict]:
             # Belt and braces behind the card test, for the same reason
             # subagent._schemas_for refuses a write it should never be given.
             continue
+        if name == "emit_briefs" and config.AISHA_CATALOGUE_READS:
+            # The flagged reads sit just ahead of emit_briefs — see
+            # AISHA_CATALOGUE_READ_TOOLS for the measurement and the order.
+            bound = {s["name"] for s in out}
+            for read in AISHA_CATALOGUE_READ_TOOLS:
+                if read not in bound:
+                    out.append(REGISTRY[read]["schema"])
         entry = REGISTRY.get(name) or AISHA_ONLY.get(name)
         if entry is not None:
             out.append(entry["schema"])
@@ -391,9 +414,13 @@ assert not (set(SUBAGENT_ONLY) & set(REGISTRY)), (
 assert not (set(SUBAGENT_ONLY) & WRITE_TOOLS), (
     "a sub-agent tool must never be a write"
 )
+assert set(AISHA_CATALOGUE_READ_TOOLS) <= (set(REGISTRY) - WRITE_TOOLS), (
+    "Aisha's flagged catalogue reads must be registered READ tools"
+)
 
 __all__ = [
     "REGISTRY",
+    "AISHA_CATALOGUE_READ_TOOLS",
     "TOOL_SCHEMAS",
     "TOOL_FNS",
     "WRITE_TOOLS",

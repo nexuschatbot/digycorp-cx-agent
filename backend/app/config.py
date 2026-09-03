@@ -208,6 +208,39 @@ MULTI_AGENT_ENABLED: bool = _get_bool("MULTI_AGENT_ENABLED", False)
 # action, she briefs exactly as before — the DELEGATING prose says so.
 RETRIEVAL_FIRST: bool = _get_bool("RETRIEVAL_FIRST", False)
 
+# --------------------------------------------------------------------------- #
+# Turn latency (2026-09-03) — three dials, measured on the test VM's journal
+# --------------------------------------------------------------------------- #
+# AISHA HOLDS THE THREE CATALOGUE READS HERSELF. 70 of the 97 cascades in the
+# 31 Aug–3 Sep journal were a Sales or Finance READ with nothing to propose, and
+# each paid a ~1.4s routing judge plus a ~2.6s Haiku specialist to run a query
+# the single agent (and voice, today) runs directly. search_vehicles,
+# get_vehicle_details and compare_vehicles are already in REGISTRY with their
+# prose still in aisha/v2.md, so this only widens the multi-agent BINDING and
+# appends CATALOGUE_READS to the DELEGATING prose. Off by default: with it off,
+# aisha_schemas() and the prompt are byte-identical to before (cache prefix).
+# Bookings, finance, stock, colours and documents still go through emit_briefs.
+AISHA_CATALOGUE_READS: bool = _get_bool("AISHA_CATALOGUE_READS", False)
+
+# START THE SPECIALIST SELECTION ON THE CUSTOMER'S MESSAGE, at the top of the
+# turn, in parallel with Aisha's whole first generation. The brief-level
+# speculation (orchestrator/speculate.offer) can only start once the brief's
+# closing quote has streamed, which is the last few bytes of the tool input —
+# measured lead over the end of the generation: 9ms p50, so the judge still ran
+# serially (~1.4s, unchanged before and after it shipped). The message is known
+# ~4.7s earlier. plan_turn uses this answer only for a SINGLE-brief cascade whose
+# brief the free layers (fast lane, entity owner) could not decide; everything
+# else is the old path. Costs one Haiku read on turns that end up not briefing.
+SPECULATE_ON_MESSAGE: bool = _get_bool("SPECULATE_ON_MESSAGE", False)
+
+# HOW LONG AN IDLE CONNECTION TO THE MODEL API IS KEPT OPEN. The SDK's httpx
+# default is 5s; a customer takes longer than that to type, so every turn's
+# first call re-did the TCP+TLS handshake (150ms RTT from UAE North, ~300ms
+# total — first-call TTFT measured 263ms higher than later calls in the same
+# turn). httpcore probes an idle socket before reuse, so a connection the
+# server closed meanwhile is discarded, not used. 0 restores the SDK default.
+ANTHROPIC_KEEPALIVE_SECONDS: int = _get_int("ANTHROPIC_KEEPALIVE_SECONDS", 300)
+
 # Slot lock TTL (minutes) — abandoned conversations release inventory (FR-SL).
 SLOT_LOCK_TTL_MINUTES: int = _get_int("SLOT_LOCK_TTL_MINUTES", 10)
 

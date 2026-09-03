@@ -43,6 +43,12 @@ _store: dict[str, dict[str, Future]] = {}
 # A runaway stream must not grow the registry without bound.
 _MAX_BRIEFS_PER_SESSION = 8
 
+# THE MESSAGE-LEVEL SELECTION lives in the same per-session store under a key
+# no brief text can collide with (a brief is a string the model typed into a
+# JSON literal; it cannot start with NUL). plan_turn reads it only for a
+# single-brief cascade whose brief the free layers could not decide.
+MESSAGE_KEY = "\x00customer-message"
+
 
 def completed_briefs(partial_json: str) -> list[str]:
     """Every COMPLETE bare-string brief in a partial emit_briefs input.
@@ -125,15 +131,53 @@ def offer(session_id: str, partial_json: str) -> None:
         log.warning("speculative offer failed", exc_info=True)
 
 
-def take(session_id: str) -> dict[str, Future]:
+def offer_message(session_id: str, text: str) -> None:
+    """Start selecting on the CUSTOMER'S MESSAGE, at the top of the turn.
+
+    SPECULATE_ON_MESSAGE (2026-09-03). The brief-level offer above can only
+    start once a brief's closing quote has streamed — the last bytes of the
+    tool input, 9ms p50 before the generation ends — so the ~1.4s judge still
+    ran serially. The customer's words are known ~4.7s earlier, and for the
+    common single-brief cascade they name the same specialist the brief will.
+
+    RESETS THE SESSION'S STORE. This is the first thing a turn offers, so
+    anything still there is a leftover from a generation that never cascaded
+    (Aisha answered directly, or a tool round came first) and must not be
+    read against this turn's briefs. Never raises, never blocks.
+    """
+    try:
+        text = (text or "").strip()
+        if not text:
+            return
+        from app.orchestrator import select as _select
+        from app.orchestrator.judge import judge as _judge
+
+        with _lock:
+            _store[session_id] = {
+                MESSAGE_KEY: _pool.submit(_select.select, text, judge=_judge)
+            }
+        log.info("speculating selection on the customer message %r — session=%s",
+                 text[:60], session_id)
+    except Exception:  # noqa: BLE001 — a head start must never cost the turn
+        log.warning("message-level speculative offer failed", exc_info=True)
+
+
+def take(session_id: str, *, include_message: bool = True) -> dict[str, Future]:
     """Pop this session's speculative selections — futures, possibly running.
 
     plan_turn resolves each with a bounded wait and falls back to its own
     select() on any failure, so a slow or dead future degrades to exactly the
     old serial path.
+
+    `include_message=False` drops the message-level entry: the caller is a
+    cascade that follows a tool round, and a brief written after a tool ran is
+    about whatever is left of the message, not necessarily the same specialist.
     """
     with _lock:
-        return _store.pop(session_id, {})
+        got = _store.pop(session_id, {})
+    if not include_message:
+        got.pop(MESSAGE_KEY, None)
+    return got
 
 
 def reset() -> None:

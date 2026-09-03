@@ -63,7 +63,11 @@ DEFAULT_VERSION = "v1"
 # single agent still calls them, so it must not see it — and the S5 fixture,
 # which has guarded the shipped body byte-for-byte since the split, is what
 # would catch it if it ever did.
-MULTI_AGENT_ONLY: frozenset[str] = frozenset({"DELEGATING"})
+#
+# CATALOGUE_READS (2026-09-03) is the second: it amends DELEGATING when
+# config.AISHA_CATALOGUE_READS hands her search_vehicles, get_vehicle_details
+# and compare_vehicles back, and is appended only then (prompt._delegating_body).
+MULTI_AGENT_ONLY: frozenset[str] = frozenset({"DELEGATING", "CATALOGUE_READS"})
 
 # The order the blocks appear in the body that ships. EXTRACTED MECHANICALLY from
 # prompts/compose.py::SINGLE_AGENT_ORDER — tests/test_prompt_split.py asserts
