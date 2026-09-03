@@ -691,3 +691,73 @@ def test_an_erroring_terminal_read_still_gets_its_summary_round(patched):
     ], dispatch=lambda *a, **k: {"error": "missing_query"})
     subagent.run_step(STEP, {}, db=None, session_id="s1")
     assert len(client.calls) == 2
+
+
+# --------------------------------------------------------------------------- #
+# The car the customer chose, not the car the search led with (found live,
+# 2026-09-03: three sessions in one morning ended in "technical issue")
+# --------------------------------------------------------------------------- #
+def _established(client) -> dict:
+    import json as _json
+    import re as _re
+
+    sent = wire_text(client.calls[0]["messages"][0]["content"])
+    m = _re.search(r"Already established: (\{.*\})", sent)
+    return _json.loads(m.group(1)) if m else {}
+
+
+def test_the_briefs_vehicle_id_replaces_a_stale_search_fact(patched, db):
+    """Facts said vehicle 7 (first row of an earlier search); the customer tapped
+    the T2 card and Aisha briefed vehicle_id 3. The specialist must not be told
+    the two disagree."""
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(
+        Step(brief="Create a booking for the Jetour T2 i-DM (vehicle_id 3), slot_id 1147", agent="testdrive", index=0),
+        {"vehicle_id": 7, "vehicle_name": "Jetour X70 FL Plus", "variant_id": 13},
+        db=db, session_id="s-stale",
+    )
+    est = _established(client)
+    assert est["vehicle_id"] == 3
+    assert est.get("vehicle_name") != "Jetour X70 FL Plus", "the old car's name must not ride along"
+    assert "variant_id" not in est, "a variant of the old car is not a fact about the new one"
+
+
+def test_a_brief_naming_no_car_leaves_the_fact_alone(patched, db):
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(
+        Step(brief="Which showroom is nearest to Dubai Mall?", agent="testdrive", index=0),
+        {"vehicle_id": 7}, db=db, session_id="s-keep",
+    )
+    assert _established(client)["vehicle_id"] == 7
+
+
+def test_a_brief_naming_two_cars_changes_nothing(patched, db):
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(
+        Step(brief="Compare vehicle_id 3 and vehicle_id 8 for the customer", agent="testdrive", index=0),
+        {"vehicle_id": 7}, db=db, session_id="s-two",
+    )
+    assert _established(client)["vehicle_id"] == 7
+
+
+def test_the_held_slots_car_outranks_everything(patched, db, open_slot):
+    """A held slot IS the booking's car — booking.create refuses any other
+    vehicle for it — so the specialist is told that car, whatever an earlier
+    fact or even the brief said."""
+    from app.services import slots as slots_service
+
+    slots_service.lock(db, session_id="s-hold", slot_id=open_slot.id)
+    stale = open_slot.vehicle_id + 100
+    client = patched([[_text('{"findings": {}}')]])
+    subagent.run_step(
+        Step(brief="Create the booking for the customer", agent="testdrive", index=0),
+        {"vehicle_id": stale, "vehicle_name": "Wrong Car"}, db=db, session_id="s-hold",
+    )
+    est = _established(client)
+    assert est["held_slot_id"] == open_slot.id
+    assert est["vehicle_id"] == open_slot.vehicle_id
+    assert est.get("vehicle_name") != "Wrong Car"
+
+
+def test_the_specialist_is_told_not_to_judge_numbers_or_ids():
+    assert "Never judge a phone number" in subagent.PROPOSALS_INSTRUCTION

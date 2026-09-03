@@ -61,7 +61,7 @@ from app.agent import build_graph, new_sqlite_checkpointer
 from app.config import AGENT_CHECKPOINT_PATH
 from app.db import get_db
 from app.models import Actor, AuditType
-from app.services import audit
+from app.services import audit, slots
 from app.tools import REGISTRY
 
 router = APIRouter(prefix="/api/intent")
@@ -152,7 +152,19 @@ def _tap(db: Session, session_id: str, tool: str, tool_input: dict) -> dict:
 
     # Only now tell the agent. Committing first means a failed write can never
     # leave the model believing something happened that did not.
-    graph.update_state(config, {"messages": _synthetic_pair(correlation_id, tool, tool_input, result)})
+    update: dict = {"messages": _synthetic_pair(correlation_id, tool, tool_input, result)}
+    # A LOCKED SLOT ESTABLISHES THE CAR (found live, 2026-09-03). tool_node folds
+    # slots.facts_for_slot into session_facts when the MODEL calls lock_slot;
+    # the tap path told the agent about the lock but left the facts alone, so
+    # the "established" vehicle stayed whatever an earlier search led with —
+    # and the specialist briefed to book the customer's actual car refused
+    # over the contradiction. Same fold, same source row, here.
+    if tool == "lock_slot" and isinstance(result, dict) and result.get("locked") is True:
+        held = slots.facts_for_slot(db, tool_input.get("slot_id"))
+        if held:
+            facts = dict(state.get("session_facts") or {}) if isinstance(state, dict) else {}
+            update["session_facts"] = {**facts, **held}
+    graph.update_state(config, update)
     return result
 
 

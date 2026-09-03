@@ -30,6 +30,7 @@ silently vanish from the UI with no error anywhere — see turn.forward_events.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import threading
 import time
@@ -99,6 +100,10 @@ else.
 
 Only propose what the request actually asked for, and leave `proposals` out \
 entirely when it asked for nothing.
+
+Never judge a phone number, a country code or an id yourself — whether a value \
+is acceptable is decided by the write that receives it, not by you. Propose \
+with the values the request gives you.
 
 IF THE BRIEF ASKS FOR AN ACTION AND YOU ARE NOT PROPOSING IT, SAY WHY in your \
 note — "the customer has not chosen a slot yet", "the slot named in the brief \
@@ -524,6 +529,43 @@ def _order_produces(agent: str) -> set:
     return produces(agent)
 
 
+_BRIEF_VEHICLE_RE = re.compile(r"vehicle_id\W{0,3}(\d+)")
+
+
+def _reconcile_vehicle(known: dict, brief: str, db) -> dict:
+    """The brief's own vehicle_id replaces a stale one in `known`.
+
+    Aisha writes the id she read off the card the customer tapped, and it is
+    the only place the customer's CHOICE reaches this step — a chip tap is not
+    a tool result, so session_facts never learns about it. Deterministic:
+    exactly one distinct id named in the brief, or nothing changes. When the
+    id changes, the name is re-read from the catalogue row (or dropped), so
+    the specialist is never handed the old car's name beside the new car's id.
+    Never raises; a failed lookup only drops the name.
+    """
+    ids = {int(m) for m in _BRIEF_VEHICLE_RE.findall(brief or "")}
+    if len(ids) != 1:
+        return known
+    (named,) = ids
+    if known.get("vehicle_id") in (None, named):
+        return known
+    out = dict(known)
+    log.info("brief names vehicle_id %s; established %s set aside", named, out["vehicle_id"])
+    out["vehicle_id"] = named
+    out.pop("vehicle_name", None)
+    out.pop("variant_id", None)
+    try:
+        if db is not None:
+            from app.models import VehicleModel
+
+            row = db.get(VehicleModel, named)
+            if row is not None and getattr(row, "name", None):
+                out["vehicle_name"] = row.name
+    except Exception:  # noqa: BLE001 — a name is a nicety, the id is the fact
+        log.warning("could not read the name for vehicle_id %s", named, exc_info=True)
+    return out
+
+
 def run_step(
     step,
     context: dict,
@@ -595,6 +637,17 @@ def run_step(
     # here, and this is the data-minimisation line (see agent/profile.py).
     parts = [f"Request: {step.brief}"]
     known = {k: v for k, v in (context or {}).items() if v is not None}
+    # THE CAR THE CUSTOMER CHOSE, NOT THE CAR THE SEARCH LED WITH (found live,
+    # 2026-09-03, three sessions in one morning). session_facts.vehicle_id is
+    # harvested first-row-wins from a ranked search — the X70 FL Plus — and is
+    # never touched when the customer taps the SECOND card and books the T2.
+    # The brief then says vehicle_id 3, this line said "Already established:
+    # vehicle_id 7", and the specialist, reading a contradiction, wrote prose
+    # instead of the proposal ("these do not match") — twice per turn, until
+    # Aisha apologised for a "technical issue". The brief is what the customer
+    # confirmed; a held slot is what will actually be booked (booking.create
+    # refuses any other vehicle for it). Both outrank a stale search fact.
+    known = _reconcile_vehicle(known, step.brief, db)
     # THE BOOKING STATE GOES IN AS DATA, not instruction (found live,
     # 2026-08-31). A hold sets the slot to `locked`, and a sub-agent briefed to
     # finish the booking used to re-verify with get_available_slots, find the
@@ -614,6 +667,23 @@ def run_step(
             known.setdefault("held_slot_id", _bstate.slot_id)
             known.setdefault("booking_stage", _bstate.stage)
             known.setdefault("licence_acknowledged", _bstate.licence_acknowledged)
+            # The held slot's own row names the car (slots.facts_for_slot) —
+            # the same source tool_node folds on lock_slot. It outranks both
+            # the brief and any earlier fact: booking.create will refuse a
+            # different vehicle for this slot, so telling the specialist any
+            # other car can only produce a refusal or a contradiction.
+            from app.services import slots as _slots
+
+            held = _slots.facts_for_slot(db, _bstate.slot_id)
+            if held.get("vehicle_id") is not None:
+                if known.get("vehicle_id") not in (None, held["vehicle_id"]):
+                    log.info(
+                        "%s: established vehicle_id %s replaced by the held slot's %s",
+                        step.agent, known.get("vehicle_id"), held["vehicle_id"],
+                    )
+                known["vehicle_id"] = held["vehicle_id"]
+                if held.get("vehicle_name"):
+                    known["vehicle_name"] = held["vehicle_name"]
         elif _bstate is not None and "hold_slot" in proposable:
             # NO HOLD — THE 2026-08-31 INCIDENT FROM THE OTHER SIDE (found
             # live, 2026-09-01). A customer accepted the one offered slot IN
