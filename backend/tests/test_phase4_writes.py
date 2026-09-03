@@ -483,3 +483,74 @@ def test_a_refusals_remediation_sentence_reaches_aisha(monkeypatch):
     result = write.execute(None, "s1", write.Proposal(action="reschedule_booking"))
     assert result.status == "refused"
     assert "identify_by_reference_or_mobile" in result.detail
+
+
+# --------------------------------------------------------------------------- #
+# The gate says WHAT TO DO NEXT, not just what is forbidden (2026-09-03)
+# --------------------------------------------------------------------------- #
+# FOUND LIVE, AND IT COST A BOOKING. A testdrive specialist correctly proposed
+# hold_slot and create_booking in one turn. The hold executed; taking a fresh
+# lock clears licence_ack by design, so the re-derived gate landed on stage
+# `licence` and refused the booking — correctly. The refusal it handed Aisha was
+# "create_booking is not valid at this point (allowed: ['cancel_booking',
+# 'hold_slot', 'lock_slot', 'reschedule_booking'])". Nothing in that names a
+# licence reminder. She said "the system is still refusing the booking on my
+# end", escalated, and told the customer to phone the call centre — twice, two
+# hours apart, over a slot that was held and one tool call from bookable.
+def test_a_gated_refusal_carries_the_step_that_clears_it():
+    res = write.execute(
+        None, "s1", write.Proposal(action="create_booking", agent="testdrive"),
+        allow={"hold_slot", "lock_slot"},
+        next_step="ask them to acknowledge the driving-licence reminder",
+    )
+    assert res.status == "refused"
+    assert "acknowledge the driving-licence reminder" in res.detail
+    # The precise reason survives for the log and the console; the recovery is
+    # additive, never a replacement for it.
+    assert "not valid at this point" in res.detail
+
+
+def test_the_refusal_is_unchanged_when_no_step_can_be_named():
+    """Callers that pass a fixed `allow` and no explanation — every existing
+    test among them — must read exactly as they did."""
+    res = write.execute(
+        None, "s1", write.Proposal(action="create_booking"), allow={"hold_slot"}
+    )
+    assert res.status == "refused"
+    assert res.detail == (
+        "create_booking is not valid at this point (allowed: ['hold_slot'])"
+    )
+
+
+def test_execute_all_explains_each_refusal_from_the_state_it_was_gated_on():
+    """The sentence is read beside the gate, so it can never describe a
+    different moment than the refusal it explains."""
+    seen: list[str] = []
+
+    def allow_for():
+        return {"hold_slot"}
+
+    def next_step_for():
+        seen.append("read")
+        return "offer times and hold the one they choose"
+
+    out = write.execute_all(
+        None, "s1", [write.Proposal(action="create_booking", agent="testdrive")],
+        allow=None, allow_for=allow_for, next_step_for=next_step_for,
+    )
+    assert seen == ["read"]
+    assert "offer times and hold the one they choose" in out[0].detail
+
+
+def test_a_failing_explanation_never_costs_the_write():
+    """An explanation is a courtesy. A refusal to produce one must not turn a
+    valid write into a failed turn."""
+    def boom():
+        raise RuntimeError("no")
+
+    out = write.execute_all(
+        None, "s1", [write.Proposal(action="create_booking")],
+        allow={"hold_slot"}, next_step_for=boom,
+    )
+    assert out[0].status == "refused"
+    assert "not valid at this point" in out[0].detail

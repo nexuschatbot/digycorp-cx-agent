@@ -88,6 +88,7 @@ def execute(
     *,
     customer_id: int | None = None,
     allow: set[str] | None = None,
+    next_step: str | None = None,
     correlation_id: str | None = None,
 ) -> WriteResult:
     """Perform one proposed commercial write, or refuse it. Never raises.
@@ -111,9 +112,27 @@ def execute(
         # THE STATE MACHINE'S REFUSAL, and it is not an error — it is the flow
         # working. "create_booking before the licence acknowledgement" is a
         # step out of order, and the answer is to do the missing step.
-        return _refuse(
-            proposal, f"{action} is not valid at this point (allowed: {sorted(allow)})"
-        )
+        #
+        # SO SAY WHICH STEP (found live, 2026-09-03, and it cost a booking). This
+        # detail is handed to Aisha verbatim by graph._execute_proposals, and it
+        # used to be a list of TOOL NAMES: "create_booking is not valid at this
+        # point (allowed: ['cancel_booking', 'hold_slot', 'lock_slot',
+        # 'reschedule_booking'])". That is a true sentence about the gate and a
+        # useless one to the only party who can clear it — she cannot read a
+        # missing licence acknowledgement out of a list that does not mention
+        # one. Told just that, she announced "a technical issue on my end",
+        # escalated, and sent a decided customer to the call centre twice over
+        # two hours while the slot sat held and bookable.
+        #
+        # booking_state.next_step() has rendered exactly the right sentence
+        # since T4.3 — "ask them to acknowledge the driving-licence reminder" —
+        # and nothing called it. The gate keeps its precise reason for the log
+        # and leads with the recovery, because the recovery is the part that
+        # gets acted on.
+        why = f"{action} is not valid at this point (allowed: {sorted(allow)})"
+        if next_step:
+            why = f"{why}. Next step: {next_step}"
+        return _refuse(proposal, why)
 
     tool_name = _ACTION_TO_TOOL[action]
     correlation_id = correlation_id or uuid.uuid4().hex
@@ -178,6 +197,7 @@ def execute_all(
     customer_id: int | None = None,
     allow: set[str] | None = None,
     allow_for=None,
+    next_step_for=None,
 ) -> list[WriteResult]:
     """Several proposals under ONE correlation id, in order.
 
@@ -207,9 +227,18 @@ def execute_all(
                 current_allow = allow_for()
             except Exception:  # noqa: BLE001 — a bad refresh falls back to `allow`
                 log.warning("allow_for refresh failed; using the prior gate", exc_info=True)
+        # Read beside the gate, from the same state, so the sentence can never
+        # describe a different moment than the refusal it explains.
+        step = None
+        if next_step_for is not None:
+            try:
+                step = next_step_for()
+            except Exception:  # noqa: BLE001 — an explanation must not cost a write
+                log.warning("next_step_for failed; refusing without it", exc_info=True)
         res = execute(
             db, session_id, proposal,
-            customer_id=customer_id, allow=current_allow, correlation_id=correlation_id,
+            customer_id=customer_id, allow=current_allow, next_step=step,
+            correlation_id=correlation_id,
         )
         out.append(res)
         if not res.ok:
