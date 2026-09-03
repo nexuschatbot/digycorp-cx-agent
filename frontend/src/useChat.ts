@@ -1377,6 +1377,25 @@ export function useChat(): UseChat {
       // render out of tool order.
       onBooking: (e) => {
         flushRows()
+        // A BOOKING SETTLES THE SLOT OFFER (found live, 2026-09-03). Until
+        // here, activeSlotsId was cleared on exactly two paths — a chip TAP
+        // and a new conversation — so a customer who TYPED their time left the
+        // offer armed, and a slot row that arrived on the booking turn stayed
+        // tappable underneath the confirmation. Tapping one of those chips
+        // starts a fresh slot selection against a booking that is already
+        // made. A tap and a typed choice are the same commit; only one of them
+        // was retiring the offer.
+        //
+        // CREATE, RESCHEDULE AND CANCEL ALL LAND HERE (graph.py emits this for
+        // any successful write carrying a ref), and the offer is spent in all
+        // three: whatever the customer was choosing between, they have chosen.
+        //
+        // THE ROW ITSELF STAYS. It is history — on a reschedule those are the
+        // times they picked from — and older rows staying visible and inert is
+        // the rule the option rows already follow. Retiring the offer is what
+        // makes it inert; deleting it would erase a real offer whenever the
+        // customer answered in words instead of tapping.
+        setActiveSlotsId(null)
         void showBookingCard(e.booking_ref, turnDirRef.current)
       },
       // Rule 17: seal this bubble, start the next. Never empties anything.
