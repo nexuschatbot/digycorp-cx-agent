@@ -415,6 +415,36 @@ def _name_for_vehicle(node: object, vehicle_id: object) -> str | None:
     return None
 
 
+def _merged_search_strip(results: list) -> list:
+    """One strip of cars out of SEVERAL searches, deduped, first-seen order.
+
+    Mirrors graph._select_cards, which does exactly this for the cascade —
+    same cap, same rule, same reason. See the call site for what goes wrong
+    without it.
+    """
+    from app.agent.graph import MAX_CARDS
+
+    merged: list = []
+    seen: set = set()
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        rows = result.get("matches") or result.get("nearest_alternatives") or []
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            vid = row.get("vehicle_id")
+            if not isinstance(vid, int) or vid in seen:
+                continue
+            seen.add(vid)
+            merged.append(row)
+            if len(merged) >= MAX_CARDS:
+                return merged
+    return merged
+
+
 def _fold_catalogue_facts(name: str, result: object, facts: dict) -> dict:
     """Aisha's OWN search / details / compare result establishes the car.
 
@@ -571,6 +601,20 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
     # say. Conflating them would disable the composer on a question.
     options_offered = False
 
+    # SEVERAL SEARCHES IN ONE GENERATION DRAW ONE STRIP, NOT ONE EACH (found
+    # live 2026-09-03). Aisha ran search_vehicles twice for a single question —
+    # once for plug-in hybrids, once without — and each tool_event drew its own
+    # row: four cards under one answer, where the product rule is at most three.
+    # The cascade already solved this for specialists (turn.CURATED plus
+    # graph._select_cards); with the catalogue reads back in her own hands the
+    # same question needs the same answer. ONLY when there is more than one
+    # search in the batch: a single search still streams exactly as it did.
+    curated_searches: list = []
+    curating = (
+        _aisha_catalogue_reads(cfg)
+        and sum(1 for b in tool_uses if b.get("name") == "search_vehicles") > 1
+    )
+
     results: list[dict] = []
     for idx, block in enumerate(tool_uses):
         # (0) ABORT BEFORE EACH DISPATCH (AD-E). A client that dropped mid-turn
@@ -707,7 +751,11 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         # replay returns a ref too, but re-firing `booking` would re-freeze an
         # already-frozen timer or read as a second booking in the UI.
         if writer:
-            writer({"type": "tool_event", "tool": name, "input": tool_input, "output": result})
+            if curating and name == "search_vehicles":
+                # Held back for the single merged strip emitted after the loop.
+                curated_searches.append(result)
+            else:
+                writer({"type": "tool_event", "tool": name, "input": tool_input, "output": result})
             if name == "create_booking" and isinstance(result, dict) and result.get("created") is True:
                 ref = (result.get("booking") or {}).get("booking_ref")
                 if ref:
@@ -732,6 +780,19 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
     #
     # recognition.link is consent-gated and never raises — no consent, no row, and
     # a failure costs the customer nothing but a stranger's greeting next visit.
+    # The one strip, chosen across every search this generation made. Shaped
+    # like graph._select_cards' synthetic event so the console, the card
+    # anchor in runner and cards.ts all read it exactly as they read a search.
+    if writer and curated_searches:
+        strip = _merged_search_strip(curated_searches)
+        if strip:
+            writer({
+                "type": "tool_event",
+                "tool": "search_vehicles",
+                "input": {},
+                "output": {"matches": strip},
+            })
+
     if device_token and customer_id is not None:
         recognition.link(
             db, token=device_token, customer_id=customer_id, session_id=session_id

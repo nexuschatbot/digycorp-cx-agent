@@ -224,6 +224,78 @@ def entity_owner(brief: str) -> Selection | None:
     return Selection(agent=agent, layer="fast_lane", reason=f"produces {', '.join(sorted(wanted & produces(agent)))}")
 
 
+# The gap a verb and its object may sit apart: "create a booking",
+# "create a test drive booking". Three words covers every shape Aisha has
+# written live; wider starts joining unrelated clauses.
+_ACTION_GAP = 3
+
+
+def _action_pattern(action: str) -> re.Pattern | None:
+    """A regex for one proposal name, built FROM the name — never hand-written.
+
+    `create_booking` becomes create[_ a test drive ]booking, tolerating the
+    underscore spelling, an article or two, and the `_id`/`_ref` suffix the
+    object usually wears ("lock slot_id 1392").
+    """
+    verb, _, noun = action.partition("_")
+    if not verb or not noun:
+        return None
+    return re.compile(
+        rf"\b{verb}(?:_|\W+(?:\w+\W+){{0,{_ACTION_GAP}}}){noun}(?:_(?:id|ref))?\b",
+        re.IGNORECASE,
+    )
+
+
+def action_owner(brief: str) -> Selection | None:
+    """The one card that may PERFORM the write this brief asks for.
+
+    FOUND LIVE 2026-09-03, and it is why a confirmed booking spent eight
+    seconds in the wrong specialist. Aisha wrote "Create a booking for Ali
+    Test ... (vehicle_id 3) ... slot ID 1147" — `slot ID` spelled with a
+    space, so `entity_owner` below matched only `vehicle_id`, which Sales
+    produces, and sent a booking request to Sales. Sales has no write to
+    propose, answered in prose, and Aisha had to brief again.
+
+    ASKING FOR A WRITE IS THE STRONGEST SIGNAL A BRIEF CARRIES, so this runs
+    FIRST — ahead of the embedding lane and ahead of entity_owner. The cards
+    declare what they may ask for (`proposes`), write.py declares what it can
+    actually perform (PROPOSABLE), and exactly one routable card may do any of
+    it; a car named in passing is the object of the sentence, not its verb.
+    Two owners, or none, change nothing and fall through as before.
+    """
+    text = (brief or "").strip()
+    if not text:
+        return None
+    from app.agents import loader
+    from app.orchestrator.write import _ACTION_TO_TOOL, PROPOSABLE
+
+    owners: dict[str, set[str]] = {}
+    for agent in ROUTABLE:
+        try:
+            declared = list(loader.frontmatter(agent).get("proposes") or [])
+        except Exception:  # noqa: BLE001 — a missing card is the judge's problem
+            continue
+        for action in declared:
+            if action not in PROPOSABLE:
+                continue
+            # Both spellings of the same act: the card says `hold_slot`, the
+            # customer's brief may well say "lock slot 1392".
+            for spelling in {action, _ACTION_TO_TOOL.get(action, action)}:
+                pattern = _action_pattern(spelling)
+                if pattern is not None and pattern.search(text):
+                    owners.setdefault(action, set()).add(agent)
+    asked = {a for a, who in owners.items() if len(who) == 1}
+    if not asked:
+        return None
+    agents = {next(iter(owners[a])) for a in asked}
+    if len(agents) != 1:
+        return None
+    (agent,) = agents
+    return Selection(
+        agent=agent, layer="fast_lane", reason=f"proposes {', '.join(sorted(asked))}"
+    )
+
+
 def select(brief: str, *, judge=None) -> Selection:
     """Pick the agent for one brief. Never raises.
 
@@ -234,6 +306,11 @@ def select(brief: str, *, judge=None) -> Selection:
     """
     if not brief or not brief.strip():
         return Selection(agent=None, layer="unroutable", reason="empty brief")
+
+    # A WRITE REQUEST OUTRANKS BOTH LAYERS BELOW — see action_owner.
+    doer = action_owner(brief)
+    if doer is not None:
+        return doer
 
     hit = fast_lane(brief)
     if hit is not None:

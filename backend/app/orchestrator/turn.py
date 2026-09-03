@@ -195,7 +195,17 @@ def execute(
     # search per clause, and forwarding each one drew a row per query: nine
     # cards for one question, under a reply describing three. The results still
     # reach Aisha in full through `evidence`; only the DRAWING is deferred.
-    CURATED = {"search_vehicles"}
+    #
+    # get_showrooms JOINED THE SET 2026-09-03, seen live. Its event draws the
+    # branch-choice pills, and on this path only a SPECIALIST can call it —
+    # Aisha holds no showroom tool. So the pills are always drawn by a step
+    # that is not talking to the customer: mid-reschedule, a testdrive step
+    # resolved "Jetour Al Quoz" to an id and two showroom rows appeared under
+    # a reply that had asked nothing. The branch question is Aisha's and she
+    # asks it with offer_options. nearest_showroom is deliberately NOT here:
+    # its card names the one branch her answer names, so it matches what she
+    # just said.
+    CURATED = {"search_vehicles", "get_showrooms"}
 
     def _queue_emit(agent: str):
         def _emit(kind: str, payload: dict) -> None:
