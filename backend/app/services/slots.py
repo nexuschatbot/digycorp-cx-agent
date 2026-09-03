@@ -137,6 +137,15 @@ def facts_for_slot(db: Session, slot_id: object) -> dict:
     facts: dict = {"vehicle_id": slot.vehicle_id, "daypart": daypart_of(slot.start)}
     if slot.vehicle is not None:
         facts["vehicle_name"] = slot.vehicle.name
+    # THE TRIM, OFF THE ROW, for the same reason the vehicle is: this is what
+    # was actually locked. A specialist handed variant_id in session_facts can
+    # brief and book the trim the customer chose instead of the one a ranked
+    # search led with — the failure _fold_session_facts already exists to stop
+    # one level up (graph.py, 2026-08-31).
+    if slot.variant_id is not None:
+        facts["variant_id"] = slot.variant_id
+        if slot.variant is not None and slot.variant.name:
+            facts["variant_name"] = slot.variant.name
     if slot.location_type == LocationType.showroom and slot.showroom is not None:
         facts["showroom_name"] = slot.showroom.name
     return facts
@@ -217,6 +226,7 @@ def query_available(
     db: Session,
     *,
     vehicle_id: int,
+    variant_id: int | None = None,
     location_type: str | None = None,
     showroom_id: int | None = None,
     date_from: str | None = None,
@@ -265,6 +275,34 @@ def query_available(
     vehicle = db.get(VehicleModel, vid)
     if vehicle is None:
         return {"error": "vehicle_not_found", "vehicle_id": vid, "slots": []}
+
+    # THE TRIM FILTER (2026-09-03). Inventory is grained per variant, so asking
+    # without one means "any trim of this model" and asking with one means that
+    # trim alone. Both are legitimate questions and the caller says which.
+    #
+    # VALIDATED AGAINST THE MODEL, not just for existence: a variant of a
+    # different car is a mistake that would otherwise answer "no times" and read
+    # as "that branch is full", which is a lie about availability. Its own error
+    # so the agent can tell the difference.
+    vrid = None
+    if variant_id is not None:
+        vrid = _coerce_int(variant_id)
+        if vrid is None:
+            return {"error": "invalid_variant_id", "variant_id": variant_id, "slots": []}
+        variant = db.get(VehicleVariant, vrid)
+        if variant is None:
+            return {"error": "variant_not_found", "variant_id": vrid, "slots": []}
+        if variant.model_id != vid:
+            return {
+                "error": "variant_not_of_vehicle",
+                "variant_id": vrid,
+                "vehicle_id": vid,
+                "slots": [],
+            }
+        if variant.coming_soon:
+            # Not "no times": a car that cannot be ordered has no demo unit, and
+            # saying the branch is full would be a different, false answer.
+            return {"error": "variant_coming_soon", "variant_id": vrid, "slots": []}
 
     if location_type is not None and str(location_type).strip():
         location_type = str(location_type).strip().lower()
@@ -328,6 +366,14 @@ def query_available(
         )
         .order_by(Slot.start)
     )
+    if vrid is not None:
+        # STRICT, AND A NULL NEVER SATISFIES IT. A pre-migration row carries no
+        # trim, and treating it as "matches anything" would hand a customer who
+        # asked for the Flagship a slot that is really whatever was on the floor
+        # — the exact defect this grain exists to remove. A database that has not
+        # been regenerated answers "no times", which is visible and wrong-safe,
+        # rather than plausible and wrong.
+        stmt = stmt.where(Slot.variant_id == vrid)
     if location_type:
         stmt = stmt.where(Slot.location_type == LocationType(location_type))
     if showroom_id is not None:
@@ -413,6 +459,13 @@ def _slot_dict(s: Slot) -> dict:
         "end_iso": s.end.isoformat(),
         "location_type": s.location_type.value,
     }
+    # WHICH DEMO CAR, not just which model. Emitted whenever the row has one, so
+    # the chips, the recap and the booking card can all name the same trim; a
+    # `variant_name` of None is a model with one version (the seed's convention —
+    # see tests/test_seed_variants.py) and readers must not print "None".
+    if s.variant_id is not None:
+        out["variant_id"] = s.variant_id
+        out["variant_name"] = s.variant.name if s.variant is not None else None
     if s.location_type == LocationType.doorstep:
         out["service_area"] = s.service_area
     else:

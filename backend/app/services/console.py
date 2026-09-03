@@ -594,6 +594,11 @@ def _slot_row(s: Slot) -> dict:
         "location_type": _enum(s.location_type),
         "vehicle_id": s.vehicle_id,
         "vehicle_name": s.vehicle.name if s.vehicle else None,
+        # Inventory is per demo car, not per model — a branch's nine models are
+        # fourteen cars — so a Slots tab that showed only the model would list
+        # what looks like duplicate rows at the same time on the same day.
+        "variant_id": s.variant_id,
+        "variant_name": s.variant.name if s.variant else None,
         "showroom_id": s.showroom_id,
         "showroom_name": s.showroom.name if s.showroom else None,
         "service_area": s.service_area,
@@ -702,6 +707,12 @@ def _booking_row(b: Booking, *, survey: object = None) -> dict:
         "driver_relationship": b.driver_relationship,
         "vehicle_id": b.vehicle_id,
         "vehicle_name": b.vehicle.name if b.vehicle else None,
+        # WHICH TRIM, so the console shows what a consultant will actually be
+        # handing over. Null on a single-trim model (the seed's convention) and
+        # on the historic rows the backfill could not settle — both mean "the
+        # model name is the whole answer", so a reader shows nothing extra.
+        "variant_id": b.variant_id,
+        "variant_name": b.variant.name if b.variant else None,
         "slot_id": b.slot_id,
         "start": _iso(slot.start) if slot else None,
         "end": _iso(slot.end) if slot else None,

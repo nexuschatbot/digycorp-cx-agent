@@ -121,7 +121,18 @@ function Card({
           <Field label={t.refLabel} value={booking.ref} />
           <Field label={t.nameLabel} value={name} />
           <Field label={t.mobileLabel} value={booking.mobile} />
-          <Field label={t.vehicleLabel} value={booking.vehicleName} />
+          {/* Model and trim on ONE line, not two. They name a single car —
+              "Jetour G700 Flagship" — and splitting them into two labelled
+              fields would read as two facts to check rather than one car. A
+              single-version model carries no trim and is unchanged. */}
+          <Field
+            label={t.vehicleLabel}
+            value={
+              booking.vehicleName && booking.variantName
+                ? `${booking.vehicleName} ${booking.variantName}`
+                : booking.vehicleName
+            }
+          />
           <Field label={t.timeSlotLabel} value={when} />
         </div>
 

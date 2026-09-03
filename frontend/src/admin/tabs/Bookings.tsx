@@ -667,7 +667,7 @@ function BookingCard({ b }: { b: BookingRow }) {
         <DetailRow
           label="Vehicle"
           icon={<DirectionsCarRoundedIcon sx={{ fontSize: 18 }} />}
-          value={b.vehicle_name ?? '—'}
+          value={[b.vehicle_name, b.variant_name].filter(Boolean).join(' ') || '—'}
         />
         <DetailRow
           label="When"
@@ -786,7 +786,7 @@ function BookingListRow({ b }: { b: BookingRow }) {
         <DetailRow
           label="Vehicle"
           icon={<DirectionsCarRoundedIcon sx={{ fontSize: 16 }} />}
-          value={b.vehicle_name ?? '—'}
+          value={[b.vehicle_name, b.variant_name].filter(Boolean).join(' ') || '—'}
           dense
         />
       </Box>
