@@ -693,6 +693,22 @@ class Slot(Base):
     )
     service_area: Mapped[str | None] = mapped_column(String(128))
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicle_models.id"))
+    # WHICH TRIM THIS DEMO CAR IS (2026-09-03). Inventory used to be grained
+    # (showroom, model) on the stated physical fact that "a showroom genuinely
+    # has one demo car per model" — see slots.generate. That made the trim
+    # unaskable and unrecordable: a customer booked "a G700" and drove whichever
+    # of four trims, spanning AED 169,000 to 240,450, happened to be on the floor.
+    #
+    # NULLABLE ONLY SO THE MIGRATION CAN LAND, never as a meaning. A row written
+    # by generate() always carries one; a NULL is pre-migration inventory that
+    # has not been regenerated yet. query_available REFUSES to match a NULL
+    # against an explicit variant filter, so a database in that state returns
+    # nothing and says so, rather than quietly offering a Flagship slot that is
+    # really a Comfort. Loud beats plausible — that is the same choice
+    # licence_ack made above.
+    variant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicle_variants.id"), index=True
+    )
     start: Mapped[datetime] = mapped_column(DateTime, index=True)
     end: Mapped[datetime] = mapped_column(DateTime)
     status: Mapped[SlotStatus] = mapped_column(
@@ -726,6 +742,7 @@ class Slot(Base):
 
     showroom: Mapped["Showroom | None"] = relationship()
     vehicle: Mapped["VehicleModel"] = relationship()
+    variant: Mapped["VehicleVariant | None"] = relationship()
 
 
 class Booking(Base):
@@ -775,6 +792,22 @@ class Booking(Base):
     driver_name: Mapped[str | None] = mapped_column(String(255))
     driver_relationship: Mapped[str | None] = mapped_column(String(64))
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicle_models.id"))
+    # THE TRIM THEY ARE COMING TO DRIVE (2026-09-03). Denormalised from the
+    # slot on purpose: the slot is the authority while the booking is live, but
+    # a slot is re-generated every fortnight and a booking outlives it, so a
+    # booking that could only name its trim through Slot.variant_id would lose
+    # it the first time the window rolled. Written from the LOCKED SLOT ROW,
+    # never from a model-supplied argument — the same rule facts_for_slot was
+    # written for, and the reason booking.create refuses a variant that
+    # disagrees with the slot it is booking.
+    #
+    # Nullable because seven historic bookings predate the column and two more
+    # could not be derived at all (their models carry several trims and nothing
+    # recorded which was driven). A NULL means "we do not know", which is the
+    # honest reading; it never means "the only trim".
+    variant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicle_variants.id"), index=True
+    )
     slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id"))
 
     location: Mapped[LocationType] = mapped_column(SAEnum(LocationType))
@@ -818,6 +851,7 @@ class Booking(Base):
 
     customer: Mapped["Customer"] = relationship(back_populates="bookings")
     vehicle: Mapped["VehicleModel"] = relationship()
+    variant: Mapped["VehicleVariant | None"] = relationship()
     slot: Mapped["Slot"] = relationship()
 
 
