@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.services import slots
+from app.services import slots, vehicle_guard
 
 # --------------------------------------------------------------------------- #
 # get_available_slots (FR-SL-01/02, S-22)
@@ -64,7 +64,15 @@ GET_AVAILABLE_SLOTS_SCHEMA = {
                 "type": "integer",
                 "description": (
                     "The vehicle the customer wants to drive. Get this from "
-                    "search_vehicles or get_vehicle_details first — never guess."
+                    "search_vehicles or get_vehicle_details first — never "
+                    "guess.\n\n"
+                    "'vehicle_id_not_discussed' means the id you passed is a "
+                    "car nobody in this conversation has mentioned — you "
+                    "reached for a number instead of looking one up. The reply "
+                    "names the car the customer has actually been asking "
+                    "about: look ITS id up and call again. Do NOT tell the "
+                    "customer anything is unavailable, and do not apologise "
+                    "for a delay — nothing has gone wrong for them."
                 ),
             },
             "variant_id": {
@@ -181,6 +189,24 @@ def get_available_slots(
     """
     if vehicle_id is None:
         return {"error": "missing_vehicle_id", "slots": []}
+
+    # THE ID MUST MATCH THE CONVERSATION (2026-09-03, and it cost a booking).
+    # An id that came from nowhere answers for the wrong car and reads as "that
+    # branch is full" — the same lie about availability that
+    # `variant_not_of_vehicle` exists to prevent, one level up. See
+    # services/vehicle_guard for what this refuses and what it deliberately
+    # does not do.
+    clash = vehicle_guard.contradiction(db, session_id, vehicle_id)
+    if clash is not None:
+        return {
+            "error": "vehicle_id_not_discussed",
+            "detail": vehicle_guard.detail(clash),
+            "vehicle_id": clash["passed"],
+            "vehicle_name": clash["passed_name"],
+            "discussed": clash["discussed"],
+            "slots": [],
+        }
+
     return slots.query_available(
         db,
         vehicle_id=vehicle_id,
