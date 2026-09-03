@@ -67,6 +67,26 @@ GET_AVAILABLE_SLOTS_SCHEMA = {
                     "search_vehicles or get_vehicle_details first — never guess."
                 ),
             },
+            "variant_id": {
+                "type": "integer",
+                "description": (
+                    "Which TRIM they are coming to drive, when the model has "
+                    "more than one. Each trim is a separate demo car with its "
+                    "own times, so omitting this asks for any trim of the "
+                    "model and the customer may be shown a car they did not "
+                    "choose.\n\n"
+                    "Get it from get_variants or get_vehicle_details — never "
+                    "guess, and never infer it from the price they mentioned. "
+                    "If the model has only ONE trim, omit this: there is "
+                    "nothing to choose and asking would be noise.\n\n"
+                    "Reading the errors: 'variant_not_of_vehicle' means the "
+                    "trim belongs to a different model — re-read the ids, do "
+                    "NOT tell the customer anything is unavailable. "
+                    "'variant_coming_soon' means that trim cannot be driven "
+                    "yet; say so plainly and offer the trims that can, never "
+                    "that the branch is full."
+                ),
+            },
             "location_type": {
                 "type": "string",
                 "enum": ["showroom", "doorstep"],
@@ -145,6 +165,7 @@ def get_available_slots(
     db: Session,
     session_id: str,
     vehicle_id: int | None = None,
+    variant_id: int | None = None,
     location_type: str | None = None,
     showroom_id: int | None = None,
     date_from: str | None = None,
@@ -163,6 +184,7 @@ def get_available_slots(
     return slots.query_available(
         db,
         vehicle_id=vehicle_id,
+        variant_id=variant_id,
         location_type=location_type,
         showroom_id=showroom_id,
         date_from=date_from,

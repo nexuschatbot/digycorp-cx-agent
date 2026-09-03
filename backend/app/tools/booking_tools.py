@@ -160,6 +160,7 @@ def create_booking(
     customer_id: int | None = None,  # INJECTED by the tool node, never modelled
     vehicle_id: int | None = None,
     slot_id: int | None = None,
+    variant_id: int | None = None,
     driver_name: str | None = None,
     driver_relationship: str | None = None,
     doorstep_address: str | None = None,
@@ -181,6 +182,11 @@ def create_booking(
         customer_id=customer_id,
         vehicle_id=vehicle_id,
         slot_id=slot_id,
+        # OPTIONAL AND ONLY EVER A CROSS-CHECK. The trim is recorded from the
+        # LOCKED SLOT, so passing this cannot choose one; passing a trim that
+        # disagrees with the slot is refused rather than reconciled. Omitting it
+        # is correct and normal.
+        variant_id=variant_id,
         driver_name=driver_name,
         driver_relationship=driver_relationship,
         doorstep_address=doorstep_address,

@@ -1963,9 +1963,21 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
     def _allow_now() -> set[str]:
         return booking_state.read(db, session_id, customer_id=customer_id).allowed
 
+    # AND WHAT TO DO IF IT SAYS NO. The gate's own refusal names the actions that
+    # ARE valid, which tells Aisha nothing she can act on — a missing licence
+    # acknowledgement is not deducible from a list of four tool names, and told
+    # only that, she reported "a technical issue" and escalated a booking that
+    # was one step from done (2026-09-03). next_step() has rendered the sentence
+    # since T4.3; this is the call it was waiting for.
+    def _next_step_now() -> str:
+        return booking_state.next_step(
+            booking_state.read(db, session_id, customer_id=customer_id)
+        )
+
     results = write.execute_all(
         db, session_id, proposals,
         customer_id=customer_id, allow=allowed, allow_for=_allow_now,
+        next_step_for=_next_step_now,
     )
 
     if any(r.ok for r in results):

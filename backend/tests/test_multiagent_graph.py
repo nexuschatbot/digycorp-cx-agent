@@ -484,10 +484,12 @@ def test_a_proposal_reaches_write_execute_all(monkeypatch):
 
     seen = {}
 
-    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None):
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None,
+              next_step_for=None):
         seen["proposals"] = proposals
         seen["allow"] = allow
         seen["allow_for"] = allow_for
+        seen["next_step_for"] = next_step_for
         return [write.WriteResult(action="create_booking", status="executed",
                                   result={"booking_ref": "TD-2026-0001"})]
 
@@ -504,6 +506,12 @@ def test_a_proposal_reaches_write_execute_all(monkeypatch):
     assert seen["allow"] == {"create_booking"}
     # The gate is now re-derived per proposal, not just snapshotted.
     assert callable(seen["allow_for"])
+    # AND IT CAN EXPLAIN ITSELF. A refusal that named only the allowed tools
+    # left Aisha with nothing to act on and cost a live booking (2026-09-03);
+    # asserted on the WIRING, because write.execute_all cannot call a hook the
+    # graph never hands it.
+    assert callable(seen["next_step_for"])
+    assert seen["next_step_for"]() == "confirm and create the booking"
     assert seen["proposals"][0].action == "create_booking"
     assert out == [{"action": "create_booking", "status": "executed",
                     "detail": "", "booking_ref": "TD-2026-0001"}]
@@ -518,7 +526,8 @@ def test_a_hold_is_ordered_before_the_booking_it_enables(monkeypatch):
 
     seen = {}
 
-    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None):
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None,
+              next_step_for=None):
         seen["order"] = [p.action for p in proposals]
         return [write.WriteResult(action=p.action, status="executed") for p in proposals]
 
@@ -544,7 +553,8 @@ def test_the_reference_surfaces_from_the_nested_booking_result(monkeypatch):
     landed (found live, 2026-08-31)."""
     from app.orchestrator import write
 
-    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None):
+    def _fake(db, sid, proposals, *, customer_id=None, allow=None, allow_for=None,
+              next_step_for=None):
         return [write.WriteResult(action="create_booking", status="executed",
                                   result={"created": True, "booking": {
                                       "booking_ref": "TD-2026-0002",

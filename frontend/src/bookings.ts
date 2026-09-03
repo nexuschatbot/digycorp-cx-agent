@@ -18,6 +18,10 @@ export interface BookingCard {
   id: string
   ref: string
   vehicleName: string | null
+  /** The trim, when the model has more than one. Null means the model IS the
+   *  car (single-version models carry no trim name — the seed's convention),
+   *  so the card shows the model name alone rather than an empty row. */
+  variantName: string | null
   startIso: string | null
   endIso: string | null
   locationType: 'showroom' | 'doorstep'
@@ -41,6 +45,7 @@ export function toBookingCard(b: BookingDetail): BookingCard {
     id: b.booking_ref,
     ref: b.booking_ref,
     vehicleName: str(b.vehicle_name),
+    variantName: str(b.variant_name),
     startIso: str(b.start_iso),
     endIso: str(b.end_iso),
     locationType: doorstep ? 'doorstep' : 'showroom',

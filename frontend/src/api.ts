@@ -357,6 +357,7 @@ export interface BookingDetail {
   booking_ref: string
   status: string
   vehicle_name: string | null
+  variant_name: string | null
   start_iso: string | null
   end_iso: string | null
   location_type: 'showroom' | 'doorstep'

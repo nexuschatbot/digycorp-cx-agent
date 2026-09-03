@@ -114,6 +114,10 @@ export default function Slots() {
       ),
     },
     { field: 'vehicle_name', headerName: 'Vehicle', width: 150 },
+    // Inventory is per demo car: a branch's nine models are fourteen cars.
+    // Without this column the multi-trim models look like duplicate rows at
+    // the same time on the same day.
+    { field: 'variant_name', headerName: 'Trim', width: 120 },
     {
       field: 'location_type',
       headerName: 'Type',

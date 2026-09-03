@@ -108,9 +108,30 @@ def test_aisha_binds_every_tool_her_card_declares():
 # one Sales brief, turning "a 7-seater for my family" into a ranked shortlist.
 # Asking which times are free at a branch does not.
 #
+# nearest_showroom JOINED THEM 2026-09-03, on the same line and for a second
+# reason. Turning "I'm near Dubai Mall" into the closest branch is a geocode and
+# a distance sort — nothing to decide. And leaving it to TestDrive alone meant it
+# often did not run at all: measured live that day, within one session, "im near
+# dubai mall" routed to TestDrive and returned distance_km and drive_minutes,
+# while "i am at dubai mall right now" routed to Sales — which does not hold it,
+# location not being its domain — and the customer was told "I don't have exact
+# driving distances" beside a guessed branch.
+#
 # NAMED HERE RATHER THAN LOOSENED AWAY, so the guard below still fails the day
 # somebody hands her search_vehicles or a finance read.
-AISHA_KEEPS = {"get_available_slots", "get_booking"}
+AISHA_KEEPS = {"get_available_slots", "get_booking", "nearest_showroom"}
+
+
+def test_aisha_can_place_a_customer_without_a_specialist():
+    """The bug this closes: whether a customer got a distance and a Maps link
+    depended on which specialist the brief happened to route to.
+
+    Pinned on the BINDING rather than on the card text, because the binding is
+    what the model actually receives — and the tool's own description, which
+    tells her to call it the moment they say where they are and not to paste the
+    link because the card carries it, is only reachable once it is bound.
+    """
+    assert "nearest_showroom" in {s["name"] for s in aisha_schemas()}
 
 
 def test_aisha_holds_emit_briefs_and_no_specialist_read():

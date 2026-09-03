@@ -20,7 +20,15 @@ from sqlalchemy.orm import Session
 
 from app.calendar_rules import EVENING_START_HOUR, slot_times_for_day
 from app.config import SLOT_LOCK_TTL_MINUTES, SLOT_MIN_LEAD_MINUTES
-from app.models import Booking, LocationType, Showroom, Slot, SlotStatus, VehicleModel
+from app.models import (
+    Booking,
+    LocationType,
+    Showroom,
+    Slot,
+    SlotStatus,
+    VehicleModel,
+    VehicleVariant,
+)
 
 # --------------------------------------------------------------------------- #
 # Generation configuration
@@ -129,6 +137,15 @@ def facts_for_slot(db: Session, slot_id: object) -> dict:
     facts: dict = {"vehicle_id": slot.vehicle_id, "daypart": daypart_of(slot.start)}
     if slot.vehicle is not None:
         facts["vehicle_name"] = slot.vehicle.name
+    # THE TRIM, OFF THE ROW, for the same reason the vehicle is: this is what
+    # was actually locked. A specialist handed variant_id in session_facts can
+    # brief and book the trim the customer chose instead of the one a ranked
+    # search led with — the failure _fold_session_facts already exists to stop
+    # one level up (graph.py, 2026-08-31).
+    if slot.variant_id is not None:
+        facts["variant_id"] = slot.variant_id
+        if slot.variant is not None and slot.variant.name:
+            facts["variant_name"] = slot.variant.name
     if slot.location_type == LocationType.showroom and slot.showroom is not None:
         facts["showroom_name"] = slot.showroom.name
     return facts
@@ -209,6 +226,7 @@ def query_available(
     db: Session,
     *,
     vehicle_id: int,
+    variant_id: int | None = None,
     location_type: str | None = None,
     showroom_id: int | None = None,
     date_from: str | None = None,
@@ -257,6 +275,34 @@ def query_available(
     vehicle = db.get(VehicleModel, vid)
     if vehicle is None:
         return {"error": "vehicle_not_found", "vehicle_id": vid, "slots": []}
+
+    # THE TRIM FILTER (2026-09-03). Inventory is grained per variant, so asking
+    # without one means "any trim of this model" and asking with one means that
+    # trim alone. Both are legitimate questions and the caller says which.
+    #
+    # VALIDATED AGAINST THE MODEL, not just for existence: a variant of a
+    # different car is a mistake that would otherwise answer "no times" and read
+    # as "that branch is full", which is a lie about availability. Its own error
+    # so the agent can tell the difference.
+    vrid = None
+    if variant_id is not None:
+        vrid = _coerce_int(variant_id)
+        if vrid is None:
+            return {"error": "invalid_variant_id", "variant_id": variant_id, "slots": []}
+        variant = db.get(VehicleVariant, vrid)
+        if variant is None:
+            return {"error": "variant_not_found", "variant_id": vrid, "slots": []}
+        if variant.model_id != vid:
+            return {
+                "error": "variant_not_of_vehicle",
+                "variant_id": vrid,
+                "vehicle_id": vid,
+                "slots": [],
+            }
+        if variant.coming_soon:
+            # Not "no times": a car that cannot be ordered has no demo unit, and
+            # saying the branch is full would be a different, false answer.
+            return {"error": "variant_coming_soon", "variant_id": vrid, "slots": []}
 
     if location_type is not None and str(location_type).strip():
         location_type = str(location_type).strip().lower()
@@ -309,9 +355,25 @@ def query_available(
             Slot.vehicle_id == vid,
             visible,
             Slot.start >= _lead_cutoff(now),
+            # BOTH ENDS IN THE FUTURE, STATED SEPARATELY. The lead buffer on
+            # `start` already implies this whenever end > start, so this bar
+            # catches only the case that implication does not cover: a row whose
+            # end is at or before its start, or at or before now. That is a data
+            # defect rather than a schedule, and inventory is the last place it
+            # should surface — a slot the customer cannot physically attend must
+            # never be offered, whatever shape the row is in.
+            Slot.end > now,
         )
         .order_by(Slot.start)
     )
+    if vrid is not None:
+        # STRICT, AND A NULL NEVER SATISFIES IT. A pre-migration row carries no
+        # trim, and treating it as "matches anything" would hand a customer who
+        # asked for the Flagship a slot that is really whatever was on the floor
+        # — the exact defect this grain exists to remove. A database that has not
+        # been regenerated answers "no times", which is visible and wrong-safe,
+        # rather than plausible and wrong.
+        stmt = stmt.where(Slot.variant_id == vrid)
     if location_type:
         stmt = stmt.where(Slot.location_type == LocationType(location_type))
     if showroom_id is not None:
@@ -397,6 +459,13 @@ def _slot_dict(s: Slot) -> dict:
         "end_iso": s.end.isoformat(),
         "location_type": s.location_type.value,
     }
+    # WHICH DEMO CAR, not just which model. Emitted whenever the row has one, so
+    # the chips, the recap and the booking card can all name the same trim; a
+    # `variant_name` of None is a model with one version (the seed's convention —
+    # see tests/test_seed_variants.py) and readers must not print "None".
+    if s.variant_id is not None:
+        out["variant_id"] = s.variant_id
+        out["variant_name"] = s.variant.name if s.variant is not None else None
     if s.location_type == LocationType.doorstep:
         out["service_area"] = s.service_area
     else:
@@ -683,8 +752,25 @@ def generate(
 ) -> dict:
     """Generate a rolling window of test-drive inventory.
 
-    Grain is (showroom, vehicle): a showroom genuinely has one demo car per
-    model. Showroom 2 ends up G700-only because only the G700 lists it in
+    GRAIN IS (showroom, VARIANT) as of 2026-09-03, and the premise it rests on
+    is stated here rather than assumed: a showroom is taken to keep one demo car
+    per BOOKABLE TRIM, not one per model. The grain was (showroom, model) until
+    then, on the older premise of one demo car per model — which made the trim
+    both unaskable and unrecordable, so a customer booked "a G700" and drove
+    whichever of four trims, AED 169,000 to 240,450 apart, was on the floor.
+
+    THE PREMISE IS ELITE'S TO CONFIRM and is logged as such (OPEN-ISSUES §7). If
+    a branch turns out to hold fewer demo cars than it has trims, the fix is a
+    demo-fleet list in the seed, not a change of grain here: this function would
+    then iterate that list, and nothing downstream of it would move.
+
+    Sale stock is deliberately NOT the gate. `stock` counts units for SALE, per
+    (variant, showroom, colour); a trim that sells out is still drivable, and
+    gating on it would invent a new wrong answer — "you cannot test drive the
+    Flagship, we sold out" — in place of the one this change removes.
+
+    Coming-soon trims are excluded, because a car that cannot be ordered cannot
+    be driven. Showroom 2 ends up G700-only because only the G700 lists it in
     showroom_ids — that falls out of the data, with no special case.
 
     Times come from calendar_rules.slot_times_for_day() using each showroom's
@@ -737,51 +823,79 @@ def generate(
 
     showrooms = list(db.scalars(select(Showroom).order_by(Showroom.id)).all())
     vehicles = list(db.scalars(select(VehicleModel).order_by(VehicleModel.id)).all())
+    # THE DEMO FLEET IS PER TRIM, NOT PER MODEL (2026-09-03). See the grain note
+    # in this function's docstring. `coming_soon` is the bookability predicate
+    # and not a name: the G700 Top Fire carries it, has no price because it
+    # cannot be ordered, and therefore cannot be driven either. A model whose
+    # every variant is coming soon contributes no inventory at all, which is the
+    # correct answer rather than an empty special case.
+    bookable: dict[int, list[VehicleVariant]] = {}
+    for variant in db.scalars(
+        select(VehicleVariant)
+        .where(VehicleVariant.coming_soon.is_(False))
+        .order_by(VehicleVariant.id)
+    ).all():
+        bookable.setdefault(variant.model_id, []).append(variant)
 
     created: list[Slot] = []
 
-    # --- showroom inventory: iterate each vehicle's OWN showroom_ids --------- #
+    # --- showroom inventory: each vehicle's OWN showroom_ids, per trim ------- #
     for s in showrooms:
         for v in vehicles:
             if s.id not in (v.showroom_ids or []):
                 continue
+            for variant in bookable.get(v.id, ()):
+                for offset in range(days):
+                    day = start_day + timedelta(days=offset)
+                    for start, end in slot_times_for_day(day, s.hours_by_day or {}):
+                        created.append(
+                            Slot(
+                                location_type=LocationType.showroom,
+                                showroom_id=s.id,
+                                service_area=None,
+                                vehicle_id=v.id,
+                                variant_id=variant.id,
+                                start=start,
+                                end=end,
+                                status=SlotStatus.open,
+                            )
+                        )
+
+    # --- doorstep fleet: Dubai, evenings, all models but the flagship ------- #
+    # PER TRIM TOO, and deliberately not "one doorstep car per model". The
+    # exclusion above is by model_code because it is the FLAGSHIP MODEL that
+    # does not travel; within a model that does, a customer who asked for the
+    # 1.6 Luxury at their door must not be sent the 1.5 Standard. Splitting the
+    # grain here and not there would put the two paths back in disagreement,
+    # which is the shape of defect this file has already paid for twice.
+    for v in vehicles:
+        if v.model_code in DOORSTEP_EXCLUDED_CODES:
+            continue
+        for variant in bookable.get(v.id, ()):
             for offset in range(days):
                 day = start_day + timedelta(days=offset)
-                for start, end in slot_times_for_day(day, s.hours_by_day or {}):
+                for start, end in slot_times_for_day(day, DOORSTEP_HOURS_BY_DAY):
                     created.append(
                         Slot(
-                            location_type=LocationType.showroom,
-                            showroom_id=s.id,
-                            service_area=None,
+                            location_type=LocationType.doorstep,
+                            showroom_id=None,
+                            service_area=DOORSTEP_SERVICE_AREA,
                             vehicle_id=v.id,
+                            variant_id=variant.id,
                             start=start,
                             end=end,
                             status=SlotStatus.open,
                         )
                     )
 
-    # --- doorstep fleet: Dubai, evenings, all models but the flagship ------- #
-    for v in vehicles:
-        if v.model_code in DOORSTEP_EXCLUDED_CODES:
-            continue
-        for offset in range(days):
-            day = start_day + timedelta(days=offset)
-            for start, end in slot_times_for_day(day, DOORSTEP_HOURS_BY_DAY):
-                created.append(
-                    Slot(
-                        location_type=LocationType.doorstep,
-                        showroom_id=None,
-                        service_area=DOORSTEP_SERVICE_AREA,
-                        vehicle_id=v.id,
-                        start=start,
-                        end=end,
-                        status=SlotStatus.open,
-                    )
-                )
-
     # --- deterministic pre-booking (S-05) ----------------------------------- #
     # Sort first so the sample does not depend on insertion order.
-    created.sort(key=lambda s: (s.start, s.location_type.value, s.showroom_id or 0, s.vehicle_id))
+    created.sort(
+        key=lambda s: (
+            s.start, s.location_type.value, s.showroom_id or 0,
+            s.vehicle_id, s.variant_id or 0,
+        )
+    )
     n_prebook = int(round(len(created) * prebooked))
     if n_prebook:
         rng = random.Random(PREBOOK_SEED)
@@ -800,6 +914,11 @@ def generate(
                 "showroom_id": s.id,
                 "name": s.name,
                 "vehicles": len({x.vehicle_id for x in rows}),
+                # BOTH NUMBERS, because they stopped being the same one on
+                # 2026-09-03: nine models are fourteen demo cars once the grain
+                # is per trim, and a report that said only "vehicles: 9" would
+                # describe a branch's fleet as a third smaller than it is.
+                "variants": len({x.variant_id for x in rows}),
                 "open": sum(1 for x in rows if x.status == SlotStatus.open),
                 "booked": sum(1 for x in rows if x.status == SlotStatus.booked),
                 "total": len(rows),
@@ -809,6 +928,7 @@ def generate(
     doorstep = {
         "service_area": DOORSTEP_SERVICE_AREA,
         "vehicles": len({x.vehicle_id for x in door}),
+        "variants": len({x.variant_id for x in door}),
         "open": sum(1 for x in door if x.status == SlotStatus.open),
         "booked": sum(1 for x in door if x.status == SlotStatus.booked),
         "total": len(door),

@@ -265,6 +265,7 @@ export interface SlotRow {
   location_type: string | null
   vehicle_id: number | null
   vehicle_name: string | null
+  variant_name: string | null
   showroom_id: number | null
   showroom_name: string | null
   service_area: string | null
@@ -343,6 +344,7 @@ export interface BookingRow {
   driver_relationship: string | null
   vehicle_id: number | null
   vehicle_name: string | null
+  variant_name: string | null
   slot_id: number | null
   start: string | null
   end: string | null

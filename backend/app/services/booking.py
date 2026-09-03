@@ -149,6 +149,11 @@ def _booking_dict(b: Booking, *, viewer_customer_id: int | None = None) -> dict:
         "customer_id": b.customer_id,
         "vehicle_id": b.vehicle_id,
         "vehicle_name": b.vehicle.name if b.vehicle else None,
+        # The trim, where one was recorded. `variant_name` is None for a model
+        # with a single version — the seed's convention, not a missing value —
+        # so a reader shows the model name alone rather than printing "None".
+        "variant_id": b.variant_id,
+        "variant_name": b.variant.name if b.variant else None,
         "slot_id": b.slot_id,
         "start_iso": slot.start.isoformat() if slot else None,
         # The card renders a RANGE ("Sunday, 7:00 pm - 8:00 pm"), so it needs the
@@ -247,6 +252,7 @@ def create(
     customer_id: int,
     vehicle_id: int,
     slot_id: int,
+    variant_id: object = None,
     driver_name: object = None,
     driver_relationship: object = None,
     doorstep_address: object = None,
@@ -332,7 +338,11 @@ def create(
             ),
         }
 
-    if slot.start < now:
+    if slot.start < now or slot.end <= now:
+        # `end` as well as `start`: the buffer that governs what is OFFERED is
+        # deliberately not applied here (see slots._lead_cutoff), so this is the
+        # only bar a booking crosses, and a drive that is already over is not a
+        # booking whichever of its two ends says so.
         return {"error": "slot_in_the_past", "slot_id": sid}
 
     # The slot IS the appointment: its vehicle is not negotiable. Without this,
@@ -350,6 +360,33 @@ def create(
                 "get_available_slots and let the customer pick again."
             ),
         }
+
+    # ---- The trim (2026-09-03) ---------------------------------------------- #
+    # SAME RULE AS THE MODEL ABOVE, one level down. Inventory is grained per
+    # variant, so the locked slot already knows which demo car this is; the
+    # booking records it so the answer survives the fortnightly regeneration
+    # that will delete the slot.
+    #
+    # READ OFF THE ROW, NEVER FROM THE ARGUMENT. A caller may pass `variant_id`
+    # to say which trim it BELIEVES it is booking, and a disagreement is refused
+    # rather than reconciled — booking the Comfort's slot while telling the
+    # customer they are driving the Flagship is the same defect as
+    # vehicle_slot_mismatch, and costs more, because the trims of one model look
+    # alike in a way two models do not.
+    requested_variant = _coerce_int(variant_id)
+    if requested_variant is not None and slot.variant_id is not None:
+        if requested_variant != slot.variant_id:
+            return {
+                "error": "variant_slot_mismatch",
+                "slot_id": sid,
+                "slot_variant_id": slot.variant_id,
+                "requested_variant_id": requested_variant,
+                "detail": (
+                    "That slot is for a different trim of this model than the "
+                    "one being booked. Offer times for the requested trim with "
+                    "get_available_slots and let the customer pick again."
+                ),
+            }
 
     # ---- Doorstep (FR-SL-07) + data minimisation ---------------------------- #
     address = _clean_str(doorstep_address)
@@ -375,6 +412,7 @@ def create(
             driver_name=_clean_str(driver_name),
             driver_relationship=_clean_str(driver_relationship),
             vehicle_id=vid,
+            variant_id=slot.variant_id,
             slot_id=sid,
             location=slot.location_type,
             doorstep_address=address,
@@ -852,7 +890,7 @@ def reschedule(
             ),
         }
 
-    if new_slot.start < now:
+    if new_slot.start < now or new_slot.end <= now:
         return {"error": "slot_in_the_past", "slot_id": nsid}
 
     # SAME VEHICLE ONLY (decision 4): a reschedule moves the time, it never
@@ -900,6 +938,13 @@ def reschedule(
     # the new slot after the flush.
     booking.slot = new_slot
     booking.location = new_slot.location_type
+    # THE TRIM MOVES WITH THE SLOT. It is a property of the demo car being
+    # driven, not of the booking's history, so a booking left pointing at the
+    # old slot's trim would name a car the customer is no longer coming to see.
+    # Only inventory that carries one overwrites: a move onto a pre-migration
+    # slot must not erase a trim that was correctly recorded at create.
+    if new_slot.variant_id is not None:
+        booking.variant_id = new_slot.variant_id
     booking.doorstep_address = address
     booking.status = BookingStatus.rescheduled
 
