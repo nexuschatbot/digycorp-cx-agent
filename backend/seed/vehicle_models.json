@@ -37,8 +37,12 @@
     "images": [
       "seed/media/vehicles/jet-g700-1.avif",
       "seed/media/vehicles/jet-g700-2.avif",
+      "seed/media/vehicles/jet-g700-3.avif",
       "seed/media/vehicles/jet-g700-interior-1.avif",
-      "seed/media/vehicles/jet-g700-interior-2.avif"
+      "seed/media/vehicles/jet-g700-interior-2.avif",
+      "seed/media/vehicles/jet-g700-interior-3.avif",
+      "seed/media/vehicles/jet-g700-interior-4.avif",
+      "seed/media/vehicles/jet-g700-interior-5.avif"
     ],
     "interior_colours": [
       "Orange",
@@ -145,8 +149,12 @@
     "images": [
       "seed/media/vehicles/jet-t2-2.avif",
       "seed/media/vehicles/jet-t2-1.avif",
+      "seed/media/vehicles/jet-t2-3.avif",
       "seed/media/vehicles/jet-t2-interior-1.avif",
-      "seed/media/vehicles/jet-t2-interior-2.avif"
+      "seed/media/vehicles/jet-t2-interior-2.avif",
+      "seed/media/vehicles/jet-t2-interior-3.avif",
+      "seed/media/vehicles/jet-t2-interior-4.avif",
+      "seed/media/vehicles/jet-t2-interior-5.avif"
     ],
     "interior_colours": [
       "Beige",
@@ -214,6 +222,7 @@
     "images": [
       "seed/media/vehicles/jet-t2-idm-2.avif",
       "seed/media/vehicles/jet-t2-idm-1.avif",
+      "seed/media/vehicles/jet-t2-idm-3.avif",
       "seed/media/vehicles/jet-t2-idm-interior-1.avif",
       "seed/media/vehicles/jet-t2-idm-interior-2.avif"
     ],
@@ -280,6 +289,7 @@
     "images": [
       "seed/media/vehicles/jet-t1-1.avif",
       "seed/media/vehicles/jet-t1-2.avif",
+      "seed/media/vehicles/jet-t1-3.avif",
       "seed/media/vehicles/jet-t1-interior-1.avif",
       "seed/media/vehicles/jet-t1-interior-2.avif"
     ],
@@ -374,8 +384,12 @@
     "images": [
       "seed/media/vehicles/jet-t1-idm-1.avif",
       "seed/media/vehicles/jet-t1-idm-2.avif",
+      "seed/media/vehicles/jet-t1-idm-3.avif",
       "seed/media/vehicles/jet-t1-idm-interior-1.avif",
-      "seed/media/vehicles/jet-t1-idm-interior-2.avif"
+      "seed/media/vehicles/jet-t1-idm-interior-2.avif",
+      "seed/media/vehicles/jet-t1-idm-interior-3.avif",
+      "seed/media/vehicles/jet-t1-idm-interior-4.avif",
+      "seed/media/vehicles/jet-t1-idm-interior-5.avif"
     ],
     "interior_colours": [
       "Black & Orange",
@@ -441,8 +455,11 @@
     "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-dash-1.avif",
+      "seed/media/vehicles/jet-dash-2.avif",
       "seed/media/vehicles/jet-dash-interior-1.avif",
-      "seed/media/vehicles/jet-dash-interior-2.avif"
+      "seed/media/vehicles/jet-dash-interior-2.avif",
+      "seed/media/vehicles/jet-dash-interior-3.avif",
+      "seed/media/vehicles/jet-dash-interior-4.avif"
     ],
     "interior_colours": [
       "Black",
@@ -527,7 +544,11 @@
     "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-x70p-1.avif",
-      "seed/media/vehicles/jet-x70p-interior-1.avif"
+      "seed/media/vehicles/jet-x70p-2.avif",
+      "seed/media/vehicles/jet-x70p-interior-1.avif",
+      "seed/media/vehicles/jet-x70p-interior-2.avif",
+      "seed/media/vehicles/jet-x70p-interior-3.avif",
+      "seed/media/vehicles/jet-x70p-interior-4.avif"
     ],
     "interior_colours": [
       "Beige"
@@ -591,8 +612,12 @@
     "images": [
       "seed/media/vehicles/jet-x70fl-1.avif",
       "seed/media/vehicles/jet-x70fl-2.avif",
+      "seed/media/vehicles/jet-x70fl-3.avif",
       "seed/media/vehicles/jet-x70fl-interior-1.avif",
-      "seed/media/vehicles/jet-x70fl-interior-2.avif"
+      "seed/media/vehicles/jet-x70fl-interior-2.avif",
+      "seed/media/vehicles/jet-x70fl-interior-3.avif",
+      "seed/media/vehicles/jet-x70fl-interior-4.avif",
+      "seed/media/vehicles/jet-x70fl-interior-5.avif"
     ],
     "interior_colours": [
       "Black",
@@ -655,6 +680,7 @@
     "data_provenance": "Prices, variants, stock and colours from Elite's Data.xlsx (supplied 2026-08); seats and specifications from the Jetour brochures in content/brochures/; fuel economy from Elite's separate dataset (seed/fuel_economy.json). Marketing bullets from the Jetour UAE catalogue (Jetour-UAE-Model-Catalogue.docx), July 2026. Prices indicative and subject to change; confirm with the showroom.",
     "images": [
       "seed/media/vehicles/jet-x50-1.avif",
+      "seed/media/vehicles/jet-x50-2.avif",
       "seed/media/vehicles/jet-x50-interior-2.avif",
       "seed/media/vehicles/jet-x50-interior-1.avif"
     ],

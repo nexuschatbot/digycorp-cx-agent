@@ -68,8 +68,8 @@ export default function VehicleDialog({
 }: Props) {
   const [detail, setDetail] = useState<VehicleDetail | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
-  // Which photo the big image shows: 0 = hero, then the interior shots. Reset
-  // whenever the dialog moves to a different car.
+  // Which photo the big image shows: 0 = hero, then the other exteriors, then
+  // the interiors. Reset whenever the dialog moves to a different car.
   const [frame, setFrame] = useState(0)
   const closeRef = useRef<HTMLButtonElement>(null)
   const t = LABELS[lang]
@@ -110,13 +110,34 @@ export default function VehicleDialog({
   const fuel = detail ? fuelLabel(detail.fuel, lang) : null
   const bullets = detail ? features(detail.headline_features, detail.headline_features_ar, lang) : []
 
-  // The photo set the big image cycles through: hero first, then interiors.
+  // The photo set the big image cycles through: hero, then the rest of the
+  // exteriors, then the interiors. EVERY photo we hold of the car, in that
+  // order — outside before inside, which is the order someone looks at a car in.
+  //
+  // The exteriors were added 2026-09-04 and fixed a quiet waste: models have
+  // carried two or three exterior frames since the first seed, and this
+  // carousel's hero-then-interiors shape meant only the first was ever
+  // reachable. The card's own carousel is deliberately NOT changed — that one
+  // is opened by an interior question, so interiors are what it should show.
   const frames: string[] = detail
     ? [
         ...(detail.image_url ? [detail.image_url] : []),
+        ...(detail.exterior_image_urls ?? []),
         ...(detail.interior_image_urls ?? []),
       ]
     : []
+  // Alt text has to follow the frame ORDER, not assume it. It said "interior N"
+  // for every frame past the hero, which was true while the carousel ran
+  // hero-then-interiors and became wrong the moment the exteriors went in
+  // between — a screen reader would have announced the car's other angles as
+  // its cabin.
+  const interiorCount = detail?.interior_image_urls?.length ?? 0
+  const frameAlt = (i: number): string => {
+    const name = detail?.name ?? ''
+    if (i === 0) return name
+    const firstInterior = frames.length - interiorCount
+    return i >= firstInterior ? `${name} interior` : `${name} exterior`
+  }
   const current = frames.length > 0 ? frames[Math.min(frame, frames.length - 1)] : null
   const step = (d: number) => setFrame((i) => (i + d + frames.length) % frames.length)
 
@@ -154,15 +175,16 @@ export default function VehicleDialog({
           <>
             {/* FULL-BLEED HERO. The photo runs edge to edge with the name,
                 body line and price pill overlaid on a bottom scrim — the car
-                sells the card. It is a CAROUSEL over hero + interior shots:
-                click the photo to advance, arrows both ways, thumbnails below
-                jump. All browse, nothing commits. */}
+                sells the card. It is a CAROUSEL over every photo held of the
+                car — hero, other exteriors, then interiors: click the photo to
+                advance, arrows both ways, thumbnails below jump. All browse,
+                nothing commits. */}
             <div className="vdlg-hero">
               {current ? (
                 <VehiclePhoto
                   className="vdlg-hero-img"
                   src={current}
-                  alt={frame === 0 ? detail.name : `${detail.name} interior ${frame}`}
+                  alt={frameAlt(frame)}
                   size="full"
                   onClick={() => frames.length > 1 && step(1)}
                 />
@@ -259,7 +281,7 @@ export default function VehicleDialog({
                       <VehiclePhoto
                         className="int-gallery-img"
                         src={src}
-                        alt={i === 0 ? detail.name : `${detail.name} interior ${i}`}
+                        alt={frameAlt(i)}
                         loading="lazy"
                       />
                     </button>

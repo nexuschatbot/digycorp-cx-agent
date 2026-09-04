@@ -331,9 +331,12 @@ export interface VehicleDetail {
   price_aed_max: number | null
   fuel: 'petrol' | 'phev' | null
   image_url: string | null
-  /** Interior photos cropped from the brochures. Optional: the Salesforce
-   *  read-through may omit it, and several models have none — both render as
-   *  simply "no gallery". */
+  /** The exterior frames that are NOT the hero — more angles on the same car,
+   *  never other colours. Optional for the same read-through reason as the
+   *  interiors, and empty for a model photographed once. */
+  exterior_image_urls?: string[]
+  /** Interior photos. Optional: the Salesforce read-through may omit it — it
+   *  renders as simply "no gallery". */
   interior_image_urls?: string[]
   headline_features: string[]
   headline_features_ar: string[]

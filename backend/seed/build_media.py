@@ -109,6 +109,59 @@ MAPPING: list[tuple[str, str]] = [
     ("X50_Interior_Grey_Black_2.avif", "jet-x50-interior-2"),
 ]
 
+# THE 2026-08 SET, KEPT RATHER THAN RETIRED (product call, 2026-09-04). The
+# delivery above replaced these, and the first cut of this change deleted them —
+# the argument being that brochure crops beside new studio photography would look
+# mismatched on one card. Overruled for coverage: most models gain three or four
+# extra frames, and a customer who taps through a carousel would rather have more
+# of the car than a tidier set.
+#
+# THEY ARE RE-ENCODED, NOT RESTORED. Dropping the old .jpg/.png back in would put
+# a 723KB PNG next to a 8KB AVIF in the same carousel and undo the point of this
+# change for every frame after the first. Same two widths, same formats.
+#
+# NUMBERED AFTER the new frames, never before, and that ordering is load-bearing
+# twice over: catalogue._image_url takes the first non-interior path as the hero,
+# and the carousel shows interiors in list order. So the card and the first tap
+# are always the CURRENT photography, and these sit behind them.
+#
+# ONE OPEN QUESTION, flagged rather than decided: jet-x70fl below is a full-car
+# shot whose front end does not match the new "X70FL" frames, so it may be the
+# pre-facelift car. It is appended like the rest and deliberately NOT promoted to
+# hero — a card headlining last year's model would be a worse error than the
+# grille close-up the X70 FL currently leads with.
+#
+# Sourced from git history (the tree at f02a1a2, before this branch deleted
+# them); pass that checkout as --legacy-dir to reproduce.
+LEGACY_MAPPING: list[tuple[str, str]] = [
+    ("jet-g700.jpeg", "jet-g700-3"),
+    ("jet-g700-interior-1.jpg", "jet-g700-interior-3"),
+    ("jet-g700-interior-2.jpg", "jet-g700-interior-4"),
+    ("jet-g700-interior-3.jpg", "jet-g700-interior-5"),
+    ("jet-t2.png", "jet-t2-3"),
+    ("jet-t2-interior-1.jpg", "jet-t2-interior-3"),
+    ("jet-t2-interior-2.jpg", "jet-t2-interior-4"),
+    ("jet-t2-interior-3.jpg", "jet-t2-interior-5"),
+    ("jet-t2-idm.png", "jet-t2-idm-3"),
+    ("jet-t1.jpeg", "jet-t1-3"),
+    ("jet-t1-idm.jpeg", "jet-t1-idm-3"),
+    ("jet-t1-idm-interior-1.jpg", "jet-t1-idm-interior-3"),
+    ("jet-t1-idm-interior-2.jpg", "jet-t1-idm-interior-4"),
+    ("jet-t1-idm-interior-3.jpg", "jet-t1-idm-interior-5"),
+    ("jet-dash.png", "jet-dash-2"),
+    ("jet-dash-interior-1.jpg", "jet-dash-interior-3"),
+    ("jet-dash-interior-2.jpg", "jet-dash-interior-4"),
+    ("jet-x70p.png", "jet-x70p-2"),
+    ("jet-x70p-interior-1.jpg", "jet-x70p-interior-2"),
+    ("jet-x70p-interior-2.jpg", "jet-x70p-interior-3"),
+    ("jet-x70p-interior-3.jpg", "jet-x70p-interior-4"),
+    ("jet-x70fl.jpeg", "jet-x70fl-3"),
+    ("jet-x70fl-interior-1.jpg", "jet-x70fl-interior-3"),
+    ("jet-x70fl-interior-2.jpg", "jet-x70fl-interior-4"),
+    ("jet-x70fl-interior-3.jpg", "jet-x70fl-interior-5"),
+    ("jet-x50.jpeg", "jet-x50-2"),
+]
+
 # suffix -> target width in device pixels. "" is the card rendition (the one
 # preloaded at boot and the one 95% of views ever fetch); "@full" is the dialog.
 WIDTHS: dict[str, int] = {"": 480, "@full": 960}
@@ -176,7 +229,19 @@ def _resize(im: Image.Image, width: int) -> Image.Image:
     return im.resize((width, height), Image.LANCZOS)
 
 
-def build(src_dir: Path, *, dry_run: bool = False) -> int:
+def build(src_dir: Path, *, legacy_dir: Path | None = None, dry_run: bool = False) -> int:
+    # (source dir, table) pairs — the legacy set is encoded identically, just
+    # from a different folder and into the higher frame numbers.
+    jobs: list[tuple[Path, list[tuple[str, str]]]] = [(src_dir, MAPPING)]
+    if legacy_dir is not None:
+        jobs.append((legacy_dir, LEGACY_MAPPING))
+        missing_legacy = [n for n, _ in LEGACY_MAPPING if not (legacy_dir / n).is_file()]
+        if missing_legacy:
+            print(f"error: {len(missing_legacy)} legacy file(s) not in {legacy_dir}:", file=sys.stderr)
+            for name in missing_legacy:
+                print(f"  {name}", file=sys.stderr)
+            return 1
+
     missing = [name for name, _ in MAPPING if not (src_dir / name).is_file()]
     if missing:
         print(f"error: {len(missing)} source file(s) not in {src_dir}:", file=sys.stderr)
@@ -201,34 +266,38 @@ def build(src_dir: Path, *, dry_run: bool = False) -> int:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     total_in = total_out = 0
-    for name, stem in MAPPING:
-        src = src_dir / name
-        total_in += src.stat().st_size
-        base = _load_flat(src)
-        if name in CHROME_CAPTURES:
-            w, h = base.size
-            base = base.crop((round(w * CHROME_TRIM), 0, round(w * (1 - CHROME_TRIM)), h))
-        for suffix, width in WIDTHS.items():
-            im = _resize(base, width)
-            for ext, kwargs in (
-                ("avif", {"quality": AVIF_QUALITY, "speed": AVIF_SPEED}),
-                ("webp", {"quality": WEBP_QUALITY, "method": WEBP_METHOD}),
-            ):
-                out = OUT_DIR / f"{stem}{suffix}.{ext}"
-                if not dry_run:
-                    im.save(out, **kwargs)
-                    total_out += out.stat().st_size
-        mark = "  [chrome cropped]" if name in CHROME_CAPTURES else ""
-        print(f"  {name}  ->  {stem}  ({base.width}x{base.height}){mark}")
+    for job_dir, table in jobs:
+        for name, stem in table:
+            src = job_dir / name
+            total_in += src.stat().st_size
+            base = _load_flat(src)
+            if name in CHROME_CAPTURES:
+                w, h = base.size
+                base = base.crop(
+                    (round(w * CHROME_TRIM), 0, round(w * (1 - CHROME_TRIM)), h)
+                )
+            for suffix, width in WIDTHS.items():
+                im = _resize(base, width)
+                for ext, kwargs in (
+                    ("avif", {"quality": AVIF_QUALITY, "speed": AVIF_SPEED}),
+                    ("webp", {"quality": WEBP_QUALITY, "method": WEBP_METHOD}),
+                ):
+                    out = OUT_DIR / f"{stem}{suffix}.{ext}"
+                    if not dry_run:
+                        im.save(out, **kwargs)
+                        total_out += out.stat().st_size
+            mark = "  [chrome cropped]" if name in CHROME_CAPTURES else ""
+            print(f"  {name}  ->  {stem}  ({base.width}x{base.height}){mark}")
 
-    print(f"\n{len(MAPPING)} sources -> {len(MAPPING) * len(WIDTHS) * 2} files")
+    n = sum(len(t) for _, t in jobs)
+    print(f"\n{n} sources -> {n * len(WIDTHS) * 2} files")
     print(f"in  {total_in / 1024 / 1024:.2f} MB")
     if not dry_run:
         print(f"out {total_out / 1024 / 1024:.2f} MB  (all renditions, both formats)")
         card = sum(
             (OUT_DIR / f"{stem}.avif").stat().st_size
             for _, stem in MAPPING
-            if "-interior-" not in stem
+            if "-interior-" not in stem and stem.endswith("-1")
         )
         print(f"    {card / 1024:.0f} KB of that is the AVIF hero set the browser preloads")
     return 0
@@ -237,12 +306,17 @@ def build(src_dir: Path, *, dry_run: bool = False) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("src_dir", type=Path, help="folder of Elite's supplied photography")
+    ap.add_argument(
+        "--legacy-dir",
+        type=Path,
+        help="the 2026-08 photography (git show f02a1a2), re-encoded and appended",
+    )
     ap.add_argument("--dry-run", action="store_true", help="check the mapping, write nothing")
     args = ap.parse_args()
     if not args.src_dir.is_dir():
         print(f"error: {args.src_dir} is not a directory", file=sys.stderr)
         return 1
-    return build(args.src_dir, dry_run=args.dry_run)
+    return build(args.src_dir, legacy_dir=args.legacy_dir, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

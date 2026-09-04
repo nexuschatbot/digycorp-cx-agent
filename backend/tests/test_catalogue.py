@@ -506,3 +506,40 @@ def test_trim_photos_stay_off_the_search_payload(db):
     for row in catalogue.search(db)["matches"]:
         for v in row.get("matching_variants", []):
             assert "image_url" not in v
+
+
+# --------------------------------------------------------------------------- #
+# the non-hero exteriors (2026-09-04). Models have carried several exterior
+# frames since the first seed and only the hero was ever reachable; the dialog
+# now cycles all of them. UI path only — the agent's payload must not grow.
+# --------------------------------------------------------------------------- #
+def test_the_dialog_carries_the_other_exterior_frames(db):
+    row = db.scalars(select(VehicleModel).where(VehicleModel.model_code == "JET-G700")).one()
+    d = catalogue.detail_for_dialog(db, row.id)
+    others = d["exterior_image_urls"]
+    assert others, "the G700 has more than one exterior frame"
+    for u in others:
+        assert u.startswith("/media/vehicles/") and "-interior-" not in u
+    # The hero is NOT repeated — it is already frame 0 of the carousel, and a
+    # duplicate would show the same photo twice in a row.
+    assert d["image_url"] not in others
+
+
+def test_every_stored_photo_is_reachable_from_the_dialog(db):
+    """No orphans. Each path in the row must appear in exactly one of the three
+    fields the dialog assembles its carousel from, or it is a file on disk that
+    no screen can ever show (which is what the exterior frames were until now)."""
+    for v in db.scalars(select(VehicleModel)).all():
+        d = catalogue.detail_for_dialog(db, v.id)
+        shown = [d["image_url"], *d["exterior_image_urls"], *d["interior_image_urls"]]
+        stored = ["/" + p[len("seed/"):] for p in v.images]
+        assert sorted(shown) == sorted(stored), v.model_code
+        assert len(shown) == len(set(shown)), f"{v.model_code} shows a photo twice"
+
+
+def test_the_other_exteriors_stay_off_the_agent_payload(db):
+    """URLs cost tokens and buy nothing: the agent never speaks one. Same rule
+    as headline_features_ar — the dialog reads it over REST, where it is free."""
+    for row in catalogue.search(db)["matches"]:
+        assert "exterior_image_urls" not in row
+    assert "exterior_image_urls" not in catalogue.get_details(db, code="JET-G700")["vehicle"]

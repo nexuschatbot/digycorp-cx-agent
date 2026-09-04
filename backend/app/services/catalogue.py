@@ -347,6 +347,34 @@ def _image_url(paths: list | None) -> str | None:
     return None
 
 
+def _other_exterior_image_urls(paths: list | None) -> list[str]:
+    """The exterior shots that are NOT the hero, in stored order.
+
+    WHY THIS EXISTS. Every model has carried several exterior frames since the
+    first seed, and until now exactly one of them was reachable: _image_url takes
+    the first and the dialog's carousel ran hero-then-interiors, so frames 2 and
+    3 were bytes on disk that no screen could ever show. Restoring the 2026-08
+    photography (2026-09-04) would have quietly tripled that dead weight.
+
+    THE UI PATH ONLY, like headline_features_ar. It is deliberately absent from
+    _vehicle_dict: the agent never speaks a URL, so putting three more of them in
+    every get_vehicle_details payload would buy tokens and nothing else.
+
+    Not "the other colours" — see VehicleModel.exterior_colours. These are more
+    angles on whichever car was in front of the camera.
+    """
+    hero = _image_url(paths)
+    return [
+        u
+        for u in (
+            "/" + p[len("seed/") :]
+            for p in paths or []
+            if isinstance(p, str) and p.startswith("seed/media/") and "-interior-" not in p
+        )
+        if u != hero
+    ]
+
+
 def _interior_image_urls(paths: list | None) -> list[str]:
     """Grounded URLs for a model's interior photography (rule 18, FR-CX-07) —
     the stored paths whose filename carries the '-interior-' marker, cropped
@@ -520,6 +548,10 @@ def detail_for_dialog(db: Session, vehicle_id: int) -> dict | None:
         "price_aed_max": v.price_aed_max,
         "fuel": v.fuel_type.value if v.fuel_type else None,
         "image_url": _image_url(v.images),
+        # The rest of the exterior frames, so the dialog can show every photo we
+        # hold rather than the hero and nothing else. UI path only — see
+        # _other_exterior_image_urls. Empty for a model shot once.
+        "exterior_image_urls": _other_exterior_image_urls(v.images),
         "interior_image_urls": _interior_image_urls(v.images),
         "headline_features": list(v.headline_features or []),
         "headline_features_ar": list(v.headline_features_ar or []),
