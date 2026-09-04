@@ -394,6 +394,10 @@ def db() -> Session:
                     seats_min=v["seats_min"],
                     seats_max=v["seats_max"],
                     coming_soon=v["coming_soon"],
+                    # Trim-specific photography (the two Dashings); .get()
+                    # because most trims have none, exactly as the real seeder
+                    # does it.
+                    images=v.get("images", []),
                 )
             )
     # Stock LAST of the catalogue tables: it FKs to both variants and showrooms.

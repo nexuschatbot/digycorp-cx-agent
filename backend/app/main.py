@@ -8,6 +8,7 @@ GET /api/health, GET /health and GET / — see health_root for why there are thr
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -270,9 +271,40 @@ app.include_router(console_router)
 # get_vehicle_details' grounded /media/... URLs load in the browser. Backend owns
 # both the catalogue data AND the bytes (AD-I); no image is copied into the
 # frontend. Mounted only if present so tests/CI without the media dir still boot.
-_MEDIA_DIR = Path(__file__).resolve().parent.parent / "seed" / "media"
+#
+# OVERRIDABLE, mirroring BROCHURE_PDF_DIR in services/brochure.py and for the
+# same reason: an operator who would rather mount the artwork than bake it into
+# the image can, while the default keeps the repo self-contained and the test
+# suite offline — which is how everything else here works.
+_MEDIA_DIR = Path(
+    os.getenv("MEDIA_DIR")
+    or (Path(__file__).resolve().parent.parent / "seed" / "media")
+)
 if _MEDIA_DIR.is_dir():
-    app.mount("/media", StaticFiles(directory=str(_MEDIA_DIR)), name="media")
+
+    class _ImmutableStatic(StaticFiles):
+        """StaticFiles that tells the browser these bytes never change.
+
+        WHY THIS IS SAFE HERE AND WOULD NOT BE ELSEWHERE. `immutable` means the
+        browser may serve the file from disk for a year WITHOUT ASKING — no
+        conditional request, no 304, nothing on the wire. That is a promise the
+        content at this URL will never change, and it is one this mount can
+        actually keep: a vehicle photo is shipped fixture data, and replacing a
+        car's photography means a new filename (seed/build_media.py names files
+        after the shoot, and the paths live in the catalogue row). Editing the
+        bytes under an existing name is the one thing that would break it.
+
+        Default StaticFiles sends only Last-Modified/ETag, so every card image
+        cost a conditional request per page load — nine round trips to be told
+        nothing had changed, on exactly the connection the SSE stream is using.
+        """
+
+        def file_response(self, *args, **kwargs):  # type: ignore[override]
+            resp = super().file_response(*args, **kwargs)
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/media", _ImmutableStatic(directory=str(_MEDIA_DIR)), name="media")
 
 
 # THE NAME THIS SERVICE ANSWERS TO (open decision 5, settled 2026-08-31).

@@ -17,6 +17,8 @@ import { CompareCard } from './components/CompareCard'
 import { VehicleCards } from './components/VehicleCards'
 import VehicleDialog from './components/VehicleDialog'
 import type { VehicleCard } from './cards'
+import { fetchHeroImageUrls } from './api'
+import { warmHeroCache } from './media'
 import { CALL_LABELS, VOICE_LABELS } from './i18n'
 import { useCall } from './useCall'
 import { useChat } from './useChat'
@@ -176,6 +178,20 @@ export default function App() {
   useEffect(() => {
     setRecording(recording)
   }, [recording, setRecording])
+
+  // WARM THE CARD IMAGERY BEFORE THE FIRST CARD EXISTS. A vehicle photo is
+  // needed at the one instant it is most expensive to fetch: mid-answer, while
+  // the customer is already reading, with the SSE stream live. The whole hero
+  // set is ~90KB of AVIF across nine cars, so it can simply be held from boot
+  // and every card after that paints out of cache.
+  //
+  // ONCE, AND SILENTLY. Empty deps: this is a fixed nine-item catalogue, not
+  // something that changes within a session. Nothing is awaited and no failure
+  // is surfaced — the images still load normally when a card asks for them, so
+  // the worst case is the slow first card we had before this.
+  useEffect(() => {
+    void fetchHeroImageUrls().then(warmHeroCache)
+  }, [])
 
   // Read-aloud (2026-07-21). Owned here rather than per-bubble so there is ONE
   // voice at a time across the whole thread — two messages talking over each

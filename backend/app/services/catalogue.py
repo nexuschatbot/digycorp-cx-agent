@@ -251,7 +251,29 @@ def _variant_full(v: VehicleVariant) -> dict:
         # understate. Null where nothing is published — never zero.
         "km_per_l_min": v.km_per_l_min,
         "km_per_l_max": v.km_per_l_max,
+        # Null for almost every trim — see _variant_image_url for why it does
+        # not fall back to the model's photo. On the FULL form only: the search
+        # path serialises _variant_brief for up to six cards and this would be
+        # six more strings the agent never speaks.
+        "image_url": _variant_image_url(v),
     }
+
+
+def _variant_image_url(v: VehicleVariant) -> str | None:
+    """Hero photo of THIS TRIM when Elite shot it separately, else None.
+
+    DELIBERATELY DOES NOT FALL BACK to the model's photo, unlike everywhere else
+    a missing image is filled in. This value is rendered one row per trim: the
+    G700's four trims falling back would draw the identical car four times and
+    imply a difference between them that the photograph does not show. None means
+    "not shot separately" — the ordinary case, thirteen of fifteen trims — and
+    the row renders as text, which is what it did before this column existed.
+
+    Only the Dashing pair is non-null today (the 1.5 in Dark Green, the 1.6 in
+    Light Blue). And it says which car was photographed, never which colour can
+    be had: that is Stock's question, as it is for VehicleModel.exterior_colours.
+    """
+    return _image_url(v.images)
 
 
 def _variants_satisfying(
@@ -414,6 +436,29 @@ def _vehicle_dict(
     return out
 
 
+def hero_image_urls(db: Session) -> list[str]:
+    """Every model's hero photo, for the browser to warm its cache with.
+
+    WHY THE CLIENT IS TOLD THIS RATHER THAN GUESSING IT. A card's photo is
+    needed at the exact instant the card appears — mid-answer, when the customer
+    is already reading — and fetching it then is the one moment it is most
+    expensive. The whole set is ~90KB of AVIF across nine cars, so the browser
+    can hold all of it before a single card is drawn and every card after that
+    paints from cache.
+
+    STILL GROUNDED (rule 18). These are the same paths _image_url derives from
+    the same column; nothing here is a URL the frontend made up, which is
+    exactly why this is an endpoint and not a list hardcoded in the client
+    (AD-I: the backend owns the bytes AND the paths to them).
+
+    HERO ONLY — not interiors, and not the @full renditions. Interiors are shown
+    on demand and the dialog is a deliberate tap; preloading either would spend a
+    customer's data on photographs most conversations never open.
+    """
+    rows = db.scalars(select(VehicleModel).order_by(VehicleModel.id)).all()
+    return [u for u in (_image_url(v.images) for v in rows) if u]
+
+
 def detail_for_dialog(db: Session, vehicle_id: int) -> dict | None:
     """Full detail for the UI's vehicle dialog. None when the id is unknown.
 
@@ -492,6 +537,10 @@ def detail_for_dialog(db: Session, vehicle_id: int) -> dict | None:
                 **_variant_brief(x),
                 "km_per_l_min": x.km_per_l_min,
                 "km_per_l_max": x.km_per_l_max,
+                # Null for every trim Elite did not shoot separately, which is
+                # most of them — the dialog draws a thumbnail only where there
+                # is a genuinely different car to show (_variant_image_url).
+                "image_url": _variant_image_url(x),
             }
             for x in variants
         ],

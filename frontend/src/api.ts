@@ -358,6 +358,12 @@ export interface VehicleDialogVariant {
   seats_max: number | null
   km_per_l_min: number | null
   km_per_l_max: number | null
+  /** This trim's OWN photo, when Elite shot it separately — null for most trims
+   *  and for the whole Salesforce read-through, which carries no trim imagery.
+   *  It deliberately does not fall back to the model's car (the backend's
+   *  _variant_image_url says why), so null means "draw no thumbnail on this
+   *  row", never "draw the model's photo here". */
+  image_url?: string | null
   coming_soon: boolean
 }
 
@@ -418,6 +424,27 @@ export async function fetchBooking(
  *  conversation GET deliberately does not replay tool_events.
  *
  *  Returns null on any failure; the dialog shows an error rather than a shell. */
+/** The hero photo URLs for every model, so the browser can hold the card
+ *  imagery before the first card is drawn (see media.warmHeroCache).
+ *
+ *  RETURNS [] ON ANY FAILURE, and the caller does nothing with that. This is
+ *  pure speculation: every image still loads normally when a card asks for it,
+ *  so a failed manifest costs a slower first card and nothing else. It must
+ *  never surface an error, retry, or block anything.
+ */
+export async function fetchHeroImageUrls(opts: StreamOptions = {}): Promise<string[]> {
+  try {
+    const res = await fetch(`${opts.baseUrl ?? ''}/api/vehicles/media-manifest`)
+    if (!res.ok) return []
+    const body = (await res.json()) as { hero_image_urls?: unknown }
+    return Array.isArray(body.hero_image_urls)
+      ? body.hero_image_urls.filter((u): u is string => typeof u === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
 export async function fetchVehicle(
   vehicleId: number,
   opts: StreamOptions = {},

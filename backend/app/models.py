@@ -498,6 +498,27 @@ class VehicleVariant(Base):
     # quote a price or a date it does not have.
     coming_soon: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Photography of THIS TRIM, when Elite shot it separately — same relative
+    # paths and same '-interior-' marker as VehicleModel.images.
+    #
+    # USUALLY EMPTY, AND THAT IS THE NORMAL CASE. Elite shoots one car per
+    # model; only the Dashing arrived as two (the 1.5 in Dark Green, the 1.6 in
+    # Light Blue), which is what this column exists for. An empty list means
+    # "this trim was not shot separately" — never "this car has no photos". The
+    # model's own images are unaffected and still carry the card.
+    #
+    # READERS DO NOT FALL BACK TO THE MODEL'S PHOTO, deliberately. This is drawn
+    # one row per trim, so filling a gap with the model's car would repeat the
+    # identical picture down all four G700 rows and imply a difference between
+    # them that the photograph does not show. catalogue._variant_image_url()
+    # returns None instead and the row renders as text.
+    #
+    # NOT A COLOUR CHOICE. The 1.5 being Dark Green here says only which car was
+    # in front of the camera. Exterior availability is still Stock's question
+    # and the palette is still VehicleModel.exterior_colours — the same three
+    # caveats that column carries apply unchanged.
+    images: Mapped[list] = mapped_column(JSON, default=list)
+
     model: Mapped["VehicleModel"] = relationship()
 
     @property

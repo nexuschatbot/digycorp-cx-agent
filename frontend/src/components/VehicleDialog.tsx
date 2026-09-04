@@ -25,6 +25,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { fetchVehicle, type VehicleDetail } from '../api'
 import { LABELS, features, fuelLabel, priceLine, seatsLine, type Lang } from '../i18n'
+import { VehiclePhoto } from './VehiclePhoto'
 
 // Two aria-labels used only here — kept local rather than added to i18n.ts,
 // whose LABELS table is consumed elsewhere and should not grow for this.
@@ -158,10 +159,11 @@ export default function VehicleDialog({
                 jump. All browse, nothing commits. */}
             <div className="vdlg-hero">
               {current ? (
-                <img
+                <VehiclePhoto
                   className="vdlg-hero-img"
                   src={current}
                   alt={frame === 0 ? detail.name : `${detail.name} interior ${frame}`}
+                  size="full"
                   onClick={() => frames.length > 1 && step(1)}
                 />
               ) : (
@@ -254,7 +256,7 @@ export default function VehicleDialog({
                       className={i === frame ? 'vdlg-thumb vdlg-thumb--on' : 'vdlg-thumb'}
                       onClick={() => setFrame(i)}
                     >
-                      <img
+                      <VehiclePhoto
                         className="int-gallery-img"
                         src={src}
                         alt={i === 0 ? detail.name : `${detail.name} interior ${i}`}
@@ -332,6 +334,19 @@ export default function VehicleDialog({
                       const head = (
                         <>
                           <span className="vdlg-trim-id">
+                            {/* ONLY WHERE THE TRIM WAS SHOT SEPARATELY. Most
+                                rows carry no photo and show none — filling the
+                                gap with the model's car would repeat one
+                                picture down every row and imply a difference
+                                between the trims that it does not show. */}
+                            {v.image_url && (
+                              <VehiclePhoto
+                                className="vdlg-trim-img"
+                                src={v.image_url}
+                                alt=""
+                                loading="lazy"
+                              />
+                            )}
                             <bdi className="vdlg-trim-name">
                               {v.name ?? displayNameForTrim(detail.name)}
                             </bdi>

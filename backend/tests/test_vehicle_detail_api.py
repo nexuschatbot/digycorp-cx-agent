@@ -15,8 +15,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from sqlalchemy import select
+
 from app.db import get_db
 from app.main import app
+from app.models import VehicleModel
 from app.services import catalogue
 
 
@@ -86,3 +89,47 @@ def test_agent_tool_payload_did_not_grow(db):
         "Arabic bullets in the tool result would grow every search_vehicles "
         "payload ~29% for text the model never speaks — keep them on the REST path"
     )
+
+
+# --------------------------------------------------------------------------- #
+# GET /api/vehicles/media-manifest (2026-09-04) — the hero URLs the browser
+# warms its cache with before the first card is ever drawn. Speculative work:
+# every assertion here is about it being CHEAP and GROUNDED, never about the
+# client depending on it, because the client must not.
+# --------------------------------------------------------------------------- #
+def test_media_manifest_returns_one_grounded_hero_per_model(db, client):
+    r = client.get("/api/vehicles/media-manifest")
+    assert r.status_code == 200
+    urls = r.json()["hero_image_urls"]
+
+    # Every model, read from the rows rather than through search() — search
+    # caps at MAX_RECOMMENDATIONS and would have compared nine against three.
+    models = db.scalars(select(VehicleModel)).all()
+    assert len(urls) == len(models)
+    for u in urls:
+        assert u.startswith("/media/vehicles/")
+        # The hero is never an interior shot, exactly as on the card itself.
+        assert "-interior-" not in u
+    # The SAME urls the cards will ask for — a manifest that warmed a different
+    # path would double the fetches instead of removing them, and would do it
+    # invisibly.
+    assert set(urls) == {
+        catalogue.get_details(db, code=m.model_code)["vehicle"]["image_url"] for m in models
+    }
+
+
+def test_media_manifest_carries_no_catalogue_facts(db, client):
+    """URLs and nothing else. Anything a customer READS comes from the agent's
+    tools or the detail GET; if this ever grew a name or a price it would be a
+    second, unnarrated source of catalogue facts (rule 18)."""
+    body = client.get("/api/vehicles/media-manifest").json()
+    assert set(body) == {"hero_image_urls"}
+    assert all(isinstance(u, str) for u in body["hero_image_urls"])
+
+
+def test_the_manifest_route_is_not_shadowed_by_the_id_route(db, client):
+    """It is declared BEFORE /{vehicle_id}, and it has to be: FastAPI matches in
+    declaration order and "media-manifest" against an int path parameter is a
+    422, not a fall-through to the next route. Reordering the file breaks this
+    endpoint and nothing else, which is why it gets its own test."""
+    assert client.get("/api/vehicles/media-manifest").status_code == 200

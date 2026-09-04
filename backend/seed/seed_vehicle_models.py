@@ -114,6 +114,12 @@ def main() -> None:
                         seats_min=v["seats_min"],
                         seats_max=v["seats_max"],
                         coming_soon=v["coming_soon"],
+                        # Trim-specific photography, empty for every trim Elite
+                        # shot only once at model level. .get() rather than [],
+                        # unlike the model's `images` above: this key was added
+                        # after the fixture existed and an older vehicle_models.
+                        # json is still a valid file to seed from.
+                        images=v.get("images", []),
                     )
                 )
         session.commit()

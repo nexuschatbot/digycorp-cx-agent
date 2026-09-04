@@ -430,13 +430,31 @@ def test_full_details_carry_interior_urls_when_the_brochure_had_photos(db):
         assert u.startswith("/media/vehicles/") and "-interior-" in u
 
 
-def test_models_without_interior_photos_say_so_with_an_empty_list(db):
-    """Empty list, never absent: 'no photos' is a fact the agent must not
-    invent around (the X50, T1 and T2 i-DM brochures had no usable interior
-    photography)."""
-    for code in ("JET-X50", "JET-T1", "JET-T2-IDM"):
-        d = catalogue.get_details(db, code=code)["vehicle"]
-        assert d["interior_image_urls"] == [], code
+def test_every_model_now_has_interior_photography(db):
+    """THIS TEST USED TO ASSERT THE OPPOSITE for the X50, T1 and T2 i-DM, whose
+    brochures carried no usable interior crops — the agent was told to describe
+    their cabins in words and promise no photos. Elite's 2026-09-04 delivery
+    covered all nine, so the gap those three stood for is closed, and the test
+    that pinned it now pins the coverage instead. If this fails, a model lost
+    its interiors in a re-seed and 'what's it like inside?' silently degrades
+    for that car."""
+    for v in db.scalars(select(VehicleModel)).all():
+        d = catalogue.get_details(db, code=v.model_code)["vehicle"]
+        assert d["interior_image_urls"], v.model_code
+
+
+def test_no_interior_photos_says_so_with_an_empty_list():
+    """Empty list, never absent: 'no photos' is a fact the agent must not invent
+    around, and the prompts branch on exactly this (see the INTERIOR QUESTIONS
+    block in agents/aisha/v2.md).
+
+    ASSERTED AGAINST THE HELPER, not a fixture row, precisely BECAUSE no model
+    is in this state any more. The contract has to keep holding for the next car
+    Elite adds photography-last — which is every car, at some point on the way in.
+    """
+    assert catalogue._interior_image_urls(["seed/media/vehicles/jet-x50-1.avif"]) == []
+    assert catalogue._interior_image_urls([]) == []
+    assert catalogue._interior_image_urls(None) == []
 
 
 def test_search_cards_do_not_carry_interior_urls(db):
@@ -451,3 +469,40 @@ def test_the_dialog_detail_carries_interior_urls_too(db):
     detail = catalogue.detail_for_dialog(db, row.id)
     assert detail["interior_image_urls"] == catalogue._interior_image_urls(row.images)
     assert detail["interior_image_urls"]
+
+
+# --------------------------------------------------------------------------- #
+# per-trim photography (2026-09-04) — vehicle_variants.images. Elite shoots one
+# car per model; the Dashing arrived as two (the 1.5 in Dark Green, the 1.6 in
+# Light Blue), which is the whole reason the column exists.
+# --------------------------------------------------------------------------- #
+def test_a_separately_shot_trim_carries_its_own_photo(db):
+    d = catalogue.detail_for_dialog(
+        db, db.scalars(select(VehicleModel).where(VehicleModel.model_code == "JET-DASH")).one().id
+    )
+    by_name = {v["name"]: v["image_url"] for v in d["variants"]}
+    assert by_name["1.5 Standard"] and by_name["1.6 Luxury"]
+    # DIFFERENT cars, which is the point — two trims sharing one URL would mean
+    # the fallback crept back in and the column stopped saying anything.
+    assert by_name["1.5 Standard"] != by_name["1.6 Luxury"]
+    for u in by_name.values():
+        assert u.startswith("/media/vehicles/") and "-interior-" not in u
+
+
+def test_a_trim_without_its_own_shoot_shows_no_photo_rather_than_the_models(db):
+    """NULL, never the model's car. This is drawn one row per trim: falling back
+    would repeat the identical picture down all four G700 rows and imply a
+    difference between them that the photograph does not show."""
+    d = catalogue.detail_for_dialog(
+        db, db.scalars(select(VehicleModel).where(VehicleModel.model_code == "JET-G700")).one().id
+    )
+    assert d["image_url"], "the model itself still has a hero"
+    assert [v["image_url"] for v in d["variants"]] == [None, None, None, None]
+
+
+def test_trim_photos_stay_off_the_search_payload(db):
+    """The FULL dict only, like `variants` and interior_image_urls and for the
+    same token reason — search serialises up to six cards a call."""
+    for row in catalogue.search(db)["matches"]:
+        for v in row.get("matching_variants", []):
+            assert "image_url" not in v
