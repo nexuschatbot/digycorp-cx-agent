@@ -29,3 +29,9 @@ npm-debug.log*
 *.db
 *.db-shm
 *.db-wal
+
+# Test-only embedding cache (backend/tests/conftest.py::_memoise_embeddings).
+# Shared across xdist workers so the 228-chunk corpus is embedded once per
+# machine rather than once per worker. Keyed on the corpus text, so it cannot
+# go stale; delete it and one run is slow.
+backend/.embed-cache/

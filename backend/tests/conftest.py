@@ -61,19 +61,72 @@ def _memoise_embeddings():
     the build is simply no longer paying the model for an answer it already has.
     Per worker under `-n auto`, and that is fine: each worker embeds the corpus
     once and then flies.
+
+    ACROSS WORKERS TOO, ON DISK (2026-09-04). The memo above is per process, and
+    under `-n auto` that means every worker pays the corpus build again —
+    services/cache.py is Redis-only and this suite fails any non-loopback
+    socket, so the production cache can never serve a test. Eight workers
+    therefore re-embedded the same 228 chunks eight times, all at once, on the
+    same cores. Measured on this machine: 420s serial, 188s with `-n auto`, and
+    the gap between that and the 52s the work actually needs is mostly this.
+
+    The disk layer is keyed on a hash of the exact texts, so it cannot go stale:
+    edit the corpus and the key changes. Writes are atomic (tmp + os.replace),
+    so two workers racing on the same batch produce one valid file rather than a
+    torn one. It is a TEST fixture — no production code path reads it — and
+    deleting the directory only costs one slow run.
     """
+    import hashlib
+    import os
+    import tempfile
+    from pathlib import Path
+
+    import numpy as np
+
     from app.retrieval import embed
+
+    disk = Path(__file__).resolve().parent.parent / ".embed-cache"
+    try:
+        disk.mkdir(exist_ok=True)
+    except OSError:  # read-only checkout: fall back to the in-process memo
+        disk = None
 
     real_encode = embed._encode
     cache: dict[tuple, object] = {}
+
+    def _path(key: tuple, batch_size: int):
+        h = hashlib.sha256()
+        h.update(str(batch_size).encode())
+        for t in key:
+            h.update(b"\x00")
+            h.update(str(t).encode("utf-8"))
+        return disk / f"{h.hexdigest()}.npy"
 
     def _cached(texts, batch_size: int = 16):
         key = tuple(texts)
         if key in cache:
             return cache[key]
+        path = _path(key, batch_size) if disk is not None else None
+        if path is not None and path.exists():
+            try:
+                # allow_pickle=False: a cache entry is untrusted input by
+                # construction, the same rule retrieval/index.py follows.
+                result = np.load(path, allow_pickle=False)
+                cache[key] = result
+                return result
+            except Exception:  # noqa: BLE001 — a bad entry is just a miss
+                pass
         result = real_encode(texts, batch_size=batch_size)
         if result is not None:  # never cache a model-unavailable miss
             cache[key] = result
+            if path is not None:
+                try:
+                    fd, tmp = tempfile.mkstemp(dir=str(disk), suffix=".tmp")
+                    os.close(fd)
+                    np.save(tmp, result, allow_pickle=False)
+                    os.replace(tmp + ".npy", path)
+                except Exception:  # noqa: BLE001 — the run must not need this
+                    pass
         return result
 
     embed._encode = _cached
@@ -449,10 +502,42 @@ SLOTS_START = date.today() + timedelta(days=1)
 # prebooked=0.0: every slot is open. The deterministic pre-booking that makes
 # "that time's taken" (S-05) happen naturally in the demo would here just make
 # "which slot am I getting?" depend on a seeded RNG.
+_SLOT_TEMPLATE: dict = {}
+
+
 @pytest.fixture()
 def slots(db) -> Session:
-    """Generate a 7-day, fully-open inventory window through the real service."""
-    slots_service.generate(db, days=7, prebooked=0.0, start_day=SLOTS_START)
+    """A 7-day, fully-open inventory window.
+
+    GENERATED ONCE PER WORKER, THEN COPIED (2026-09-04). The real service still
+    produces it — the first test through here calls `slots_service.generate`
+    exactly as before — but the rows are then kept and bulk-inserted into every
+    later test's fresh in-memory database instead of being recomputed.
+
+    WHY: generation is the suite's biggest remaining cost. ~35 tests take this
+    fixture and it was ~4s each, measured — more wall time than the whole
+    retrieval corpus. It is also DETERMINISTIC for a fixed (days, prebooked,
+    start_day), which the suite already asserts in its own right
+    (test_prebooking_is_deterministic_across_runs), so a copy and a fresh run
+    are the same inventory by definition.
+
+    THIS IS NOT A SHORTCUT PAST THE SERVICE. The tests that exercise generation
+    call `slots_service.generate` directly and are untouched by this; the ones
+    using this fixture want an inventory to read, lock and book against. Each
+    test still gets its OWN rows in its OWN database, so locking or booking one
+    cannot leak into another.
+    """
+    key = ("slots", 7, 0.0, SLOTS_START)
+    if key not in _SLOT_TEMPLATE:
+        slots_service.generate(db, days=7, prebooked=0.0, start_day=SLOTS_START)
+        cols = [c.name for c in Slot.__table__.columns]
+        _SLOT_TEMPLATE[key] = [
+            {c: getattr(row, c) for c in cols}
+            for row in db.scalars(select(Slot).order_by(Slot.id)).all()
+        ]
+        return db
+    db.bulk_insert_mappings(Slot, _SLOT_TEMPLATE[key])
+    db.commit()
     return db
 
 
