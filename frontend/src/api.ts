@@ -331,9 +331,12 @@ export interface VehicleDetail {
   price_aed_max: number | null
   fuel: 'petrol' | 'phev' | null
   image_url: string | null
-  /** Interior photos cropped from the brochures. Optional: the Salesforce
-   *  read-through may omit it, and several models have none — both render as
-   *  simply "no gallery". */
+  /** The exterior frames that are NOT the hero — more angles on the same car,
+   *  never other colours. Optional for the same read-through reason as the
+   *  interiors, and empty for a model photographed once. */
+  exterior_image_urls?: string[]
+  /** Interior photos. Optional: the Salesforce read-through may omit it — it
+   *  renders as simply "no gallery". */
   interior_image_urls?: string[]
   headline_features: string[]
   headline_features_ar: string[]
@@ -358,6 +361,12 @@ export interface VehicleDialogVariant {
   seats_max: number | null
   km_per_l_min: number | null
   km_per_l_max: number | null
+  /** This trim's OWN photo, when Elite shot it separately — null for most trims
+   *  and for the whole Salesforce read-through, which carries no trim imagery.
+   *  It deliberately does not fall back to the model's car (the backend's
+   *  _variant_image_url says why), so null means "draw no thumbnail on this
+   *  row", never "draw the model's photo here". */
+  image_url?: string | null
   coming_soon: boolean
 }
 
@@ -418,6 +427,27 @@ export async function fetchBooking(
  *  conversation GET deliberately does not replay tool_events.
  *
  *  Returns null on any failure; the dialog shows an error rather than a shell. */
+/** The hero photo URLs for every model, so the browser can hold the card
+ *  imagery before the first card is drawn (see media.warmHeroCache).
+ *
+ *  RETURNS [] ON ANY FAILURE, and the caller does nothing with that. This is
+ *  pure speculation: every image still loads normally when a card asks for it,
+ *  so a failed manifest costs a slower first card and nothing else. It must
+ *  never surface an error, retry, or block anything.
+ */
+export async function fetchHeroImageUrls(opts: StreamOptions = {}): Promise<string[]> {
+  try {
+    const res = await fetch(`${opts.baseUrl ?? ''}/api/vehicles/media-manifest`)
+    if (!res.ok) return []
+    const body = (await res.json()) as { hero_image_urls?: unknown }
+    return Array.isArray(body.hero_image_urls)
+      ? body.hero_image_urls.filter((u): u is string => typeof u === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
 export async function fetchVehicle(
   vehicleId: number,
   opts: StreamOptions = {},

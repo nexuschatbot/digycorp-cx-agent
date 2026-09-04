@@ -36,6 +36,23 @@ from app.services import catalogue
 router = APIRouter(prefix="/api/vehicles")
 
 
+@router.get("/media-manifest")
+def media_manifest(db: Session = Depends(get_db)) -> dict:
+    """The nine hero photo URLs, so the client can warm its image cache at boot.
+
+    DECLARED BEFORE /{vehicle_id} ON PURPOSE. FastAPI matches in declaration
+    order, and "media-manifest" against an int path parameter is a 422, not a
+    fall-through — a route that works only because of where it sits in the file
+    deserves the note.
+
+    NOT A CATALOGUE ENDPOINT. It returns URLs and nothing else: no name, no
+    price, no id. Anything a customer READS still comes from the agent's tools
+    or the detail GET, so this cannot become a second, unnarrated source of
+    catalogue facts (rule 18).
+    """
+    return {"hero_image_urls": catalogue.hero_image_urls(db)}
+
+
 @router.get("/{vehicle_id}")
 def get_vehicle(vehicle_id: int, db: Session = Depends(get_db)) -> dict:
     """Full detail for one model, or 404.

@@ -126,6 +126,11 @@ function VehicleCard({ v }: { v: VehicleRow }) {
         }}
       >
         {v.image_url ? (
+          // A PLAIN <img>, not the customer side's <picture> (VehiclePhoto).
+          // The stored URL is AVIF and the WebP sibling beside it exists for
+          // pre-16.4 Safari — a browser the staff console does not have to
+          // serve, and wrapping this in a <picture> means re-doing the sx
+          // layout below for a case that cannot arise here. Deliberate.
           <Box
             component="img"
             src={v.image_url}

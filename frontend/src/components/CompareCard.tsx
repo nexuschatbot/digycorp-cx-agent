@@ -15,6 +15,7 @@
 // belongs.
 
 import type { Comparison } from '../compare'
+import { VehiclePhoto } from './VehiclePhoto'
 
 export function CompareCard({ data, dir }: { data: Comparison; dir: 'rtl' | 'ltr' }) {
   const { left, right, rows } = data
@@ -24,7 +25,7 @@ export function CompareCard({ data, dir }: { data: Comparison; dir: 'rtl' | 'ltr
         {[left, right].map((s) => (
           <div className="cmp-head" key={s.vehicleId}>
             {s.imageUrl ? (
-              <img className="cmp-img" src={s.imageUrl} alt="" aria-hidden="true" />
+              <VehiclePhoto className="cmp-img" src={s.imageUrl} alt="" />
             ) : (
               <div className="cmp-img cmp-img--empty" aria-hidden="true">◆</div>
             )}

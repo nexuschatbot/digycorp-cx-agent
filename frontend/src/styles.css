@@ -784,6 +784,22 @@ html, body, #root { height: 100%; }
    crops vertically only, and all nine cars are horizontally centred, so no nose
    or tail is lost. The Dashing loses the bottom of its tyres; a wider crop of
    that one photo is the fix, not a different fit rule. */
+/* EVERY VEHICLE PHOTO IS WRAPPED IN A <picture> (components/VehiclePhoto),
+   which exists to offer a WebP to browsers that cannot decode AVIF. It carries
+   no styling of its own and must not become a box: `display: contents` removes
+   it from the layout entirely, so .vcard-img/.vdlg-hero-img/.cmp-img keep
+   applying to an <img> that is still the direct child of the flex or grid
+   parent those rules were written against. Without this the picture is an
+   inline box in between and every image rule silently loses its parent. */
+picture { display: contents; }
+/* AND THE <source> MUST STAY OUT OF LAYOUT. `display: contents` above promotes
+   every child of the <picture> into the parent's formatting context — including
+   the <source>, which the UA stylesheet otherwise keeps out of it. Left alone it
+   becomes a real box: a 226px-wide zero-height flex item inside the card, and a
+   visible empty-image square beside the photo in a compare tile (seen 2026-09-04
+   in the layout harness). It has nothing to draw, so it must draw nothing. */
+picture > source { display: none; }
+
 .vcard-img {
   width: 100%;
   height: 134px;
@@ -2085,6 +2101,19 @@ html, body, #root { height: 100%; }
   align-items: baseline;
   gap: 0.35rem;
   min-width: 0;
+}
+
+/* Thumbnail on a trim row, drawn only for a trim Elite photographed separately
+   (today: the two Dashings). `align-self: center` because the row aligns on the
+   text BASELINE — a 34px photo hung off a baseline sits visibly low. */
+.vdlg-trim-img {
+  align-self: center;
+  width: 52px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex: 0 0 auto;
+  background: var(--bg-sunken);
 }
 .vdlg-trim-seats {
   color: var(--color-text-muted);

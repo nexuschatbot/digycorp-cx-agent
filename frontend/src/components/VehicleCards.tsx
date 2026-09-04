@@ -34,10 +34,12 @@
 // The COMMIT — "Book test drive" — lives inside the dialog, and that one does
 // wake the agent, because it starts a conversation rather than answering one.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { VehicleCard } from '../cards'
 import { LABELS, fuelLabel, priceLine, seatsLine, type Lang } from '../i18n'
+import { warmHeroCache } from '../media'
+import { VehiclePhoto } from './VehiclePhoto'
 
 export type CardVariant = 'compact' | 'full'
 
@@ -89,7 +91,7 @@ function CardImage({ card }: { card: VehicleCard }) {
   const [brokenSrc, setBrokenSrc] = useState<string | null>(null)
   if (card.imageUrl && brokenSrc !== card.imageUrl) {
     return (
-      <img
+      <VehiclePhoto
         className="vcard-img"
         src={card.imageUrl}
         alt={card.name}
@@ -247,6 +249,19 @@ function CarouselCard({
 }) {
   const [index, setIndex] = useState(0)
   const frames = card.gallery ?? []
+  // FETCH THE FRAMES NOBODY IS LOOKING AT YET. Only frames[index] is in the
+  // DOM, so without this every arrow tap opens a connection and the photo
+  // arrives after the tap — the carousel feels like it is loading rather than
+  // moving. An interior set is two images and the customer asked to see the
+  // cabin, so the fetch is one they have effectively already requested.
+  //
+  // Keyed on the joined URLs, not on the array: `card.gallery` is rebuilt on
+  // every render of the parent and a raw array dep would re-run this forever.
+  const frameKey = frames.join('|')
+  useEffect(() => {
+    if (frames.length > 1) warmHeroCache(frames)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameKey])
   if (frames.length < 2) {
     return (
       <CompactCard
