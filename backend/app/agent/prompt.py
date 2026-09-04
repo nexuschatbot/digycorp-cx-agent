@@ -470,9 +470,21 @@ def _resolved_body(agent: str | None = None, *, multi_agent: bool = False) -> st
     # router asks for `testdrive`/`bookingmanagement`; those bodies live inside
     # aisha/v1.md and differ from the sub-agent bodies — see
     # loader.legacy_journey_body.
-    body = _loader.legacy_journey_body(agent) if agent else _PROMPT_BODY
+    # ONE BODY FOR THE WHOLE CONVERSATION ON THE MULTI-AGENT PATH (2026-09-04).
+    # The legacy router still names a journey here, and it used to pick that
+    # journey's SUBSET of the prose — so "can we move the test drive" flipped
+    # Aisha from the testdrive body to the bookingmanagement body mid-session,
+    # and the stable prefix changed underneath a live conversation. Seen in a
+    # 24-turn browser run: one turn wrote 36,478 tokens with cache_read=0 and
+    # the next three ran on a prefix 5k tokens smaller than before. On this
+    # path the journey split buys nothing — Aisha holds no journey tools, the
+    # specialists do — so she reads the full shipped body, byte-identical for
+    # every turn of every session, and the router's choice stays what it is
+    # elsewhere: a record, and the single-agent path's tool binding.
+    body = _loader.legacy_journey_body(agent) if (agent and not multi_agent) else _PROMPT_BODY
     if multi_agent:
         body = body + "\n\n" + _delegating_body()
+
     return body.replace(_HELPLINE_TOKEN, config.ELITE_HELPLINE)
 
 
@@ -591,6 +603,14 @@ def system_prompt_parts(
     today = today or date.today()
     stable = (_resolved_body(agent, multi_agent=multi_agent)
               + _DATE_ANCHOR.format(**_relative_dates(today)))
+    # THE JOURNEY STOPS AT THE BODY ON THE MULTI-AGENT PATH (2026-09-04). The
+    # two journey-owned anchors below name tools Aisha does not hold here, and
+    # they sit in the tail between the two cache breakpoints — so a router
+    # flip mid-session re-wrote the whole conversation window even after the
+    # body was pinned. Same rule as _resolved_body: the un-routed shape.
+    if multi_agent:
+        agent = None
+
     prompt = ""
     facts = "" if context_in_message else _render_facts(session_facts or {})
     if facts:

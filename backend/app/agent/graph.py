@@ -215,7 +215,18 @@ MAX_TOKENS = 2048
 # ordinary recent context does not have to be promoted to a fact to survive.
 # Affordable because both the system prompt and the message list are cache
 # breakpoints (see _cached_messages) — a longer window is mostly cache reads.
-TRIM_KEEP = 40
+#
+# 80, NOT 40 (2026-09-04). Every jump re-writes the whole window it keeps, so
+# what the customer pays is (jumps) x (TRIM_LOW messages). Raising the ceiling
+# with the floor unchanged makes each jump drop 56 messages instead of 16, so
+# a conversation trims a third as often for the same price per trim. Measured
+# on the test VM: 17 of 274 calls were a trim rewrite (median +1.3s to the
+# first token, worst +10s); in a 24-turn browser run there were four, one of
+# them a 13.3s first token. The extra history between trims is read from
+# cache at a tenth of the price, and the per-call fixed cost has been
+# measured flat against prompt length (OPEN-ISSUES.md #2).
+TRIM_KEEP = 80
+
 # The low-water mark for _window_start: when the history outgrows TRIM_KEEP the
 # window is cut back to the last TRIM_LOW messages and then LEFT ALONE until it
 # outgrows TRIM_KEEP again. A window that always holds exactly the last 40 moves
@@ -667,17 +678,17 @@ def _prefixes_to_warm() -> list[tuple[str, list]]:
     try:
         from app.tools import aisha_schemas as _aisha_schemas
 
+        # ONE PREFIX SINCE 2026-09-04: on the multi-agent path the body no
+        # longer varies with the router's journey (see prompt.system_prompt_parts),
+        # so the three labels this used to warm were one key written three
+        # times. The un-routed label is kept because it is the one every
+        # multi-agent turn now reads.
         out.append((
             "aisha:unrouted",
             _aisha_schemas(),
             system_prompt_parts(multi_agent=True),
         ))
-        for journey in ("testdrive", "bookingmanagement"):
-            out.append((
-                f"aisha:{journey}",
-                _aisha_schemas(),
-                system_prompt_parts(agent=journey, multi_agent=True),
-            ))
+
     except Exception:  # noqa: BLE001
         log.warning("could not enumerate the multi-agent prefixes", exc_info=True)
 
@@ -1469,8 +1480,18 @@ def _last_user_text(state: AgentState) -> str:
 # chunk a place beside the brochure that mentions the car on every page.
 # Six (2026-09-02, measured): with the vehicle hint in the query the right
 # catalogue passage is in the top five 94% of the time and in the top six 98%.
-_PREFETCH_K = 6
-_PREFETCH_FLOOR = 1
+# 7 AND 2, NOT 6 AND 1 (2026-09-04). With one reserved slot per collection a
+# two-topic question reached one policy document: "warranty and delivery for
+# the T2" pre-fetched warranty.md and no delivery passage, and Aisha told the
+# customer we publish no delivery time — live, in a browser run, on the path
+# that never reached a specialist. Two per collection reaches both (the floor
+# is per DOCUMENT inside a collection since the same date, see index.search);
+# the seventh slot is the global fill that keeps a single-topic question's
+# brochure depth. Measured offline over five question shapes: 2.2-3.0k chars,
+# inside the cap below.
+_PREFETCH_K = 7
+_PREFETCH_FLOOR = 2
+
 _PREFETCH_MAX_CHARS = 4000
 
 
@@ -1519,7 +1540,14 @@ def _looks_like_answer(text: str) -> str | None:
 
 
 def _prefetch_passages(state: AgentState, *, slot_pinned: bool = False) -> str | None:
-    """RETRIEVAL_FIRST: the local index's best passages for this message.
+    """The passages alone — see _prefetch for what else it learns."""
+    return _prefetch(state, slot_pinned=slot_pinned)[0]
+
+
+def _prefetch(state: AgentState, *, slot_pinned: bool = False) -> tuple[str | None, list[dict]]:
+    """RETRIEVAL_FIRST: the local index's best passages for this message, and
+    the catalogue vehicles among them as [{"vehicle_id", "name"}].
+
 
     LOCAL, ~50ms, NO MODEL, NO TOKENS — measured live, the cascade this
     short-circuits spent five model calls (~14s) executing this exact lookup
@@ -1530,22 +1558,24 @@ def _prefetch_passages(state: AgentState, *, slot_pinned: bool = False) -> str |
     the flag is off at the call site. Never raises: the turn matters, the
     shortcut does not.
     """
+    none: tuple[str | None, list[dict]] = (None, [])
     try:
         text = _last_user_text(state).strip()
         if not text or len(text.split()) < 3:
-            return None
+            return none
         from app.agent.router import prefilter as _prefilter
 
         if _prefilter.is_bare_greeting(text):
-            return None
+            return none
         # A slot-chip tap arrives with its id pinned (ChatRequest.slot_id) —
         # the one chip the backend can recognise structurally.
         if slot_pinned:
-            return None
+            return none
         why = _looks_like_answer(text)
         if why:
             log.info("retrieval prefetch skipped: %s", why)
-            return None
+            return none
+
         from app.retrieval import index as _index
         from app.retrieval import vehicle_mentions
         from app.tools.knowledge_tools import FENCE_CLOSE, FENCE_OPEN
@@ -1565,8 +1595,9 @@ def _prefetch_passages(state: AgentState, *, slot_pinned: bool = False) -> str |
             floor=_PREFETCH_FLOOR,
         )
         if not hits:
-            return None
+            return none
         parts: list[str] = []
+        vehicles: list[dict] = []
         total = 0
         for chunk, _score in hits:
             block = f"{FENCE_OPEN % chunk.citation}\n{chunk.body}\n{FENCE_CLOSE}"
@@ -1574,10 +1605,79 @@ def _prefetch_passages(state: AgentState, *, slot_pinned: bool = False) -> str |
                 break
             parts.append(block)
             total += len(block)
-        return "\n\n".join(parts) or None
+            meta = chunk.meta or {}
+            if chunk.collection == "catalogue" and meta.get("vehicle_id") and meta.get("name"):
+                if all(v["vehicle_id"] != meta["vehicle_id"] for v in vehicles):
+                    vehicles.append({"vehicle_id": meta["vehicle_id"], "name": meta["name"]})
+        return ("\n\n".join(parts) or None), vehicles
     except Exception:  # noqa: BLE001 — the shortcut must never cost a turn
         log.warning("retrieval prefetch failed; proceeding without", exc_info=True)
-        return None
+        return none
+
+
+# Tools whose call already draws the customer a car card. A generation that
+# called one of these, or that delegated (the cascade curates its own cards),
+# needs nothing drawn for it.
+_CARD_DRAWING_TOOLS: frozenset[str] = frozenset({
+    "get_vehicle_details", "search_vehicles", "compare_vehicles", "emit_briefs",
+})
+_PREFETCH_CARDS_MAX = 2
+
+
+def _draw_prefetched_cards(assistant: dict, vehicles: list[dict], cfg: dict, session_id: str) -> int:
+    """Draw the card for a car Aisha described out of the pre-fetched passages.
+
+    FOUND IN A BROWSER RUN (2026-09-04): with RETRIEVAL_FIRST on, "what
+    7-seaters do you have" was answered from the catalogue passages in one
+    generation — the whole point of the pre-fetch — and the customer got a
+    paragraph about the X70 FL Plus with no card, on the one path where every
+    other answer about a car draws one. The passage came from the catalogue
+    table, so the id is known; the card is the same get_vehicle_details result
+    a tool call would have produced, emitted the same way, so the runner
+    records it and a reload rebuilds it. Only for cars she actually NAMED in
+    the reply, at most two, and never when the generation itself called a
+    card-drawing tool or delegated. Returns how many were drawn. Never raises.
+    """
+    try:
+        if not vehicles:
+            return 0
+        content = assistant.get("content") or []
+        if any(isinstance(b, dict) and b.get("type") == "tool_use"
+               and b.get("name") in _CARD_DRAWING_TOOLS for b in content):
+            return 0
+        text = " ".join(
+            b.get("text") or "" for b in content if isinstance(b, dict) and b.get("type") == "text"
+        )
+        if not text.strip():
+            return 0
+        from app.retrieval import vehicle_mentions
+        from app.tools.catalogue_tools import get_vehicle_details
+
+        names = [v["name"] for v in vehicles]
+        named = []
+        for name in vehicle_mentions.mentions(text, names=names):
+            if name not in named:
+                named.append(name)
+        writer = _safe_writer()
+        db = cfg.get("db")
+        if not named or writer is None or db is None:
+            return 0
+        drawn = 0
+        for name in named[:_PREFETCH_CARDS_MAX]:
+            output = get_vehicle_details(db, session_id, name=name)
+            if not isinstance(output, dict) or output.get("error"):
+                continue
+            writer({"type": "tool_event", "tool": "get_vehicle_details",
+                    "input": {"name": name}, "output": output})
+            drawn += 1
+        if drawn:
+            log.info("drew %d card(s) for the pre-fetched car(s) named in the reply — session=%s",
+                     drawn, session_id)
+        return drawn
+    except Exception:  # noqa: BLE001 — a card must never cost a turn
+        log.warning("could not draw pre-fetched cards", exc_info=True)
+        return 0
+
 
 
 def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
@@ -1695,12 +1795,13 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     # holds its evidence and must not pay the tail twice. None everywhere the
     # flag is off (the shipped default), which keeps the prompt byte-identical.
     _prefetch_t0 = time.perf_counter()
-    passages = (
-        _prefetch_passages(state, slot_pinned=cfg.get("provided_slot_id") is not None)
+    passages, prefetched_vehicles = (
+        _prefetch(state, slot_pinned=cfg.get("provided_slot_id") is not None)
         if RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0
-        else None
+        else (None, [])
     )
     _prefetch_ms = int((time.perf_counter() - _prefetch_t0) * 1000)
+
 
     # SPECULATE_ON_MESSAGE (2026-09-03): the specialist selection starts NOW,
     # on the customer's own words, and runs under the whole generation below.
@@ -1787,9 +1888,12 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
         ),
         config=config,
     )
+    if prefetched_vehicles:
+        _draw_prefetched_cards(assistant, prefetched_vehicles, cfg, session_id)
     out: dict = {"messages": [assistant], "iterations": iterations + 1}
     if new_context:
         out["turn_context"] = {context_key: new_context}
+
     if start != prev_start:
         out["history_start"] = start
     # Stamp the turn the question was asked on, ONCE (see AgentState). Written
@@ -1835,7 +1939,30 @@ def _multi_agent(cfg: dict) -> bool:
     return _turn.enabled(voice_call=bool(cfg.get("voice_call")))
 
 
+def _said_this_turn(state: AgentState) -> list[str]:
+    """Every text block Aisha has sealed since this turn's customer message,
+    in order. Empty on a turn where she has said nothing yet."""
+    msgs = state.get("messages") or []
+    key = _turn_context_key(state)
+    if key is None:
+        return []
+    out: list[str] = []
+    for msg in msgs[int(key) + 1:]:
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            if content.strip():
+                out.append(content.strip())
+            continue
+        for b in content or []:
+            if isinstance(b, dict) and b.get("type") == "text" and (b.get("text") or "").strip():
+                out.append(b["text"].strip())
+    return out
+
+
 def _brief_block(state: AgentState) -> dict | None:
+
     """The emit_briefs tool_use in the last assistant message, if there is one."""
     last = state["messages"][-1]
     if not isinstance(last, dict) or last.get("role") != "assistant":
@@ -2088,8 +2215,20 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
         booked_ref = r.result.get("booking_ref") or inner.get("booking_ref")
         if r.ok and booked_ref:
             writer = _safe_writer()
-            if writer:
+            if writer and write._ACTION_TO_TOOL.get(r.action) == "cancel_booking":
+
+                # A CANCELLATION GREYS THE CARD, IT DOES NOT DRAW ONE (browser
+                # run, 2026-09-04): the `booking` event makes the UI fetch and
+                # redraw the booking, and a cancelled booking is no longer
+                # returned — so the fetch failed and the fallback pill said
+                # "Booked TD-…" directly under "your booking has been
+                # cancelled". tool_node reports a cancel as a tool_event, and
+                # the UI supersedes the old card on it; the same shape here.
+                writer({"type": "tool_event", "tool": "cancel_booking",
+                        "input": {"ref": booked_ref}, "output": r.result})
+            elif writer:
                 writer({"type": "booking", "booking_ref": booked_ref})
+
     log.info("orchestrator writes — session=%s %s%s", session_id,
              [(r.action, r.status) for r in results],
              f" facts={sorted(write_facts)}" if write_facts else "")
@@ -2351,6 +2490,24 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
             )
             _t_compose = time.perf_counter()
             payload = _turn.compose_input(result)
+            # WHAT SHE HAS ALREADY SAID THIS TURN, handed back beside the
+            # findings (2026-09-04). aisha/v2.md has told her since 2026-09-03
+            # never to repeat a sealed line, and in a browser run she still
+            # asked "May we send you WhatsApp reminders?" twice in one turn —
+            # once before the hold cascade, once after it. The rule sits ~10k
+            # tokens above the tool_result she composes from; the sentences
+            # themselves, in that result, are what she actually reads. Data,
+            # not a rule: the exact text already on the customer's screen.
+            _said = _said_this_turn(state)
+            if _said:
+                payload["already_said"] = _said
+                payload["already_said_note"] = (
+                    "These sentences are ALREADY on the customer's screen from "
+                    "earlier in this same turn. Do not write them again, in these "
+                    "words or others — continue from them. If one of them asked "
+                    "a question, it has been asked."
+                )
+
             # THE STRIP, DECIDED ONCE (see _select_cards). Emitted here rather
 
             # than per search, and named in the payload so her prose and the

@@ -171,6 +171,9 @@ def load(collection: str) -> tuple[list, object] | None:
 # and trims come from search_vehicles and get_vehicle_details, and three
 # brochure chunks still reach the model.
 COLLECTION_FLOOR = 2
+# How many candidates each collection offers per answer slot — see search().
+CANDIDATES_PER_SLOT = 4
+
 
 
 def search(
@@ -225,7 +228,15 @@ def search(
             continue
         chunks, vectors = loaded
         found: list[tuple] = []
-        for i, score in embed.top_k(qv, vectors, k=k):
+        # A WIDER POOL THAN THE ANSWER (2026-09-04). Each collection used to
+        # offer exactly k candidates, and on "warranty and delivery for the T2"
+        # the knowledge collection's top five were five warranty.md chunks —
+        # so the per-document floor below had one document to choose from,
+        # whatever the question asked. Four candidates per slot is enough for
+        # a second topic to surface; the ranking that fills the answer is
+        # unchanged, because the best k of a wider pool are the same chunks.
+        for i, score in embed.top_k(qv, vectors, k=k * CANDIDATES_PER_SLOT):
+
             c = chunks[i]
             if not include_gaps and c.kind == "gap":
                 continue
@@ -236,15 +247,35 @@ def search(
     # RESERVE FIRST, THEN FILL. Identity is by position, not by Chunk equality:
     # two chunks can carry the same text from different files and dropping one
     # as a duplicate would silently lose a citation.
+    #
+    # THE RESERVED SLOTS GO TO DIFFERENT DOCUMENTS (2026-09-04). A floor of two
+    # used to take a collection's two best CHUNKS, and for a two-topic question
+    # both came from the same file: "what is the warranty and delivery
+    # information for the T2" filled both knowledge slots with warranty.md and
+    # delivery.md reached nobody — reproduced offline on the shipped index, and
+    # live in a browser run, where the customer was told we publish no delivery
+    # time. The floor is now the collection's best chunk from each DISTINCT
+    # source in rank order, so a question that names two policies reaches two
+    # documents; a single-topic question is unchanged, because its best two
+    # chunks were from different files anyway or the global fill restores the
+    # second. Same rule as the collection floor one level down: reserve a
+    # document's own best, never a share.
     picked: list[tuple] = []
     taken: set[tuple[int, int]] = set()
     if floor > 0 and k >= len(per_collection):
         for ci, found in enumerate(per_collection):
-            for hi in range(min(floor, len(found))):
-                if len(picked) >= k:
+            sources_seen: set[str] = set()
+            reserved = 0
+            for hi, (chunk, _score) in enumerate(found):
+                if reserved >= floor or len(picked) >= k:
                     break
+                if chunk.source in sources_seen:
+                    continue
+                sources_seen.add(chunk.source)
                 picked.append(found[hi])
                 taken.add((ci, hi))
+                reserved += 1
+
 
     remaining = sorted(
         ((ci, hi, hit)

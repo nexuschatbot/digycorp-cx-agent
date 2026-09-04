@@ -394,6 +394,17 @@ _TERMINAL_ASKS: frozenset[str] = frozenset({
 # refused as an unbound tool, costing the round and the hold.
 _TOOL_SPELLINGS: dict[str, str] = {"lock_slot": "hold_slot"}
 
+# READS THAT RESOLVE AN ID AND ANSWER NOTHING. The harvest gate settles a
+# step once every entity its card produces is in hand — and get_variants hands
+# Sales both of its entities while answering none of the brief. Seen live in
+# a browser run (2026-09-04): "which colours, and is it in stock at Al Quoz"
+# — the specialist called get_variants, the gate fired, and the customer was
+# told the stock check "didn't return" anything, because it never ran. A step
+# whose only calls so far are resolvers has not started answering; it keeps
+# its next round.
+_RESOLVER_READS: frozenset[str] = frozenset({"get_variants"})
+
+
 
 def _with_required_hold(db, session_id: str, agent: str, proposals: list[dict]) -> list[dict]:
 
@@ -1263,8 +1274,10 @@ def run_step(
             clean = not any(
                 isinstance(r, dict) and r.get("error") for r in seen_results
             )
-            if wanted and wanted <= set(got) and clean:
+            answered = any(t not in _RESOLVER_READS for t in called)
+            if wanted and wanted <= set(got) and clean and answered:
                 settle_after_tools = True
+
             # TERMINAL READS SETTLE TOO (2026-09-02). The gate above never
             # fires for a knowledge question: search_knowledge produces no
             # card entity, so a warranty lookup paid the ~2,187ms summary

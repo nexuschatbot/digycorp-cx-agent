@@ -104,3 +104,12 @@ def test_the_prefetch_is_gated_on_flag_path_and_first_generation():
 
     src = inspect.getsource(graph._agent_node)
     assert "RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0" in src
+
+
+def test_the_prefetch_reserves_two_documents_per_collection():
+    """One reserved slot per collection pre-fetched warranty.md and no
+    delivery passage for "warranty and delivery for the T2" — the live case
+    on the path that never reaches a specialist. Two per collection, one
+    global slot to keep a single-topic question's brochure depth."""
+    assert graph._PREFETCH_FLOOR == 2
+    assert graph._PREFETCH_K == graph._PREFETCH_FLOOR * len(__import__("app.retrieval.index", fromlist=["x"]).PREFETCH_COLLECTIONS) + 1

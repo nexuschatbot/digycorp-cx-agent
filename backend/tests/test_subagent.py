@@ -913,3 +913,62 @@ def test_the_testdrive_card_says_identity_is_not_its_step():
     # And it is in the body the specialist is actually given.
     assert own.strip() in loader.body_for("testdrive")
 
+
+
+# --------------------------------------------------------------------------- #
+# A resolver answers nothing (2026-09-04)
+# --------------------------------------------------------------------------- #
+def test_a_step_that_has_only_resolved_ids_keeps_its_next_round(patched, db):
+    """"Which colours, and is it in stock at Al Quoz": the specialist called
+    get_variants, harvested both of its entities, and the gate settled it —
+    the stock check never ran and the customer was told it "didn't return".
+    A resolver call answers nothing; the round after it is where the answer
+    comes from."""
+    def _dispatch(db_, sid, name, inp, *a, **k):
+        if name == "get_variants":
+            return {"vehicle_id": 3, "variants": [{"variant_id": 6, "name": "Luxury Plus"}]}
+        return {"available": True, "colours": ["Sand"]}
+
+    client = patched(
+        [[_use("get_variants", {"vehicle_id": 3})],
+         [_use("check_stock", {"variant_id": 6, "showroom_id": 1}, uid="u2")],
+         [_text('{"findings": {"in_stock": true}}')]],
+        dispatch=_dispatch,
+    )
+    out = subagent.run_step(
+        Step(brief="which colours, and is it in stock at Al Quoz", agent="sales", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) >= 2, "the resolver round must not settle the step"
+    assert [e["tool"] for e in out["_evidence"]] == ["get_variants", "check_stock"]
+
+
+def test_a_resolver_beside_a_real_read_still_settles(patched, db):
+    """One round that both resolved the id and answered the question is done."""
+    def _dispatch(db_, sid, name, inp, *a, **k):
+        if name == "get_variants":
+            return {"vehicle_id": 3, "variants": [{"variant_id": 6, "name": "Luxury Plus"}]}
+        return {"available": True}
+
+    client = patched(
+        [[_use("get_variants", {"vehicle_id": 3}, uid="u1"),
+          _use("check_stock", {"variant_id": 6}, uid="u2")],
+         [_text('{"findings": {}}')]],
+        dispatch=_dispatch,
+    )
+    subagent.run_step(Step(brief="in stock?", agent="sales", index=0), {}, db=db, session_id="s1")
+    assert len(client.calls) == 1
+
+
+def test_the_testdrive_card_says_a_named_slot_needs_no_lookup():
+    """A move brief carrying the reference and the new slot id took three
+    rounds and ten seconds re-reading both. Authored, not edited into the
+    ported RESCHEDULING sequence."""
+    from app.agents import loader
+
+    own = loader.sections("testdrive")["THE_SLOT_IN_THE_BRIEF_IS_THE_DECISION"]
+    flat = " ".join(own.replace("\\\n", " ").split())
+    assert "without calling get_booking or get_available_slots first" in flat
+
+    assert loader.origins("testdrive")["THE_SLOT_IN_THE_BRIEF_IS_THE_DECISION"] == "testdrive"
+    assert own.strip() in loader.body_for("testdrive")
