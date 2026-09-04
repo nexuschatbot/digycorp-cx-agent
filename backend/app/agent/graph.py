@@ -1519,7 +1519,15 @@ _PREFETCH_MAX_CHARS = 4000
 # signal to use instead: option chips send their label as plain typed text by
 # design (frontend/src/options.ts), so the shape of the text is all there is.
 _PHONE_RE = re.compile(r"\d[\d\s-]{7,}\d")
+# The first two pairs are the CURRENT starter cards (2026-09-04); the second two
+# are the wording those cards used to carry. Both are kept: the old phrasings are
+# still what a customer reaches for unprompted, and a stale entry costs a set
+# lookup while a missing one costs a pointless retrieval round-trip.
 _PREFILL_TEXTS = frozenset({
+    "i’d like to book a test drive, or manage one i already have.",
+    "i'd like to book a test drive, or manage one i already have.",
+    "i’d like to ask about models, pricing, offers or availability.",
+    "i'd like to ask about models, pricing, offers or availability.",
     "i’d like to book a test drive.",
     "i'd like to book a test drive.",
     "i’d like to reschedule or cancel my booking.",

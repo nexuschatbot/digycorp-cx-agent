@@ -403,9 +403,17 @@ export default function App() {
         {/* Empty state: a warm greeting (rule 14 tone; English chrome like
             every other UI string) over two starter cards. The cards PREFILL
             the composer — they do NOT send (a tap chooses a path, the customer
-            still confirms in their own words). "New test drive" opens booking;
-            "My booking" opens the reschedule/cancel flow, where Aisha then
-            asks for name or TD-ref (rules 10/11). */}
+            still confirms in their own words). The split is by ERRAND, not by
+            tool: "Book a test drive" carries both the new booking and the
+            reschedule/cancel flow (where Aisha then asks for name or TD-ref,
+            rules 10/11), because a customer who has a booking does not think
+            of managing it as a different destination from making one. "Get
+            sales support" is everything that is not a booking — models,
+            pricing, offers, availability. Each card states its scope on a
+            second line so neither promise is hidden behind a two-word label,
+            and each prefill SAYS what the card promises, so tapping the
+            booking card and meaning "move my Thursday slot" opens with words
+            that cover it. */}
         {messages.length === 0 && !hydrating && (
           <div className="empty">
             <span className="empty-avatar" aria-hidden="true">
@@ -416,22 +424,28 @@ export default function App() {
                 render off the Dubai clock; there is deliberately no ticker,
                 since the empty state disappears the moment anyone speaks. */}
             <h2 className="empty-hello">{greeting()}.<br />I’m Aisha.</h2>
-            <p className="empty-sub">Ask me about any Jetour model, or book a test drive in under a minute.</p>
+            <p className="empty-sub">I’m your virtual assistant for sales and test drive bookings. How can I help you today?</p>
             <div className="starter-list">
               <button
                 type="button"
                 className="starter-btn starter-btn--primary"
-                onClick={() => prefill('I’d like to book a test drive.')}
+                onClick={() => prefill('I’d like to book a test drive, or manage one I already have.')}
               >
-                <span>New test drive</span>
+                <span className="starter-text">
+                  <span className="starter-title">Book a test drive</span>
+                  <span className="starter-desc">Book a new test drive or manage your old ones.</span>
+                </span>
                 <svg className="starter-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
               </button>
               <button
                 type="button"
                 className="starter-btn starter-btn--secondary"
-                onClick={() => prefill('I’d like to reschedule or cancel my booking.')}
+                onClick={() => prefill('I’d like to ask about models, pricing, offers or availability.')}
               >
-                <span>My booking</span>
+                <span className="starter-text">
+                  <span className="starter-title">Get sales support</span>
+                  <span className="starter-desc">Ask about models, pricing, offers or availability.</span>
+                </span>
                 <svg className="starter-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
               </button>
             </div>
