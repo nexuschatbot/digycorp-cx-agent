@@ -219,17 +219,23 @@ def test_a_location_we_cannot_place_is_waiting_on_the_customer(db):
     assert out["awaiting_customer"] is True
 
 
-def test_an_ungeocodable_place_is_waiting_too(db, monkeypatch):
+def test_a_place_we_could_not_geocode_still_needs_a_generation(db, monkeypatch):
+    """NOT silent, and the live run is why. She HAD something to place; the
+    customer has not been asked for a landmark yet, so she needs this generation
+    to ask. Ending here stranded a real chat on "Let me find the closest one to
+    you!" with no question under it."""
     from app.services import maps
 
     monkeypatch.setattr(maps, "geocode", lambda _q: None)
     out = nearest_showroom(db, "sess-loc", location="somewhere that is not a place")
     assert out["reason"] == "could_not_locate"
-    assert out["awaiting_customer"] is True
+    assert out["ask_for_landmark"] is True
+    assert "awaiting_customer" not in out
 
 
-def test_a_bare_city_is_waiting_too(db, monkeypatch):
-    """The third door into the same result — a city geocodes, but not precisely."""
+def test_a_bare_city_still_needs_a_generation(db, monkeypatch):
+    """THE ONE THAT BROKE LIVE. "Dubai" geocodes but not precisely — she must be
+    allowed to say so and ask for a landmark."""
     from app.services import maps
 
     _place_the_branches(db, monkeypatch)
@@ -239,7 +245,8 @@ def test_a_bare_city_is_waiting_too(db, monkeypatch):
     )
     out = nearest_showroom(db, "sess-loc", location="Dubai")
     assert out["reason"] == "need_landmark"
-    assert out["awaiting_customer"] is True
+    assert out["ask_for_landmark"] is True
+    assert "awaiting_customer" not in out
 
 
 def test_a_placed_location_is_not_waiting(db, monkeypatch):
@@ -310,6 +317,26 @@ def test_a_silent_result_beside_an_informative_one_still_gets_its_generation(db)
         ],
     )
     assert model.calls == 2
+
+
+def test_a_bare_city_gets_its_generation_through_the_graph(db, monkeypatch):
+    """The live regression, end to end: a filler line, a coarse location, and she
+    must still reach the generation in which she asks for a landmark."""
+    from app.services import maps
+
+    _place_the_branches(db, monkeypatch)
+    monkeypatch.setattr(
+        maps, "geocode",
+        lambda _q: {"lat": 25.2, "lng": 55.27, "formatted": "Dubai", "precise": False, "emirate": "dubai"},
+    )
+    model = _run(
+        db, "sess-await-4", "Dubai",
+        [
+            _says_then_calls("Let me find the closest one to you!", ("nearest_showroom", {"location": "Dubai"})),
+            _says_then_calls("Which area of Dubai are you in?"),
+        ],
+    )
+    assert model.calls == 2, "she was cut off before she could ask for the landmark"
 
 
 def test_a_turn_that_has_said_nothing_is_never_ended(db):

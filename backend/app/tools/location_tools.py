@@ -171,8 +171,6 @@ def _resolve_origin(location, latitude, longitude):
             return None, None, None, False, None, {
                 "resolved": False, "reason": "could_not_locate",
                 "location": str(location).strip(), "ask_for_landmark": True,
-                # See the ask_for_landmark note on the schema below.
-                "awaiting_customer": True,
             }
         coords = (g["lat"], g["lng"])
         return coords, (g.get("formatted") or str(location).strip()), \
@@ -180,7 +178,17 @@ def _resolve_origin(location, latitude, longitude):
     # 3) Nothing usable.
     return None, None, None, False, None, {
         "resolved": False, "reason": "no_location", "ask_for_landmark": True,
-        # See the ask_for_landmark note on the schema below.
+        # THE ONLY SILENT ONE OF THE THREE (2026-09-04, narrowed after a live
+        # run). Called with NOTHING to place, this tool has nothing to report:
+        # the model is asking the customer where they are as it calls, and the
+        # call exists to draw the "use my current location" button beside that
+        # question. So the turn ends here and she cannot invent the answer.
+        #
+        # THE OTHER TWO BRANCHES MUST NOT END THE TURN. could_not_locate and
+        # need_landmark mean she HAD something and it was not enough — the
+        # customer has not been asked for a landmark yet, and she needs this
+        # generation to ask. Ending there stranded a live chat on "Let me find
+        # the closest one to you!" with no question after it.
         "awaiting_customer": True,
     }
 
@@ -260,9 +268,7 @@ def nearest_showroom(
 
     def _ask_landmark():
         return {"resolved": False, "reason": "need_landmark",
-                "ask_for_landmark": True, "location": origin_label,
-                # See the ask_for_landmark note on the schema below.
-                "awaiting_customer": True}
+                "ask_for_landmark": True, "location": origin_label}
 
     # WHICH branch(es) to show — SIMPLE RULE (no emirate grouping):
     #   * a bare city or emirate on its own ('Dubai', 'Abu Dhabi') is not precise

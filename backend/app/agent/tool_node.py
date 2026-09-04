@@ -182,21 +182,6 @@ _OPTIONS_TOOL = "offer_options"
 # ask_for_landmark branch) and slot_tools.acknowledge_licence_reminder; the key
 # is a literal there because app.tools cannot import this module back.
 _AWAITING_KEY = "awaiting_customer"
-
-
-# NO RETRACTION NOTICE — deliberately removed, not lost. While pre-tool text was
-# DELETED (`text_reset`), the model held a false belief: its transcript contained
-# text the customer never saw, so it reasoned as though that text was delivered.
-# The first casualty was rule 1 — it would introduce itself in a pre-tool block,
-# the retraction ate the introduction, and it declined to re-introduce because from
-# where it sat it already had. A system note correcting that belief was the fix.
-#
-# Pre-tool text is now DELIVERED — it is sealed into its own bubble (`text_break`,
-# see graph.py) rather than erased — so the model's belief is simply true, and a
-# note telling it otherwise would be the falsehood. The class of bug it guarded
-# against cannot occur: nothing the model says goes undelivered.
-
-
 def _tool_result(tool_use_id: str, result: dict, *, is_error: bool = False) -> dict:
     """Anthropic tool_result content block. Result is JSON so Claude reads it as
     data — the tool's own error envelope, not a stack trace."""
