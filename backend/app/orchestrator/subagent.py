@@ -155,6 +155,42 @@ def _client():
     return _pooled_client
 
 
+# TOOL DESCRIPTIONS REWRITTEN FOR THE SPECIALIST SURFACE (2026-09-04). The
+# schemas are shared with Aisha, and get_booking's description opens with
+# "FIRST identify the customer with identify_by_reference_or_mobile" — a tool
+# no specialist holds. Seen live: a testdrive step obeyed it, was refused as
+# unbound, and spent the round. On this path identity is Aisha's job and is
+# done before any brief is written; the specialist's version says so. Only the
+# description changes — name and input_schema are byte-identical — so what
+# the model can CALL is untouched.
+_SUBAGENT_DESCRIPTIONS: dict[str, str] = {
+    "get_booking": (
+        "Look up an existing test-drive booking so it can be described, moved "
+        "or cancelled. Read-only — it changes nothing.\n\n"
+        "The customer has ALREADY been identified by the assistant who briefed "
+        "you; you hold no identification tool and must not try. Pass EITHER "
+        "the mobile OR the TD reference (TD-YYYY-XXXX) exactly as the brief "
+        "gives it — the tool normalises spacing, dashes and case.\n\n"
+        "Read the response:\n"
+        "- 'bookings' is the list of THEIR ACTIVE bookings (a confirmed or "
+        "rescheduled test drive). Each has the vehicle, the slot (with a "
+        "human-readable day, date and time in 'start_human'), the location "
+        "(showroom name, or the doorstep service area), the status, and the "
+        "booking_ref.\n"
+        "- An EMPTY list means they have no active booking under those details. "
+        "Report that in your note — do NOT invent one.\n"
+        "- More than one booking means they have several live; put them all "
+        "in your findings.\n"
+        "- {'error': 'identity_required'} means the session is not identified "
+        "yet. Say so in your note and stop — the assistant will identify them "
+        "and brief you again. Do not retry.\n"
+        "- {'error': 'invalid_uae_mobile'}: the number could not be read; say "
+        "so in your note.\n"
+        "Only ever describe a booking from what this tool returned."
+    ),
+}
+
+
 def _schemas_for(agent: str) -> list[dict]:
     """The agent's card tools, filtered to reads. Never returns a write."""
     from app.agents import loader
@@ -162,6 +198,7 @@ def _schemas_for(agent: str) -> list[dict]:
 
     declared = list(loader.frontmatter(agent).get("tools") or [])
     out = []
+
     for name in declared:
         if name in WRITE_TOOLS:
             # Should be impossible — differential.py fails the build first — but
@@ -183,8 +220,12 @@ def _schemas_for(agent: str) -> list[dict]:
                 "without it", agent, name,
             )
             continue
-        out.append(entry["schema"])
+        schema = entry["schema"]
+        if name in _SUBAGENT_DESCRIPTIONS:
+            schema = {**schema, "description": _SUBAGENT_DESCRIPTIONS[name]}
+        out.append(schema)
     return out
+
 
 
 def _proposes(agent: str) -> list[str]:
@@ -311,7 +352,51 @@ def _proposal_args(raw: dict) -> dict:
 _NEEDS_HELD_SLOT = {"reschedule_booking": "new_slot_id", "create_booking": "slot_id"}
 
 
+def _finalise_proposals(db, session_id: str, agent: str, proposed: list[dict]) -> list[dict]:
+    """Dedupe what was asked, prepend the hold a move needs, drop what the card
+    may not ask for. ONE function for both settle paths (2026-09-04), so a step
+    that settles on its ask and a step that settles on its summary cannot
+    disagree about what a proposal has to pass."""
+    deduped: list[dict] = []
+    seen_keys: set[str] = set()
+    for item in proposed:
+        # FIRST WINS, AND THE INTERCEPTS ARE FIRST BY CONSTRUCTION. An
+        # intercepted tool_use carries the tool's own argument names, in full,
+        # as the model actually tried to call it; the JSON proposal is the same
+        # ask re-expressed and usually thinner.
+        key = _proposal_key(item)
+        if key in seen_keys:
+            log.info("%s asked for %s twice; keeping the first", agent, item.get("action"))
+            continue
+        seen_keys.add(key)
+        deduped.append(item)
+    if not deduped:
+        return []
+    deduped = _with_required_hold(db, session_id, agent, deduped)
+    return _validate_proposals(agent, deduped)
+
+
+# THE ASKS THAT END A STEP. A specialist that has asked for the booking, the
+# move or the cancellation has nothing left to look up — the intercept's own
+# tool_result tells it "report your findings now". hold_slot is deliberately
+# NOT here: the card's own prose says "lock the slot, then call
+# reschedule_booking", so a lone hold may be the first half of a two-part ask
+# and the step must keep its next round to make the second.
+_TERMINAL_ASKS: frozenset[str] = frozenset({
+    "create_booking", "reschedule_booking", "cancel_booking",
+})
+
+# A tool_use spelled the TOOL's way for an action the card spells its own way.
+# write.py maps hold_slot -> lock_slot for execution; this is the read direction,
+# and it is one entry because only one action has two names. Found in the
+# testdrive prose, which says "lock the slot with lock_slot" while the card
+# proposes `hold_slot` — so a lock_slot tool_use missed the intercept and was
+# refused as an unbound tool, costing the round and the hold.
+_TOOL_SPELLINGS: dict[str, str] = {"lock_slot": "hold_slot"}
+
+
 def _with_required_hold(db, session_id: str, agent: str, proposals: list[dict]) -> list[dict]:
+
     """Prepend the hold a move or a booking needs, when the slot is not held yet."""
     if not proposals or "hold_slot" not in set(_proposes(agent)) or db is None:
         return proposals
@@ -938,39 +1023,21 @@ def run_step(
                         {"action": item.get("action"),
                          "args": _proposal_args(item.get("args") or {})}
                     )
-            deduped: list[dict] = []
-            seen_keys: set[str] = set()
-            for item in proposed:
-                # FIRST WINS, AND THE INTERCEPTS ARE FIRST BY CONSTRUCTION. An
-                # intercepted tool_use carries the tool's own argument names,
-                # in full, as the model actually tried to call it; the JSON
-                # proposal is the same ask re-expressed and usually thinner.
-                key = _proposal_key(item)
-                if key in seen_keys:
-                    log.info(
-                        "%s asked for %s twice; keeping the first",
-                        step.agent, item.get("action"),
-                    )
-                    continue
-                seen_keys.add(key)
-                deduped.append(item)
-            if not deduped:
+            kept = _finalise_proposals(db, session_id, step.agent, proposed)
+            if not kept and not proposed:
                 # NOTHING ASKED FOR. Before reporting that, check whether the
                 # brief asked for a write the state already determines — see
                 # _derived_proposals for the 39% of replies that never survive
                 # the token ceiling, and the booking that died in one.
-                deduped = _derived_proposals(db, session_id, step, customer_id)
-                if deduped:
+                derived_asks = _derived_proposals(db, session_id, step, customer_id)
+                if derived_asks:
                     derived = True
-            if deduped:
-                deduped = _with_required_hold(db, session_id, step.agent, deduped)
-                kept = _validate_proposals(step.agent, deduped)
-                if kept:
-                    findings["_proposals"] = kept
-                else:
-                    findings.pop("_proposals", None)
+                    kept = _finalise_proposals(db, session_id, step.agent, derived_asks)
+            if kept:
+                findings["_proposals"] = kept
             else:
                 findings.pop("_proposals", None)
+
             # THE REPLY WAS CUT OFF, AND THAT IS NOT THE SAME AS HAVING NOTHING
             # TO SAY. Never read before (2026-09-04): `stop_reason` was
             # available on every response and consulted nowhere, so a step the
@@ -1043,13 +1110,15 @@ def run_step(
             # now, and the service guards refuse independently underneath. The
             # allowlist below is untouched: a write this agent may NOT propose
             # still reaches _dispatch and is still refused.
-            if use.name not in allowed and use.name in proposable:
+            asked = _TOOL_SPELLINGS.get(use.name, use.name)
+            if use.name not in allowed and asked in proposable:
                 args = _proposal_args(dict(use.input or {}))
-                intercepted.append({"action": use.name, "args": args})
+                intercepted.append({"action": asked, "args": args})
                 log.info(
                     "%s asked for %s as a tool; reading it as a proposal",
                     step.agent, use.name,
                 )
+
                 # NO tool_event AND NO evidence. Nothing happened yet — a card
                 # drawn from this would show the customer a change that has not
                 # been decided, and `evidence` is what the TOOLS returned.
@@ -1104,7 +1173,52 @@ def run_step(
             })
         messages.append({"role": "user", "content": results})
 
+        # THE ASK IS THE ANSWER (2026-09-04). Measured on the test VM over 28
+        # live specialist steps: every testdrive step paid a second round,
+        # because the gate below is closed to any card that may propose a
+        # write — and 6 of those steps had ALREADY asked, as a tool_use the
+        # intercept above read. The round that followed produced the same ask
+        # again ("asked for reschedule_booking twice; keeping the first"), or
+        # a JSON summary of tool results Aisha receives in full as `_evidence`.
+        # At ~2.2s a round, that is the difference between a 3-round and a
+        # 1-round booking step (7.9s vs 3.5s median).
+        #
+        # ONLY A TERMINAL ASK SETTLES. A booking, a move or a cancellation is
+        # the last thing a step can want; the intercept's own tool_result has
+        # already told the model there is nothing further to call. A lone
+        # hold does not settle — see _TERMINAL_ASKS — because the prose walks
+        # the model through "lock, then reschedule" and cutting it after the
+        # lock would cut the move.
+        #
+        # THE SAME GUARDS AS THE SUMMARY PATH, by construction: the proposals
+        # go through _finalise_proposals exactly as a written one would, and
+        # write.execute_all's state gate and the service guards run underneath.
+        from app.orchestrator.write import _ACTION_TO_TOOL as _to_tool
+
+        if intercepted and any(
+            _to_tool.get(p.get("action") or "") in _TERMINAL_ASKS for p in intercepted
+        ):
+            findings = _harvest_entities(
+                step.agent, seen_results, [e["tool"] for e in evidence]
+            )
+            kept = _finalise_proposals(db, session_id, step.agent, list(intercepted))
+            if kept:
+                findings["_proposals"] = kept
+            if evidence:
+                findings["_evidence"] = evidence
+            log.info(
+                "%s settled on its ask in %d round(s), %dms — model=%s tools=[%s] "
+                "asked=[%s] (uncached=%d cache_write=%d cache_read=%d output=%d)",
+                step.agent, rounds, int((time.monotonic() - started) * 1000),
+                model, ", ".join(called) or "none",
+                ", ".join(p.get("action") or "?" for p in kept),
+                usage["uncached"], usage["cache_write"],
+                usage["cache_read"], usage["output"],
+            )
+            return findings
+
         # THE SUMMARY ROUND, WHEN NOTHING READS IT (measured 2026-08-31 over 40
+
         # live steps). A round costs ~2,187ms and 29 of those 40 took two: one
         # to call the tool, one to write findings about what came back. That
         # second round is a whole Haiku call for a paragraph the pipeline does
