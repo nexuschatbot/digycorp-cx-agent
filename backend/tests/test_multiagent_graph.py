@@ -1279,3 +1279,44 @@ def test_no_card_when_the_generation_drew_its_own_or_delegated(db, monkeypatch):
     for a in (delegated, own_lookup, unnamed):
         assert graph._draw_prefetched_cards(a, vehicles, {"db": db}, "s1") == 0
     assert seen == []
+
+
+def test_the_tool_node_hands_back_what_she_already_said(db, monkeypatch):
+    """The repeat was seen AFTER a plain tool round, not only after a cascade:
+    "…May we send you WhatsApp reminders?" sealed, acknowledge_licence_reminder
+    ran, and the next generation asked it again. The tool node's result now
+    carries the sealed sentences behind the tool_result blocks — multi-agent
+    path only, and only when there is something to repeat."""
+    from app.agent import tool_node
+    from app.orchestrator import turn
+
+    monkeypatch.setattr(tool_node, "_dispatch", lambda *a, **k: {"ok": True})
+    monkeypatch.setattr(turn, "enabled", lambda *a, **k: True)
+    state = {
+        "messages": [
+            {"role": "user", "content": "yes go ahead"},
+            _assistant({"type": "text", "text": "Just remember your licence. May we send you WhatsApp reminders?"},
+                       _tool_use("acknowledge_licence_reminder", "t1")),
+        ],
+        "session_facts": {},
+    }
+    out = tool_node.tool_node(state, {"configurable": {"db": db, "session_id": "s1"}})
+    content = out["messages"][0]["content"]
+    assert content[0]["type"] == "tool_result"
+    trailer = content[-1]
+    assert trailer["type"] == "text"
+    assert "<<<ALREADY SAID THIS TURN>>>" in trailer["text"]
+    assert "May we send you WhatsApp reminders?" in trailer["text"]
+    assert "Do not write them again" in trailer["text"]
+
+    # Nothing sealed: nothing appended.
+    silent = {"messages": [{"role": "user", "content": "hi"},
+                           _assistant(_tool_use("acknowledge_licence_reminder", "t2"))],
+              "session_facts": {}}
+    out = tool_node.tool_node(silent, {"configurable": {"db": db, "session_id": "s1"}})
+    assert all(b["type"] == "tool_result" for b in out["messages"][0]["content"])
+
+    # Single-agent path: byte-stable, never a trailer.
+    monkeypatch.setattr(turn, "enabled", lambda *a, **k: False)
+    out = tool_node.tool_node(state, {"configurable": {"db": db, "session_id": "s1"}})
+    assert all(b["type"] == "tool_result" for b in out["messages"][0]["content"])

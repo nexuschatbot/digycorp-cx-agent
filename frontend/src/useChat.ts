@@ -1342,9 +1342,25 @@ export function useChat(): UseChat {
         // Retiring the existing card is what makes the live screen agree.
         if (e.tool === 'cancel_booking') {
           const ref = bookingRefOf(e.output)
-          if (ref) supersedeBookingRef(ref)
+          if (ref) {
+            supersedeBookingRef(ref)
+            // AND THE CARD STILL IN THE QUEUE (2026-09-04). On the multi-agent
+            // path the specialist looks the booking up before the cancel is
+            // executed, and that get_booking card is queued, not committed,
+            // when this event lands — so the pass above never saw it and it
+            // was flushed fresh and un-muted directly under "your booking has
+            // been cancelled". A card for a booking cancelled in the same
+            // turn has nothing to show: it is dropped, not muted.
+            for (let i = pendingRows.length - 1; i >= 0; i--) {
+              const row = pendingRows[i]
+              if (row.kind === 'bookings' && row.bookings.some((b) => b.ref === ref)) {
+                pendingRows.splice(i, 1)
+              }
+            }
+          }
           return
         }
+
         if (e.tool === 'get_showrooms') {
           // `true` on the second arg would mark it the active SLOT row —
           // showrooms track their own newest row, set at flush below.

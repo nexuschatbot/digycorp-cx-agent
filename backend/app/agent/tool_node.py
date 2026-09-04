@@ -815,13 +815,35 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         # advance either — revert to the pre-turn snapshot.
         session_facts = original_facts
 
+    content: list = list(results)
+    # WHAT SHE HAS ALREADY SAID THIS TURN, riding behind the tool results
+    # (2026-09-04). Seen twice in browser runs: "Just remember your licence.
+    # May we send you WhatsApp reminders?" sealed and sent, the licence tool
+    # ran, and the generation reading THIS message asked the question again.
+    # The rule against it sits ~10k tokens up the prompt; the sentences
+    # themselves, right here where she reads the result, are what she acts
+    # on. The orchestrator hands the same list back with its findings. Only
+    # on the multi-agent path, so the single-agent contract is byte-stable,
+    # and only when there is something sealed to repeat.
+    try:
+        from app.agent import graph as _graph
+        from app.orchestrator import turn as _turn
+
+        if _turn.enabled(voice_call=bool(cfg.get("voice_call"))):
+            said = _graph._said_this_turn(state)
+            if said:
+                content.append({"type": "text", "text": _graph.already_said_block(said)})
+    except Exception:  # noqa: BLE001 — a reminder must never cost a turn
+        log.debug("could not attach the already-said block", exc_info=True)
+
     return {
-        "messages": [{"role": "user", "content": list(results)}],
+        "messages": [{"role": "user", "content": content}],
         "customer_id": customer_id,
         "closed": closed,
         "options_offered": options_offered,
         "session_facts": session_facts,
     }
+
 
 
 __all__ = ["tool_node"]

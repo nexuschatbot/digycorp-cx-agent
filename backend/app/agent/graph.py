@@ -1939,7 +1939,21 @@ def _multi_agent(cfg: dict) -> bool:
     return _turn.enabled(voice_call=bool(cfg.get("voice_call")))
 
 
+ALREADY_SAID_NOTE = (
+    "These sentences are ALREADY on the customer's screen from earlier in this "
+    "same turn. Do not write them again, in these words or others — continue "
+    "from them. If one of them asked a question, it has been asked."
+)
+
+
+def already_said_block(said: list[str]) -> str:
+    """The already-said list as one text block, for a tool-result message."""
+    lines = "\n".join(f"- {s}" for s in said)
+    return f"<<<ALREADY SAID THIS TURN>>>\n{lines}\n<<<END>>>\n{ALREADY_SAID_NOTE}"
+
+
 def _said_this_turn(state: AgentState) -> list[str]:
+
     """Every text block Aisha has sealed since this turn's customer message,
     in order. Empty on a turn where she has said nothing yet."""
     msgs = state.get("messages") or []
@@ -2501,12 +2515,8 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
             _said = _said_this_turn(state)
             if _said:
                 payload["already_said"] = _said
-                payload["already_said_note"] = (
-                    "These sentences are ALREADY on the customer's screen from "
-                    "earlier in this same turn. Do not write them again, in these "
-                    "words or others — continue from them. If one of them asked "
-                    "a question, it has been asked."
-                )
+                payload["already_said_note"] = ALREADY_SAID_NOTE
+
 
             # THE STRIP, DECIDED ONCE (see _select_cards). Emitted here rather
 
