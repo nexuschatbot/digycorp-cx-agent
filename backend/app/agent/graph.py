@@ -287,6 +287,23 @@ class AgentState(TypedDict):
     # wide open and the composer must stay live; it is only the generation loop
     # that has nothing left to add. Per-turn control, reset by the caller.
     options_offered: bool
+    # THE THIRD TERMINAL, and the only one the model is never asked for
+    # (2026-09-04). The two above are actions Aisha TAKES; this one is a fact a
+    # TOOL RESULT reports: there is nothing here for the customer to hear, and
+    # the next move is theirs. Set by the tool node when EVERY result in a batch
+    # says so, read by the post-tools edge to END. Per-turn control, reset by
+    # the caller exactly like `closed` and `options_offered`.
+    #
+    # WHY IT CANNOT BE offer_options. That tool is forbidden on open questions
+    # by its own schema ("a name, a mobile number, an address, a landmark") and
+    # it is alone-only, so a question sharing a message with a write cannot use
+    # it either. Both holes were seen live on 2026-09-04 — ON A BOX ALREADY
+    # RUNNING the already-said block, which is why a reminder was not enough.
+    # Handed a generation with nothing left to say after asking a question, the
+    # model wrote the CUSTOMER'S answer and then acted on it: it invented a
+    # location ("Dubai Marina") and called nearest_showroom with it, and it
+    # invented a consent ("Yes please") and called record_consent with it.
+    awaiting_customer: bool
     # HOW MANY CASCADES THIS TURN HAS ALREADY RUN. Per-turn control, reset by
     # the caller exactly like `iterations` and `closed` — "how many times have
     # we gone back on THIS turn", never a property of the session. Counted
@@ -1975,6 +1992,50 @@ def _said_this_turn(state: AgentState) -> list[str]:
     return out
 
 
+def _emit_slot_rows(result, actions, writer) -> None:
+    """Replay the cascade's get_available_slots events — unless the turn booked.
+
+    THE TEST FOR AN OFFER IS WHETHER ANYTHING WAS COMMITTED. A specialist reads
+    times for one of two reasons, and they look identical at the moment it reads:
+
+      TO OFFER THEM    "what times do you have on Sunday" — the row IS the
+                       answer, and its chips carry the trusted slot_id the
+                       customer taps. Nothing is written; the next move is
+                       theirs. Replayed verbatim, in evidence order, so this
+                       path streams exactly what it streamed before the events
+                       were deferred at all (turn.CURATED).
+      TO USE THEM      the step was resolving the slot it was about to hold,
+                       book or move. A write landed in the same turn, so the
+                       customer had already chosen and the "offer" is spent
+                       before it is drawn — the live failure this exists to
+                       stop. Dropped.
+
+    A REFUSED OR FAILED write leaves the times on screen, deliberately: nothing
+    was committed, the customer still has to choose, and taking the row away
+    would leave them nothing to choose from.
+
+    Runs AFTER _execute_proposals because that is the first moment `executed` is
+    known — and still before the compose generation, so the row is queued ahead
+    of the first token exactly like the card strip above it.
+    """
+    if writer is None:
+        return
+    if any(isinstance(a, dict) and a.get("status") == "executed" for a in actions or []):
+        return
+    for step in getattr(result, "steps", None) or []:
+        if not step.ok:
+            continue
+        for item in step.evidence or []:
+            if not isinstance(item, dict) or item.get("tool") != "get_available_slots":
+                continue
+            out = item.get("result")
+            if isinstance(out, dict):
+                writer({
+                    "type": "tool_event", "tool": "get_available_slots",
+                    "input": {}, "output": out,
+                })
+
+
 def _brief_block(state: AgentState) -> dict | None:
 
     """The emit_briefs tool_use in the last assistant message, if there is one."""
@@ -2538,6 +2599,12 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                     })
             _t_writes = time.perf_counter()
             payload["actions"], _write_facts = _execute_proposals(result, state, cfg)
+            # The times a specialist read, drawn only when they are an offer and
+            # not the machinery of a write that just landed. See _emit_slot_rows.
+            try:
+                _emit_slot_rows(result, payload["actions"], _safe_writer())
+            except Exception:  # noqa: BLE001 — a row must never cost a turn
+                log.debug("could not replay the cascade slot rows", exc_info=True)
             facts = _fold_cascade_facts(state, result)
             # The node's own cost around the specialists: entity snapshot,
             # the cascade (specialist calls included), payload and cards, then
@@ -2627,6 +2694,10 @@ def _route_from_tools(state: AgentState, config: RunnableConfig) -> str:
     called in the same assistant message that asks it — so the turn is complete
     and the next move belongs to the customer.
 
+    On awaiting_customer the question is in the stream too, but it was an OPEN
+    one (a landmark, a consent) that no chip could carry; the tools that ran
+    alongside it returned nothing to say, and the turn ends for the same reason.
+
     On close, the farewell is ALREADY in the stream — the agent says goodbye in
     the same message that calls close_conversation, so those tokens have reached
     the customer AND STAY THERE: the tool node skips the rule-17 retraction on a
@@ -2644,6 +2715,14 @@ def _route_from_tools(state: AgentState, config: RunnableConfig) -> str:
     # more sentence, and the model WILL fill it — the same failure the close
     # branch above exists to prevent, in a less obvious costume.
     if state.get("options_offered"):
+        return END
+    # Same failure, the case chips cannot reach: every tool in that batch came
+    # back with nothing the customer needs told — a location we could not place,
+    # a licence flag flipped server-side — so the only sentence left to generate
+    # is the one the CUSTOMER is supposed to say next. The tool node sets this
+    # only once she has actually spoken this turn, so ending here always leaves a
+    # question on screen rather than silence.
+    if state.get("awaiting_customer"):
         return END
     return "agent"
 

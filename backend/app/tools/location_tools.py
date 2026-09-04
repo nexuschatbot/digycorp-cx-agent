@@ -63,9 +63,12 @@ NEAREST_SHOWROOM_SCHEMA = {
         "city or emirate ('Dubai', 'Abu Dhabi', 'Sharjah', 'Fujairah'), or we "
         "couldn't place them precisely. Warmly ASK FOR A NEARBY LANDMARK, mall, "
         "metro station or area — e.g. 'Could you share a nearby landmark so I can "
-        "find your closest showroom?' — then call again with it. Do NOT say we lack "
-        "a branch in their city, do NOT name a branch, and do NOT list branches or "
-        "distances yet.\n"
+        "find your closest showroom?' — AND THEN STOP. Their next message is the "
+        "landmark; you call this again on THAT turn, with what THEY said. You do "
+        "not have a landmark yet and there is none to be reasoned out: the "
+        "examples above are illustrations, never a place to pick one from. Do NOT "
+        "say we lack a branch in their city, do NOT name a branch, and do NOT list "
+        "branches or distances yet.\n"
         "- resolved=true means they gave a specific place (or GPS): present the "
         "nearest branch(es) with distance + directions.\n"
         "Reading the result when resolved=true:\n"
@@ -175,6 +178,18 @@ def _resolve_origin(location, latitude, longitude):
     # 3) Nothing usable.
     return None, None, None, False, None, {
         "resolved": False, "reason": "no_location", "ask_for_landmark": True,
+        # THE ONLY SILENT ONE OF THE THREE (2026-09-04, narrowed after a live
+        # run). Called with NOTHING to place, this tool has nothing to report:
+        # the model is asking the customer where they are as it calls, and the
+        # call exists to draw the "use my current location" button beside that
+        # question. So the turn ends here and she cannot invent the answer.
+        #
+        # THE OTHER TWO BRANCHES MUST NOT END THE TURN. could_not_locate and
+        # need_landmark mean she HAD something and it was not enough — the
+        # customer has not been asked for a landmark yet, and she needs this
+        # generation to ask. Ending there stranded a live chat on "Let me find
+        # the closest one to you!" with no question after it.
+        "awaiting_customer": True,
     }
 
 

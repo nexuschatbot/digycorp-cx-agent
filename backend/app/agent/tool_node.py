@@ -173,21 +173,15 @@ _CLOSE_TOOL = "close_conversation"
 # question has already streamed as text in the same message, so a generation
 # after it would only staple a spare sentence under the chips.
 _OPTIONS_TOOL = "offer_options"
-
-
-# NO RETRACTION NOTICE — deliberately removed, not lost. While pre-tool text was
-# DELETED (`text_reset`), the model held a false belief: its transcript contained
-# text the customer never saw, so it reasoned as though that text was delivered.
-# The first casualty was rule 1 — it would introduce itself in a pre-tool block,
-# the retraction ate the introduction, and it declined to re-introduce because from
-# where it sat it already had. A system note correcting that belief was the fix.
-#
-# Pre-tool text is now DELIVERED — it is sealed into its own bubble (`text_break`,
-# see graph.py) rather than erased — so the model's belief is simply true, and a
-# note telling it otherwise would be the falsehood. The class of bug it guarded
-# against cannot occur: nothing the model says goes undelivered.
-
-
+# The THIRD terminal (2026-09-04), and the only one no tool NAME can express:
+# whether the turn is over depends on the RESULT. A tool with nothing for the
+# customer to hear — a location we could not place, a licence flag flipped
+# server-side — says so by putting this key in its result, and the graph ends
+# the turn instead of buying a generation the model can only fill by answering
+# for the customer. Producers: location_tools.nearest_showroom (every
+# ask_for_landmark branch) and slot_tools.acknowledge_licence_reminder; the key
+# is a literal there because app.tools cannot import this module back.
+_AWAITING_KEY = "awaiting_customer"
 def _tool_result(tool_use_id: str, result: dict, *, is_error: bool = False) -> dict:
     """Anthropic tool_result content block. Result is JSON so Claude reads it as
     data — the tool's own error envelope, not a stack trace."""
@@ -595,6 +589,9 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
     # the agent again. Without it the model gets a generation AFTER its farewell
     # and fills the silence — a second goodbye stapled to the first.
     closed = False
+    # Per-tool "this result had nothing for the customer" (see _AWAITING_KEY),
+    # collected here and collapsed into one terminal after the loop.
+    awaiting: list[bool] = []
     # Terminal-turn flag for offer_options, kept separate from `closed` because
     # the two mean different things: the conversation is still very much open —
     # we are waiting on an answer — it is only THIS TURN that has nothing left to
@@ -736,6 +733,12 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         if name == _OPTIONS_TOOL and isinstance(result, dict) and result.get("offered") is True:
             options_offered = True
 
+        # (2c-iii) DID THIS RESULT LEAVE ANYTHING TO SAY (2026-09-04). Recorded
+        # per tool, judged for the batch below: one silent result among four
+        # informative ones means nothing, but a batch where EVERY result is
+        # silent is a turn with no reply left in it.
+        awaiting.append(bool(isinstance(result, dict) and result.get(_AWAITING_KEY) is True))
+
         # (2d) Fold this result into the session facts the anchor injects next turn
         # (identity from find_or_create_customer, the car from lock_slot, cleared by
         # a confirmed forget_me). Results only, never the model's args (rule 2).
@@ -798,6 +801,26 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
             db, token=device_token, customer_id=customer_id, session_id=session_id
         )
 
+    # THE TURN IS OVER IF THERE IS NOTHING LEFT TO SAY (2026-09-04). Three
+    # conditions, and all three earn their place:
+    #   * every dispatched tool came back silent — one informative sibling and
+    #     the model has a real answer to give, so it gets its generation;
+    #   * the batch ran to completion — an abort left the tail undispatched, and
+    #     the cancel edge ends that turn anyway;
+    #   * she has already spoken this turn, so ending here leaves a question on
+    #     screen rather than an empty bubble the client drops. Reuses the same
+    #     _said_this_turn the already-said block is built from — one definition
+    #     of "what she has said since the customer spoke", not two. Failing to
+    #     read it means "silent", which is today's behaviour: the turn carries on.
+    awaiting_customer = False
+    if awaiting and len(awaiting) == len(tool_uses) and all(awaiting):
+        try:
+            from app.agent import graph as _graph
+
+            awaiting_customer = bool(_graph._said_this_turn(state))
+        except Exception:  # noqa: BLE001 — never cost a turn over a terminal
+            log.debug("could not read what was said this turn", exc_info=True)
+
     # Executor owns the transaction: commit the turn's writes + audit rows once.
     try:
         db.commit()
@@ -814,6 +837,9 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         # The writes those facts describe were rolled back, so the facts must not
         # advance either — revert to the pre-turn snapshot.
         session_facts = original_facts
+        # Every result is now an error the model has never seen. That IS
+        # something to say, so the turn must not end here.
+        awaiting_customer = False
 
     content: list = list(results)
     # WHAT SHE HAS ALREADY SAID THIS TURN, riding behind the tool results
@@ -841,6 +867,7 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         "customer_id": customer_id,
         "closed": closed,
         "options_offered": options_offered,
+        "awaiting_customer": awaiting_customer,
         "session_facts": session_facts,
     }
 

@@ -318,7 +318,10 @@ ACKNOWLEDGE_LICENCE_REMINDER_SCHEMA = {
         "Takes no arguments: it applies to the slot this conversation is "
         "currently holding.\n\n"
         "Read the response:\n"
-        "- {'acknowledged': true}: recorded. Carry on to consent and booking.\n"
+        "- {'acknowledged': true}: recorded — AND YOUR TURN IS OVER. This "
+        "message is the one that carries the consent question, and the answer to "
+        "it is the customer's to give: their next message. Never write it "
+        "yourself and never act as though they had answered.\n"
         "- {'acknowledged': false, 'reason': 'no_locked_slot'}: this conversation "
         "is not holding a slot yet. It does NOT mean any slot is taken — never "
         "tell the customer a time is unavailable because of this. If they have "
@@ -346,4 +349,18 @@ def acknowledge_licence_reminder(
     a slot_id the model supplied would let it acknowledge one slot and book
     another, which is precisely the ordering this guard exists to enforce.
     """
-    return slots.acknowledge_licence_reminder(db, session_id=session_id)
+    result = slots.acknowledge_licence_reminder(db, session_id=session_id)
+    # NOTHING TO SAY, SO THE TURN ENDS (2026-09-04, seen live). A successful
+    # acknowledgement is a server-side flag on the held slot; there is not one
+    # word of it for the customer. The message that calls it is the licence
+    # reminder plus the consent question, and offer_options cannot end that turn
+    # (it is alone-only, and this message contains a write) — so without this
+    # marker the model is handed a generation with only one thing left to fill
+    # it with, and it filled it: "Yes please", followed by record_consent for a
+    # decision nobody had made. See tool_node._AWAITING_KEY.
+    #
+    # ONLY ON SUCCESS. no_locked_slot is a real instruction to the model — lock
+    # the slot, remind, call again — and it needs the generation to act on it.
+    if isinstance(result, dict) and result.get("acknowledged") is True:
+        return {**result, "awaiting_customer": True}
+    return result
