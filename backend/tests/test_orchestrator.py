@@ -972,3 +972,48 @@ def test_a_specialists_get_showrooms_never_reaches_the_customer(monkeypatch):
         parent_writer=lambda kind, payload: seen.append(payload.get("tool")),
     )
     assert seen == ["get_booking", "nearest_showroom"]
+
+
+# --------------------------------------------------------------------------- #
+# A single step is pumped too (2026-09-04)
+# --------------------------------------------------------------------------- #
+def test_a_single_step_wave_forwards_events_while_the_step_is_still_running():
+    """The runner blocks until on_tick has fired at least once. Under the old
+    inline path on_tick ran only after the step returned, so this deadlocks
+    (and times out) unless the step is pumped while it runs."""
+    import threading
+
+    ticked = threading.Event()
+
+    def runner(step, ctx):
+        assert ticked.wait(timeout=5), "no tick while the step was running"
+        return {"agent": step.agent}
+
+    runner.thread_safe = True
+    result = run.execute(
+        [{"brief": "book it"}], runner, known={"vehicle_id"},
+        judge=lambda *a, **k: "testdrive", on_tick=ticked.set, max_workers=4,
+    )
+    assert [s.status for s in result.steps] == ["ok"]
+
+
+
+def test_a_single_step_with_a_non_thread_safe_runner_stays_inline():
+    """The pump needs a worker thread, and a runner sharing one Session must
+    never be moved onto one — the same rule that keeps waves narrow."""
+    import threading
+
+    main = threading.get_ident()
+    where = []
+
+    def runner(step, ctx):
+        where.append(threading.get_ident())
+        return {"agent": step.agent}
+
+    runner.thread_safe = False
+    result = run.execute([{"brief": "book it"}], runner, known={"vehicle_id"},
+                         judge=lambda *a, **k: "testdrive", on_tick=lambda: None,
+                         max_workers=4)
+    assert [s.status for s in result.steps] == ["ok"]
+    assert where == [main]
+
