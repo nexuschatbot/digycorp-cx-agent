@@ -554,3 +554,45 @@ def test_a_failing_explanation_never_costs_the_write():
     )
     assert out[0].status == "refused"
     assert "not valid at this point" in out[0].detail
+
+
+def test_the_backfills_share_one_checkpoint_read(db):
+    """Each backfill used to load the full checkpoint — every message and
+    tool_result of the session — to read one integer, twice per turn on the
+    path between the last token and `done`. run_turn now reads it once and
+    hands the id to both; a helper given the id must not read again."""
+    from app.agent.runner import _attach_voice_customer, _attribute_session
+    from app.models import ConversationTurn, Customer, Language, Speaker
+
+    customer = Customer(name_en="Ahmed", mobile="+971500000124")
+    db.add(customer)
+    db.add(ConversationTurn(session_id="s-once", speaker=Speaker.customer,
+                            lang=Language.en, text="hi"))
+    db.flush()
+
+    class _MustNotRead:
+        def get_state(self, config):
+            raise AssertionError("the checkpoint was read a second time")
+
+    _attach_voice_customer(db, _MustNotRead(), {}, "s-once", customer_id=customer.id)
+    _attribute_session(db, _MustNotRead(), {}, "s-once", customer_id=customer.id)
+    db.flush()
+    turn = db.scalars(select(ConversationTurn).where(
+        ConversationTurn.session_id == "s-once")).one()
+    assert turn.customer_id == customer.id
+
+
+def test_the_four_argument_form_still_reads_for_itself(db):
+    """Every caller and test that passes four arguments keeps the old read."""
+    from app.agent.runner import _checkpoint_customer_id
+
+    class _Graph:
+        def get_state(self, config):
+            return type("S", (), {"values": {"customer_id": 7}})()
+
+    class _Broken:
+        def get_state(self, config):
+            raise RuntimeError("checkpoint is gone")
+
+    assert _checkpoint_customer_id(_Graph(), {}) == 7
+    assert _checkpoint_customer_id(_Broken(), {}) is None

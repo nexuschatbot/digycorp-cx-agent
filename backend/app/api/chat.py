@@ -9,8 +9,11 @@ event contract is exactly CLAUDE.md's:
     event: text_break  data: {}                           # rule 17: seal the bubble,
                                                           #   next tokens start a new
                                                           #   one. Deletes NOTHING.
+    event: cascade_start data: {"briefs": N}              # specialists starting
+                                                          #   (multi-agent path only)
     event: closed      data: {}                           # rule 19: chat ended
-    event: done        data: {"lang": "en|ar"}            # stream complete
+    event: done        data: {"lang": "en|ar", "turn_id": N}  # stream complete
+
     event: error       data: {"message": "..."}           # graceful UI recovery
     ": ping"  heartbeat comment every ~15s on queue silence (clients ignore it)
 

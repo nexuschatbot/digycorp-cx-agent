@@ -507,13 +507,14 @@ def test_calling_the_write_and_writing_the_proposal_is_one_ask(patched, db):
 
 
 def test_a_move_to_a_different_slot_is_a_different_ask(patched, db):
-    """The subject includes the slot, so two moves are not silently merged."""
+    """The subject includes the slot, so two moves are not silently merged.
+    Both asks arrive in ONE round since 2026-09-04: a terminal ask settles the
+    step, so a second round would never be read."""
     patched(
-        [[_use("reschedule_booking", {"ref": "TD-1", "new_slot_id": 5})],
-         [_text('{"findings": {}, "proposals": '
-                '[{"action": "reschedule_booking", '
-                '"args": {"ref": "TD-1", "new_slot_id": 9}}]}')]],
+        [[_use("reschedule_booking", {"ref": "TD-1", "new_slot_id": 5}, uid="u1"),
+          _use("reschedule_booking", {"ref": "TD-1", "new_slot_id": 9}, uid="u2")]],
     )
+
     out = subagent.run_step(
         Step(brief="move it", agent="testdrive", index=0),
         {}, db=db, session_id="s1",
@@ -572,18 +573,23 @@ def test_a_write_the_card_proposes_is_read_as_the_proposal(monkeypatch):
     ])
     monkeypatch.setattr(subagent, "_client", lambda: client)
 
+    def _never(*a, **k):
+        raise AssertionError("an intercepted write must never reach dispatch")
+
+    monkeypatch.setattr("app.agent.tool_node._dispatch", _never)
+
     out = subagent.run_step(
         Step(brief="cancel booking TD-2026-0KXC", agent="testdrive", index=0),
         {}, db=None, session_id="s1",
     )
 
-    # It was NOT refused, and it was NOT executed — it was recorded as a request.
-    recorded = json.loads(client.calls[1]["messages"][2]["content"][0]["content"])
-    assert "error" not in recorded
-    assert recorded["requested"] == "cancel_booking"
-    assert "do not say it has been done" in recorded["detail"].lower()
+    # It was NOT refused, NOT executed, and — since 2026-09-04 — NOT followed
+    # by a summary round: the ask is the answer, and the scripted second
+    # response is never requested.
+    assert len(client.calls) == 1, f"took {len(client.calls)} rounds"
 
     assert out["_proposals"] == [
+
         {"action": "cancel_booking", "args": {"ref": "TD-2026-0KXC"},
          "agent": "testdrive"}
     ]
@@ -761,3 +767,208 @@ def test_the_held_slots_car_outranks_everything(patched, db, open_slot):
 
 def test_the_specialist_is_told_not_to_judge_numbers_or_ids():
     assert "Never judge a phone number" in subagent.PROPOSALS_INSTRUCTION
+
+
+# --------------------------------------------------------------------------- #
+# The ask is the answer (2026-09-04)
+#
+# Measured on the test VM over 28 live specialist steps: every testdrive step
+# paid a second round, because the settle gate is closed to any card that may
+# propose a write — and 6 of those steps had ALREADY asked, as a tool_use the
+# intercept reads. The round after it produced the same ask again or a JSON
+# summary of results Aisha receives in full as `_evidence`. A terminal ask
+# (booking, move, cancellation) now settles the step; a lone hold does not.
+# --------------------------------------------------------------------------- #
+def test_a_terminal_ask_settles_the_step_in_one_round(patched, db):
+    """create_booking as a tool_use: one round, and the hold the card requires
+    is still prepended — the same finaliser as the summary path."""
+    client = patched(
+        [[_use("create_booking", {"vehicle_id": 7, "slot_id": 1401})],
+         [_text('{"findings": {}, "note": "never requested"}')]],
+    )
+    out = subagent.run_step(
+        Step(brief="book it", agent="testdrive", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) == 1, f"took {len(client.calls)} rounds"
+    assert [p["action"] for p in out["_proposals"]] == ["hold_slot", "create_booking"]
+    assert out["_proposals"][1]["args"] == {"vehicle_id": 7, "slot_id": 1401}
+
+
+def test_a_lone_hold_keeps_its_next_round(patched, db):
+    """The prose walks the model through "lock the slot, then reschedule". A
+    hold on its own may be the first half of that, so the step keeps the round
+    in which the second half arrives."""
+    client = patched(
+        [[_use("hold_slot", {"slot_id": 530})],
+         [_text('{"findings": {}, "proposals": [{"action": "reschedule_booking", '
+                '"args": {"ref": "TD-2026-0KXC", "new_slot_id": 530}}]}')]],
+    )
+    out = subagent.run_step(
+        Step(brief="move it to 530", agent="testdrive", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) == 2, f"took {len(client.calls)} rounds"
+    assert [p["action"] for p in out["_proposals"]] == ["hold_slot", "reschedule_booking"]
+
+
+def test_a_terminal_ask_beside_a_read_keeps_the_read_s_evidence(patched, db):
+    """A round that both looked something up and asked for the write settles
+    with the lookup's result in `_evidence` and its ids harvested — nothing
+    the dropped summary round would have added."""
+    def _dispatch(db_, sid, name, inp, *a, **k):
+        return {"bookings": [{"booking_ref": "TD-2026-0KXC", "slot_id": 41}]}
+
+    client = patched(
+        [[_use("get_booking", {"ref": "TD-2026-0KXC"}, uid="u1"),
+          _use("cancel_booking", {"ref": "TD-2026-0KXC"}, uid="u2")],
+         [_text('{"findings": {}}')]],
+        dispatch=_dispatch,
+    )
+    out = subagent.run_step(
+        Step(brief="cancel TD-2026-0KXC", agent="testdrive", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) == 1
+    assert out["_evidence"][0]["tool"] == "get_booking"
+    assert out["booking_ref"] == "TD-2026-0KXC"
+    assert out["_proposals"] == [
+        {"action": "cancel_booking", "args": {"ref": "TD-2026-0KXC"}, "agent": "testdrive"}
+    ]
+
+
+def test_a_card_that_proposes_nothing_is_unaffected_by_the_ask_path(patched, db):
+    """Sales reaches for cancel_booking: still refused at dispatch, still the
+    summary round, still no proposal. The ask path is scoped to the intercept."""
+    from app.agent import tool_node
+
+    client = patched(
+        [[_use("cancel_booking", {"ref": "TD-2026-0KXC"})],
+         [_text('{"findings": {}}')]],
+        dispatch=tool_node._dispatch,
+    )
+    out = subagent.run_step(
+        Step(brief="cancel it", agent="sales", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) == 2
+    assert "_proposals" not in out
+
+
+def test_lock_slot_is_read_as_the_hold_the_card_proposes(patched, db):
+    """The testdrive prose says "lock the slot with lock_slot"; the card
+    proposes `hold_slot`. One action, two spellings — the tool's spelling used
+    to miss the intercept and be refused as an unbound tool."""
+    client = patched(
+        [[_use("lock_slot", {"slot_id": 530})],
+         [_text('{"findings": {}}')]],
+    )
+    out = subagent.run_step(
+        Step(brief="hold 530", agent="testdrive", index=0),
+        {}, db=db, session_id="s1",
+    )
+    # A lone hold is not terminal, so the summary round still runs — and the
+    # request it recorded is a hold, not a refusal.
+    assert len(client.calls) == 2
+    recorded = json.loads(client.calls[1]["messages"][2]["content"][0]["content"])
+    assert recorded.get("requested") == "lock_slot" and "error" not in recorded
+    assert out["_proposals"] == [
+        {"action": "hold_slot", "args": {"slot_id": 530}, "agent": "testdrive"}
+    ]
+
+
+def test_the_specialist_get_booking_never_asks_it_to_identify():
+    """The shared schema opens with "FIRST identify the customer with
+    identify_by_reference_or_mobile" — a tool no specialist holds. Seen live: a
+    testdrive step obeyed it, was refused as unbound, and spent the round. The
+    specialist surface carries its own description; Aisha's is untouched."""
+    from app.tools import REGISTRY
+
+    spec = {s["name"]: s for s in subagent._schemas_for("testdrive")}["get_booking"]
+    assert "identify_by_reference_or_mobile" not in spec["description"]
+    assert "already been identified" in spec["description"].lower()
+
+    assert spec["input_schema"] == REGISTRY["get_booking"]["schema"]["input_schema"]
+    assert "identify_by_reference_or_mobile" in REGISTRY["get_booking"]["schema"]["description"]
+
+
+def test_the_testdrive_card_says_identity_is_not_its_step():
+    """The ported MANAGING_EXISTING prose still says "identify them with
+    identify_by_reference_or_mobile" — rule zero keeps the port byte-identical
+    — so the card carries an AUTHORED section that countermands it, the same
+    shape as THE_VISIT_DETAILS_ARE_IN_THE_BRIEF. The tool stays a tracked
+    orphan; what changes is that the model is told whose step it is."""
+    from app.agents import loader
+
+    sections = loader.sections("testdrive")
+    assert "IDENTITY_IS_NOT_YOURS" in sections
+    own = sections["IDENTITY_IS_NOT_YOURS"]
+    assert "never try to identify them yourself" in own.lower()
+    assert "get_booking" in own
+    # Named nowhere in the authored prose — the differential reads any mention
+    # of an unbound tool as an instruction to call it, whatever the verb.
+    assert "identify_by_reference_or_mobile" not in own
+
+    assert loader.origins("testdrive")["IDENTITY_IS_NOT_YOURS"] == "testdrive"
+    # And it is in the body the specialist is actually given.
+    assert own.strip() in loader.body_for("testdrive")
+
+
+
+# --------------------------------------------------------------------------- #
+# A resolver answers nothing (2026-09-04)
+# --------------------------------------------------------------------------- #
+def test_a_step_that_has_only_resolved_ids_keeps_its_next_round(patched, db):
+    """"Which colours, and is it in stock at Al Quoz": the specialist called
+    get_variants, harvested both of its entities, and the gate settled it —
+    the stock check never ran and the customer was told it "didn't return".
+    A resolver call answers nothing; the round after it is where the answer
+    comes from."""
+    def _dispatch(db_, sid, name, inp, *a, **k):
+        if name == "get_variants":
+            return {"vehicle_id": 3, "variants": [{"variant_id": 6, "name": "Luxury Plus"}]}
+        return {"available": True, "colours": ["Sand"]}
+
+    client = patched(
+        [[_use("get_variants", {"vehicle_id": 3})],
+         [_use("check_stock", {"variant_id": 6, "showroom_id": 1}, uid="u2")],
+         [_text('{"findings": {"in_stock": true}}')]],
+        dispatch=_dispatch,
+    )
+    out = subagent.run_step(
+        Step(brief="which colours, and is it in stock at Al Quoz", agent="sales", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) >= 2, "the resolver round must not settle the step"
+    assert [e["tool"] for e in out["_evidence"]] == ["get_variants", "check_stock"]
+
+
+def test_a_resolver_beside_a_real_read_still_settles(patched, db):
+    """One round that both resolved the id and answered the question is done."""
+    def _dispatch(db_, sid, name, inp, *a, **k):
+        if name == "get_variants":
+            return {"vehicle_id": 3, "variants": [{"variant_id": 6, "name": "Luxury Plus"}]}
+        return {"available": True}
+
+    client = patched(
+        [[_use("get_variants", {"vehicle_id": 3}, uid="u1"),
+          _use("check_stock", {"variant_id": 6}, uid="u2")],
+         [_text('{"findings": {}}')]],
+        dispatch=_dispatch,
+    )
+    subagent.run_step(Step(brief="in stock?", agent="sales", index=0), {}, db=db, session_id="s1")
+    assert len(client.calls) == 1
+
+
+def test_the_testdrive_card_says_a_named_slot_needs_no_lookup():
+    """A move brief carrying the reference and the new slot id took three
+    rounds and ten seconds re-reading both. Authored, not edited into the
+    ported RESCHEDULING sequence."""
+    from app.agents import loader
+
+    own = loader.sections("testdrive")["THE_SLOT_IN_THE_BRIEF_IS_THE_DECISION"]
+    flat = " ".join(own.replace("\\\n", " ").split())
+    assert "without calling get_booking or get_available_slots first" in flat
+
+    assert loader.origins("testdrive")["THE_SLOT_IN_THE_BRIEF_IS_THE_DECISION"] == "testdrive"
+    assert own.strip() in loader.body_for("testdrive")

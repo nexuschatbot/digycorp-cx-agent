@@ -1035,8 +1035,12 @@ def _warm_labels(monkeypatch, multi_agent: bool) -> list[str]:
 def test_prewarm_on_the_multiagent_path_warms_only_readable_prefixes(monkeypatch):
     labels = _warm_labels(monkeypatch, multi_agent=True)
     assert "aisha:unrouted" in labels, "the un-routed first turn is live and must be warm"
-    assert "aisha:testdrive" in labels and "aisha:bookingmanagement" in labels
+    # ONE Aisha prefix since 2026-09-04: the journey no longer changes her body
+    # on this path, so warming a per-journey label would write the same key
+    # again and pay for it (one boot on the VM measured ~$0.55-0.90 of writes).
+    assert "aisha:testdrive" not in labels and "aisha:bookingmanagement" not in labels
     assert {"subagent:sales", "subagent:testdrive", "subagent:finance"} <= set(labels)
+
     for unreadable in ("full", "testdrive", "bookingmanagement"):
         assert unreadable not in labels, (
             f"{unreadable!r} is a single-agent prefix no multi-agent call can read"
@@ -1071,3 +1075,248 @@ def test_usage_is_emitted_on_the_stream_and_recorded_per_turn():
     assert 'tokens_in=' in rsrc and 'tokens_out=' in rsrc and 'cache_hits=' in rsrc, (
         "accumulated but not passed to record() is the defect this replaces"
     )
+
+
+# --------------------------------------------------------------------------- #
+# cascade_start — the customer is told the specialists are running (2026-09-04)
+# --------------------------------------------------------------------------- #
+def test_the_node_announces_the_cascade_before_running_it(monkeypatch):
+    """Measured on the test VM: 24 of 33 cascades began with no opening line,
+    so the screen showed an empty bubble for the whole 10-30s wait. The node
+    is the one place that KNOWS a cascade is starting; it says so on the
+    custom stream BEFORE turn.execute, and carries a count, never a brief."""
+    from app.orchestrator import turn
+
+    seen: list[dict] = []
+    order: list[str] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    monkeypatch.setattr(graph, "_known_entities", lambda state, cfg=None: set())
+
+    def _fake(*a, **k):
+        order.append("execute")
+        return _run.TurnResult(steps=[])
+
+    monkeypatch.setattr(turn, "execute", _fake)
+    state = {"messages": [_assistant(_briefs("what is the warranty", tid="b"))],
+             "session_facts": {}}
+    graph._orchestrator_node(state, _config())
+
+    starts = [c for c in seen if c.get("type") == "cascade_start"]
+    assert starts == [{"type": "cascade_start", "briefs": 1}]
+    assert "warranty" not in json.dumps(starts), "a brief must never ride on it"
+    # Emitted before the specialists run, or it is not a "starting" signal.
+    assert seen.index(starts[0]) == 0 and order == ["execute"]
+
+
+def test_a_refused_cascade_announces_nothing(monkeypatch):
+    """The ceiling refuses before anything is dispatched — nothing is starting."""
+    from app import config as _config_mod
+
+    seen: list[dict] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    monkeypatch.setattr(_config_mod, "MAX_CASCADES_PER_TURN", 1)
+    state = {"messages": [_assistant(_briefs("x", tid="b"))], "session_facts": {},
+             "cascades": 1}
+    graph._orchestrator_node(state, _config())
+    assert not [c for c in seen if c.get("type") == "cascade_start"]
+
+
+def test_the_runner_forwards_cascade_start_as_an_sse_event():
+    """runner.run_turn is the only reader of the custom stream; a chunk it does
+    not forward is a chunk the UI never sees."""
+    import inspect
+
+    from app.agent import runner
+
+    src = inspect.getsource(runner.run_turn)
+    assert 'kind == "cascade_start"' in src
+    assert 'on_event("cascade_start"' in src
+
+
+# --------------------------------------------------------------------------- #
+# Fixes from the 24-turn browser run (2026-09-04)
+# --------------------------------------------------------------------------- #
+def test_the_journey_never_changes_aishas_body_on_the_multi_agent_path():
+    """"Can we move the test drive" flipped the legacy router to
+    bookingmanagement and, with it, Aisha's whole stable prefix: one live turn
+    wrote 36,478 tokens with cache_read=0. On this path she holds no journey
+    tools, so the journey is a record and nothing more."""
+    from app.agent.prompt import system_prompt
+
+    unrouted = system_prompt(multi_agent=True)
+    assert system_prompt(agent="testdrive", multi_agent=True) == unrouted
+    assert system_prompt(agent="bookingmanagement", multi_agent=True) == unrouted
+    # The single-agent path still binds a journey body, exactly as before.
+    assert system_prompt(agent="bookingmanagement") != system_prompt(agent="testdrive")
+
+
+def test_a_trim_drops_enough_to_be_rare():
+    """Every jump re-writes the whole kept window, so the price of trimming is
+    (jumps x TRIM_LOW). The ceiling is high enough that a jump drops several
+    dozen messages, not sixteen — four rebuilds in a 24-turn browser run."""
+    assert graph.TRIM_KEEP - graph.TRIM_LOW >= 48
+
+
+def _writes_result(action: str, ref: str):
+    from app.orchestrator import write
+
+    return write.WriteResult(action=action, status="executed",
+                             result={"booking": {"booking_ref": ref, "status": "cancelled"}})
+
+
+def test_a_cancellation_greys_the_card_instead_of_drawing_one(monkeypatch):
+    """The `booking` event makes the UI fetch and redraw the booking, and a
+    cancelled booking is not returned — so the fallback pill read "Booked
+    TD-…" directly under "your booking has been cancelled". A cancel is a
+    tool_event, which the UI supersedes the old card on, like tool_node's."""
+    from app.orchestrator import turn, write
+
+    seen: list[dict] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    monkeypatch.setattr(turn, "execute", lambda *a, **k: _run.TurnResult(
+        steps=[_step_with([{"action": "cancel_booking", "args": {"ref": "TD-2026-CMGG"},
+                            "agent": "testdrive"}])]))
+    monkeypatch.setattr(write, "execute_all",
+                        lambda *a, **k: [_writes_result("cancel_booking", "TD-2026-CMGG")])
+    _patch_state(monkeypatch, {"cancel_booking"})
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    state = {"messages": [_assistant(_briefs("cancel it", tid="b"))], "session_facts": {}}
+    graph._orchestrator_node(state, {"configurable": {"db": db, "session_id": "s1",
+                                                      "deadline_monotonic": None}})
+    kinds = [(c.get("type"), c.get("tool")) for c in seen]
+    assert ("tool_event", "cancel_booking") in kinds
+    assert not [c for c in seen if c.get("type") == "booking"]
+    event = next(c for c in seen if c.get("tool") == "cancel_booking")
+    assert event["input"] == {"ref": "TD-2026-CMGG"}
+    assert event["output"]["booking"]["booking_ref"] == "TD-2026-CMGG"
+
+
+def test_a_created_booking_still_draws_its_card(monkeypatch):
+    from app.orchestrator import turn, write
+
+    seen: list[dict] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    monkeypatch.setattr(turn, "execute", lambda *a, **k: _run.TurnResult(
+        steps=[_step_with([{"action": "create_booking", "args": {}, "agent": "testdrive"}])]))
+    monkeypatch.setattr(write, "execute_all",
+                        lambda *a, **k: [_writes_result("create_booking", "TD-2026-0042")])
+    _patch_state(monkeypatch, {"create_booking"})
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    state = {"messages": [_assistant(_briefs("book it", tid="b"))], "session_facts": {}}
+    graph._orchestrator_node(state, {"configurable": {"db": db, "session_id": "s1",
+                                                      "deadline_monotonic": None}})
+    assert {"type": "booking", "booking_ref": "TD-2026-0042"} in seen
+
+
+def test_what_aisha_already_said_this_turn_rides_with_the_findings(monkeypatch):
+    """She asked "May we send you WhatsApp reminders?" before the hold cascade
+    and again after it, with the rule against it 10k tokens above. The sealed
+    sentences now sit in the tool_result she composes from."""
+    from app.orchestrator import turn
+
+    monkeypatch.setattr(graph, "_safe_writer", lambda: None)
+    monkeypatch.setattr(graph, "_known_entities", lambda state, cfg=None: set())
+    monkeypatch.setattr(turn, "execute", lambda *a, **k: _run.TurnResult(steps=[]))
+    state = {
+        "messages": [
+            {"role": "user", "content": "yes go ahead"},
+            _assistant({"type": "text", "text": "Just remember your licence. May we send you WhatsApp reminders?"},
+                       _tool_use("acknowledge_licence_reminder", "t1")),
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "{}"}]},
+            _assistant({"type": "text", "text": "Holding that slot for you now."},
+                       _briefs("lock slot 516", tid="b")),
+        ],
+        "session_facts": {},
+    }
+    body = _result_for(graph._orchestrator_node(state, _config()), "b")
+    assert body["already_said"] == [
+        "Just remember your licence. May we send you WhatsApp reminders?",
+        "Holding that slot for you now.",
+    ]
+    assert "Do not write them again" in body["already_said_note"]
+    # Only THIS turn: the previous turn's words are not "already said" now.
+    earlier = {"messages": [
+        _assistant({"type": "text", "text": "from last turn"}),
+        {"role": "user", "content": "yes"},
+        _assistant(_briefs("x", tid="b")),
+    ], "session_facts": {}}
+    assert "already_said" not in _result_for(graph._orchestrator_node(earlier, _config()), "b")
+
+
+def test_a_car_described_from_the_prefetch_gets_its_card(db, monkeypatch):
+    """"What 7-seaters do you have" was answered from the catalogue passages
+    in one generation and the customer got a paragraph with no card. The
+    passage carried the car's id; the card is the get_vehicle_details result
+    a tool call would have drawn, emitted the same way."""
+    from app.retrieval import vehicle_mentions
+
+    vehicle_mentions.reset()
+    seen: list[dict] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    from sqlalchemy import select
+
+    from app.models import VehicleModel
+
+    car = db.scalars(select(VehicleModel).where(VehicleModel.seats_max >= 7)).first()
+    vehicles = [{"vehicle_id": car.id, "name": car.name}]
+    assistant = _assistant({"type": "text", "text": f"The one to look at is the {car.name}, a true seven-seater."})
+    drawn = graph._draw_prefetched_cards(assistant, vehicles, {"db": db}, "s1")
+    assert drawn == 1
+    event = seen[0]
+    assert event["type"] == "tool_event" and event["tool"] == "get_vehicle_details"
+    assert event["output"]["vehicle"]["vehicle_id"] == car.id
+
+
+def test_no_card_when_the_generation_drew_its_own_or_delegated(db, monkeypatch):
+    seen: list[dict] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    vehicles = [{"vehicle_id": 1, "name": "Jetour X70 FL Plus"}]
+    delegated = _assistant({"type": "text", "text": "Let me check the Jetour X70 FL Plus."},
+                           _briefs("x", tid="b"))
+    own_lookup = _assistant({"type": "text", "text": "The Jetour X70 FL Plus."},
+                            _tool_use("get_vehicle_details", "t1"))
+    unnamed = _assistant({"type": "text", "text": "We have several family SUVs."})
+    for a in (delegated, own_lookup, unnamed):
+        assert graph._draw_prefetched_cards(a, vehicles, {"db": db}, "s1") == 0
+    assert seen == []
+
+
+def test_the_tool_node_hands_back_what_she_already_said(db, monkeypatch):
+    """The repeat was seen AFTER a plain tool round, not only after a cascade:
+    "…May we send you WhatsApp reminders?" sealed, acknowledge_licence_reminder
+    ran, and the next generation asked it again. The tool node's result now
+    carries the sealed sentences behind the tool_result blocks — multi-agent
+    path only, and only when there is something to repeat."""
+    from app.agent import tool_node
+    from app.orchestrator import turn
+
+    monkeypatch.setattr(tool_node, "_dispatch", lambda *a, **k: {"ok": True})
+    monkeypatch.setattr(turn, "enabled", lambda *a, **k: True)
+    state = {
+        "messages": [
+            {"role": "user", "content": "yes go ahead"},
+            _assistant({"type": "text", "text": "Just remember your licence. May we send you WhatsApp reminders?"},
+                       _tool_use("acknowledge_licence_reminder", "t1")),
+        ],
+        "session_facts": {},
+    }
+    out = tool_node.tool_node(state, {"configurable": {"db": db, "session_id": "s1"}})
+    content = out["messages"][0]["content"]
+    assert content[0]["type"] == "tool_result"
+    trailer = content[-1]
+    assert trailer["type"] == "text"
+    assert "<<<ALREADY SAID THIS TURN>>>" in trailer["text"]
+    assert "May we send you WhatsApp reminders?" in trailer["text"]
+    assert "Do not write them again" in trailer["text"]
+
+    # Nothing sealed: nothing appended.
+    silent = {"messages": [{"role": "user", "content": "hi"},
+                           _assistant(_tool_use("acknowledge_licence_reminder", "t2"))],
+              "session_facts": {}}
+    out = tool_node.tool_node(silent, {"configurable": {"db": db, "session_id": "s1"}})
+    assert all(b["type"] == "tool_result" for b in out["messages"][0]["content"])
+
+    # Single-agent path: byte-stable, never a trailer.
+    monkeypatch.setattr(turn, "enabled", lambda *a, **k: False)
+    out = tool_node.tool_node(state, {"configurable": {"db": db, "session_id": "s1"}})
+    assert all(b["type"] == "tool_result" for b in out["messages"][0]["content"])

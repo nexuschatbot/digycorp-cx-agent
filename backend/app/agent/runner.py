@@ -67,7 +67,25 @@ _VOICE_FAILED_NOTE = (
 )
 
 
-def _attach_voice_customer(db, graph, config, session_id: str) -> None:
+# "Read it yourself" — the default for the two backfills below, so every
+# existing caller (and test) that passes four arguments still gets a read.
+_UNREAD = object()
+
+
+def _checkpoint_customer_id(graph, config) -> int | None:
+    """The session's identified customer, off the checkpoint. None on any
+    failure — a backfill must never cost a reply, and neither may this."""
+    try:
+        snapshot = graph.get_state(config)
+        state = snapshot.values if snapshot else {}
+        return state.get("customer_id") if isinstance(state, dict) else None
+    except Exception:  # noqa: BLE001
+        log.warning("could not read customer_id from checkpoint", exc_info=True)
+        return None
+
+
+def _attach_voice_customer(db, graph, config, session_id: str, *, customer_id=_UNREAD) -> None:
+
     """Stamp this session's identified customer onto its voice notes (rule 12).
 
     Identification happens mid-conversation, usually several turns AFTER the
@@ -82,11 +100,11 @@ def _attach_voice_customer(db, graph, config, session_id: str) -> None:
     delete_for_customer covers the miss anyway — it matches on session too.
     """
     try:
-        snapshot = graph.get_state(config)
-        state = snapshot.values if snapshot else {}
-        customer_id = state.get("customer_id") if isinstance(state, dict) else None
+        if customer_id is _UNREAD:
+            customer_id = _checkpoint_customer_id(graph, config)
         if customer_id:
             voice_service.attach_customer(
+
                 db, session_id=session_id, customer_id=customer_id
             )
     except Exception:  # noqa: BLE001 — a backfill must never cost a reply
@@ -280,7 +298,8 @@ def _journey_agent(routing, previous_agent: str | None) -> str | None:
     return previous_agent
 
 
-def _attribute_session(db, graph, config, session_id: str) -> None:
+def _attribute_session(db, graph, config, session_id: str, *, customer_id=_UNREAD) -> None:
+
     """Stamp this session's identified customer onto its TRANSCRIPT (T4.6).
 
     THE EXACT COUNTERPART OF _attach_voice_customer ABOVE, deliberately written
@@ -301,12 +320,12 @@ def _attribute_session(db, graph, config, session_id: str) -> None:
     reason to lose it.
     """
     try:
-        snapshot = graph.get_state(config)
-        state = snapshot.values if snapshot else {}
-        customer_id = state.get("customer_id") if isinstance(state, dict) else None
+        if customer_id is _UNREAD:
+            customer_id = _checkpoint_customer_id(graph, config)
         if not customer_id:
             return
         from sqlalchemy import update
+
 
         from app.models import ConversationTurn as _CT
 
@@ -489,9 +508,18 @@ def run_turn(
             device_token=device_token,
             generate=generate,
         )
+        # WHERE A TURN'S TIME GOES OUTSIDE THE MODEL (2026-09-04). The journal
+        # has per-call model timings; nothing measured the rest. Cascade turns
+        # on the test VM carried a median 2.3s that no model call accounted
+        # for, and the only way to rank the suspects — checkpoint reads,
+        # graph build, transcript writes, the agent node's own DB reads and
+        # embedding — is to time them. One INFO line per turn, before `done`.
+        _stream_started = time.perf_counter()
+        _first_chunk_ms: int | None = None
         for chunk in graph.stream(
             {
                 "messages": [{"role": "user", "content": graph_message}],
+
                 "iterations": 0,
                 # Per-turn control, reset like `iterations` (rule 19): this is
                 # "did a close land on THIS turn", not "is this session over".
@@ -524,8 +552,11 @@ def run_turn(
             stream_mode="custom",
         ):
             kind = chunk.get("type")
+            if _first_chunk_ms is None:
+                _first_chunk_ms = int((time.perf_counter() - _stream_started) * 1000)
             if kind == "token":
                 assistant_chunks.append(chunk["text"])
+
                 on_event("token", {"text": chunk["text"]})
             elif kind == "tool_event":
                 # Recorded BEFORE the card dedupe below: a suppressed duplicate
@@ -627,7 +658,13 @@ def run_turn(
                 usage_totals["output"] += int(chunk.get("output") or 0)
                 usage_totals["cache_read"] += int(chunk.get("cache_read") or 0)
                 usage_totals["calls"] += 1
+            elif kind == "cascade_start":
+                # The specialists are about to run. Forwarded so the UI can say
+                # so instead of showing an empty bubble for the whole cascade —
+                # see graph._orchestrator_node. Count only, never brief text.
+                on_event("cascade_start", {"briefs": int(chunk.get("briefs") or 0)})
             elif kind == "cascade":
+
                 # Which specialist took which brief, how it was chosen, how long
                 # it took and whether it worked. Appended rather than assigned:
                 # a turn can run more than one cascade, and the routing view
@@ -674,10 +711,18 @@ def run_turn(
             cards=card_rows or None,
         )
         db.add(agent_turn)
+        _persist_started = time.perf_counter()
+        # ONE CHECKPOINT READ FOR BOTH BACKFILLS (2026-09-04). Each used to
+        # load the full checkpoint — every message and tool_result of the
+        # session — to read one integer, so a long conversation paid two
+        # multi-hundred-KB deserialisations after every answer, on the path
+        # between the last token and `done`.
+        identified = _checkpoint_customer_id(graph, config)
         # If this turn is where the session became identified, link the
         # recordings made before it to that customer, so "forget me" can
         # find them. No-op on every turn after the first that identifies.
-        _attach_voice_customer(db, graph, config, session_id)
+        _attach_voice_customer(db, graph, config, session_id, customer_id=identified)
+
         # THE SAME MOVE FOR TRANSCRIPTS (T4.6), and it belongs right here for
         # the same reason: a conversation opens anonymous and becomes
         # identified partway through, so the turns BEFORE that moment are the
@@ -685,8 +730,9 @@ def run_turn(
         # reach a transcript from a session no audited tool call ever touched —
         # the gap services/erasure.py named and could not close without a
         # schema change.
-        _attribute_session(db, graph, config, session_id)
+        _attribute_session(db, graph, config, session_id, customer_id=identified)
         db.commit()
+
         # `turn_id` is what read-aloud points at (2026-07-21). Read AFTER the
         # commit, because that is when the row has an id — and sent on `done`
         # rather than earlier because a turn only becomes readable once it is
@@ -724,7 +770,20 @@ def run_turn(
             router_latency_ms=router_ms,
             latency_ms=int((time.perf_counter() - turn_started) * 1000),
         )
+        _now = time.perf_counter()
+        log.info(
+            "turn timing session=%s setup=%dms first_chunk=%dms stream=%dms "
+            "persist=%dms total=%dms calls=%d",
+            session_id,
+            int((_stream_started - turn_started) * 1000),
+            _first_chunk_ms if _first_chunk_ms is not None else -1,
+            int((_persist_started - _stream_started) * 1000),
+            int((_now - _persist_started) * 1000),
+            int((_now - turn_started) * 1000),
+            usage_totals["calls"],
+        )
         on_event("done", {"lang": reply_lang, "turn_id": agent_turn.id})
+
         return TurnResult(
             status="done", reply=reply, lang=reply_lang,
             turn_id=agent_turn.id, closed=turn_closed,

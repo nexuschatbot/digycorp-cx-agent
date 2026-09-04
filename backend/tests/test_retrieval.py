@@ -378,3 +378,29 @@ def test_the_tool_is_not_bound_yet_and_that_is_deliberate(monkeypatch):
     from app.tools import TOOL_SCHEMAS
 
     assert "search_knowledge" not in {s["name"] for s in TOOL_SCHEMAS}
+
+
+@needs_model
+def test_a_two_topic_question_reaches_both_documents():
+    """The tester's exact words. Both policies live in ONE collection, so the
+    per-collection floor filled both knowledge slots with warranty.md and the
+    customer was told we publish no delivery time (reproduced live in a
+    browser, 2026-09-04). The floor now reserves a collection's best chunk
+    from each distinct DOCUMENT, drawn from a wider candidate pool."""
+    sources = [c.source for c, _ in index.search(
+        "What is the warranty and delivery information for the T2?", k=5)]
+    assert "warranty" in sources and "delivery" in sources, sources
+
+
+@needs_model
+def test_the_reserved_knowledge_slots_come_from_different_documents():
+    hits = index.search("What is the warranty and delivery information for the T2?", k=5)
+    knowledge = [c.source for c, _ in hits if c.collection == "knowledge"]
+    assert len(set(knowledge)) >= 2, knowledge
+
+
+def test_each_collection_offers_more_candidates_than_slots():
+    """Five candidates for five slots left the per-document floor nothing to
+    choose from: on that question the knowledge collection's top five were
+    five warranty chunks."""
+    assert index.CANDIDATES_PER_SLOT >= 4

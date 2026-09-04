@@ -367,11 +367,24 @@ def execute(
         snapshot = dict(result.entities)
         n = min(len(wave), width)
 
-        if n <= 1:
+        # A SINGLE STEP IS PUMPED TOO (2026-09-04). This branch used to run a
+        # one-step wave inline and call on_tick only after it returned — so
+        # every tool_event the specialist emitted sat on turn.execute's queue
+        # until the whole step, both rounds, had finished. Measured on the
+        # test VM: 24 of 26 cascade turns were single-step, and their cards
+        # reached the screen 3-8s after the tool that drew them had returned.
+        # The worker path below already pumps between polls; a thread-safe
+        # runner takes it for one step as well. A runner that is NOT
+        # thread-safe keeps the inline path, for the reason `width` gives.
+        pump = on_tick is not None and getattr(runner, "thread_safe", False)
+
+        if n <= 1 and not pump:
             done = [_run_one(step, snapshot) for step in wave]
         else:
-            log.info("wave of %d running %d at a time", len(wave), n)
-            with ThreadPoolExecutor(max_workers=n, thread_name_prefix="cascade") as pool:
+            if n > 1:
+                log.info("wave of %d running %d at a time", len(wave), n)
+            with ThreadPoolExecutor(max_workers=max(n, 1), thread_name_prefix="cascade") as pool:
+
                 futures = [pool.submit(_run_one, step, snapshot) for step in wave]
                 # PUMPED FROM THIS THREAD, and that is the point. Sub-agent
                 # tool_events draw the customer's cards; the parent stream
