@@ -464,6 +464,19 @@ const TOOL_LABELS: Record<string, string> = {
   create_booking: 'Confirming your booking…',
 }
 
+// THE TWO PHASES A CUSTOMER CAN ACTUALLY TELL APART (2026-09-04). Measured on
+// the test VM: a specialist cascade takes 12-30s, and in 24 of 33 cascades
+// Aisha emitted no opening line first — so the customer watched an empty
+// bubble with no label for the whole wait, which is indistinguishable from a
+// hang. `WORKING_LABEL` goes up the instant a message is sent (every model
+// call has a ~2s floor before its first token); `SPECIALIST_LABEL` replaces it
+// on the backend's cascade_start event and stays until the first token of the
+// composed answer. Both are chrome, so they follow the app's English chrome
+// (see App.tsx) rather than the conversation's language.
+const WORKING_LABEL = 'Working…'
+const SPECIALIST_LABEL = 'Checking with a specialist…'
+
+
 function langOf(text: string): Lang {
   return isRtl(text) ? 'ar' : 'en'
 }
@@ -1178,9 +1191,12 @@ export function useChat(): UseChat {
       { id: liveId, kind: 'text', role: 'agent', text: '', streaming: true, lang: 'en' },
     ])
     setStreaming(true)
-    setWorking(null)
+    // Up from the first instant, not from the first tool_event: the ~2s before
+    // any first token used to show nothing but an empty bubble.
+    setWorking(WORKING_LABEL)
 
     const patchAgent = (fn: (m: TextMessage) => TextMessage) => {
+
       const target = liveId
       setMessages((prev) =>
         prev.map((m) => (m.id === target && m.kind === 'text' ? fn(m) : m)),
@@ -1366,8 +1382,15 @@ export function useChat(): UseChat {
           queueRow(buildSlots(extractSlotChips(e.output), turnDirRef.current), true)
           return
         }
-        setWorking(TOOL_LABELS[e.tool] ?? 'Working…')
+        // A specialist's own lookups keep the specialist label: the customer
+        // was told who is working, and a generic label mid-cascade reads as
+        // the cascade having ended.
+        setWorking(TOOL_LABELS[e.tool] ?? (e.agent ? SPECIALIST_LABEL : WORKING_LABEL))
       },
+      onCascadeStart: () => {
+        setWorking(SPECIALIST_LABEL)
+      },
+
       // The booking event is the dependable signal that a booking landed and
       // carries the TD ref. It drops a glanceable receipt into the thread
       // (the agent's prose is the warm confirmation — different job).
@@ -1410,8 +1433,9 @@ export function useChat(): UseChat {
         // A text_break means "that bubble is done and there is more coming",
         // which is exactly when the indicator should come back.
         breakBubble()
-        setWorking('Working…')
+        setWorking(WORKING_LABEL)
       },
+
       // Rule 19a: the agent said goodbye and closed the chat server-side.
       // No line is appended — its farewell is the last bubble already, in
       // the customer's own language. This also CANCELS the idle timer, so

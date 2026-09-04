@@ -627,7 +627,13 @@ def run_turn(
                 usage_totals["output"] += int(chunk.get("output") or 0)
                 usage_totals["cache_read"] += int(chunk.get("cache_read") or 0)
                 usage_totals["calls"] += 1
+            elif kind == "cascade_start":
+                # The specialists are about to run. Forwarded so the UI can say
+                # so instead of showing an empty bubble for the whole cascade —
+                # see graph._orchestrator_node. Count only, never brief text.
+                on_event("cascade_start", {"briefs": int(chunk.get("briefs") or 0)})
             elif kind == "cascade":
+
                 # Which specialist took which brief, how it was chosen, how long
                 # it took and whether it worked. Appended rather than assigned:
                 # a turn can run more than one cascade, and the routing view

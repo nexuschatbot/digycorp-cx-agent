@@ -21,7 +21,18 @@ export interface ToolEvent {
   tool: string
   input: unknown
   output: unknown
+  /** Present only when a SPECIALIST made the call (multi-agent path); absent
+   *  for Aisha's own tools. The backend stamps it, the UI never infers it. */
+  agent?: string
 }
+/** The specialists are starting on this turn. Carries a count, never the
+ *  briefs themselves. Multi-agent path only; a single-agent turn never sends
+ *  it. Fired AFTER any opening line and its text_break, so the label it sets
+ *  is not overwritten by the break. */
+export interface CascadeStartEvent {
+  briefs: number
+}
+
 export interface BookingEvent {
   booking_ref: string
 }
@@ -56,7 +67,9 @@ export interface ErrorEvent {
 export interface StreamHandlers {
   onToken?: (e: TokenEvent) => void
   onToolEvent?: (e: ToolEvent) => void
+  onCascadeStart?: (e: CascadeStartEvent) => void
   onBooking?: (e: BookingEvent) => void
+
   onTextBreak?: (e: TextBreakEvent) => void
   onClosed?: (e: ClosedEvent) => void
   onDone?: (e: DoneEvent) => void
@@ -515,6 +528,10 @@ export async function streamChat(
         case 'tool_event':
           handlers.onToolEvent?.(data as ToolEvent)
           break
+        case 'cascade_start':
+          handlers.onCascadeStart?.(data as CascadeStartEvent)
+          break
+
         case 'booking':
           handlers.onBooking?.(data as BookingEvent)
           break

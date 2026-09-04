@@ -2264,7 +2264,23 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
             as_dict = {
                 k: v for k, v in dataclasses.asdict(prof).items() if v not in (None, "", [])
             }
+            # THE CUSTOMER IS TOLD THE SPECIALISTS ARE RUNNING (2026-09-04).
+            # Measured over 33 cascades on the test VM: Aisha emitted no opening
+            # line before her briefs in 24 of them, so the screen showed an
+            # empty bubble for the whole 10-30s cascade — and the UI's own
+            # "working" label only appears on a tool_event, which on this path
+            # arrives seconds later or (for the curated card tools) never.
+            # This is the one moment the backend KNOWS a cascade is starting,
+            # and it costs nothing to say so. Telemetry-shaped, like the
+            # `cascade` chunk below: it carries a count, never a brief.
+            try:
+                _w0 = _safe_writer()
+                if _w0:
+                    _w0({"type": "cascade_start", "briefs": len(briefs)})
+            except Exception:  # noqa: BLE001 — a status hint never breaks a turn
+                log.debug("could not forward cascade_start", exc_info=True)
             result = _turn.execute(
+
                 briefs,
                 subagent.make_runner(
                     cfg["db"], session_id,

@@ -1071,3 +1071,59 @@ def test_usage_is_emitted_on_the_stream_and_recorded_per_turn():
     assert 'tokens_in=' in rsrc and 'tokens_out=' in rsrc and 'cache_hits=' in rsrc, (
         "accumulated but not passed to record() is the defect this replaces"
     )
+
+
+# --------------------------------------------------------------------------- #
+# cascade_start — the customer is told the specialists are running (2026-09-04)
+# --------------------------------------------------------------------------- #
+def test_the_node_announces_the_cascade_before_running_it(monkeypatch):
+    """Measured on the test VM: 24 of 33 cascades began with no opening line,
+    so the screen showed an empty bubble for the whole 10-30s wait. The node
+    is the one place that KNOWS a cascade is starting; it says so on the
+    custom stream BEFORE turn.execute, and carries a count, never a brief."""
+    from app.orchestrator import turn
+
+    seen: list[dict] = []
+    order: list[str] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    monkeypatch.setattr(graph, "_known_entities", lambda state, cfg=None: set())
+
+    def _fake(*a, **k):
+        order.append("execute")
+        return _run.TurnResult(steps=[])
+
+    monkeypatch.setattr(turn, "execute", _fake)
+    state = {"messages": [_assistant(_briefs("what is the warranty", tid="b"))],
+             "session_facts": {}}
+    graph._orchestrator_node(state, _config())
+
+    starts = [c for c in seen if c.get("type") == "cascade_start"]
+    assert starts == [{"type": "cascade_start", "briefs": 1}]
+    assert "warranty" not in json.dumps(starts), "a brief must never ride on it"
+    # Emitted before the specialists run, or it is not a "starting" signal.
+    assert seen.index(starts[0]) == 0 and order == ["execute"]
+
+
+def test_a_refused_cascade_announces_nothing(monkeypatch):
+    """The ceiling refuses before anything is dispatched — nothing is starting."""
+    from app import config as _config_mod
+
+    seen: list[dict] = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: seen.append)
+    monkeypatch.setattr(_config_mod, "MAX_CASCADES_PER_TURN", 1)
+    state = {"messages": [_assistant(_briefs("x", tid="b"))], "session_facts": {},
+             "cascades": 1}
+    graph._orchestrator_node(state, _config())
+    assert not [c for c in seen if c.get("type") == "cascade_start"]
+
+
+def test_the_runner_forwards_cascade_start_as_an_sse_event():
+    """runner.run_turn is the only reader of the custom stream; a chunk it does
+    not forward is a chunk the UI never sees."""
+    import inspect
+
+    from app.agent import runner
+
+    src = inspect.getsource(runner.run_turn)
+    assert 'kind == "cascade_start"' in src
+    assert 'on_event("cascade_start"' in src
