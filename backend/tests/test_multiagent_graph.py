@@ -585,6 +585,67 @@ def test_the_reference_surfaces_from_the_nested_booking_result(monkeypatch):
     assert {"type": "booking", "booking_ref": "TD-2026-0002"} in events
 
 
+def _events_for(monkeypatch, action, result):
+    """Run one successful proposal through _execute_proposals, return the
+    events it wrote."""
+    from app.orchestrator import write
+
+    monkeypatch.setattr(
+        write, "execute_all",
+        lambda db, sid, proposals, **kw: [
+            write.WriteResult(action=action, status="executed", result=result)
+        ],
+    )
+    _patch_state(monkeypatch, {action})
+    events = []
+    monkeypatch.setattr(graph, "_safe_writer", lambda: (lambda p: events.append(p)))
+    db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+    graph._execute_proposals(
+        _run.TurnResult(steps=[_step_with([{"action": action, "args": {}}])]),
+        {}, {"db": db, "session_id": "s1"},
+    )
+    return events
+
+
+def test_a_booking_write_reports_itself_as_a_tool_event(monkeypatch):
+    """THE CARD MUST BE WRITTEN DOWN, not just drawn (browser run 2026-09-04).
+
+    runner._card_anchor reads tool_event chunks and NOTHING else, so a create
+    that announced itself only through the `booking` event drew a card the
+    transcript never recorded — ConversationTurn.cards was null on the very
+    turn that said "you're all set, your reference is TD-…". The card lived in
+    the browser and nowhere else, and the first rebuild of the thread (a
+    reload, or a voice call ending) redrew the conversation without it.
+
+    Asserted per tool because the three differ in what ELSE they emit, and
+    getting that wrong draws a card twice or draws a cancelled one.
+    """
+    booking = {"created": True, "booking": {"booking_ref": "TD-2026-0003"}}
+
+    created = _events_for(monkeypatch, "create_booking", booking)
+    assert {"type": "tool_event", "tool": "create_booking",
+            "input": {"ref": "TD-2026-0003"}, "output": booking} in created
+    # A create draws through the `booking` event: the UI has no create_booking
+    # tool_event handler, so without this there is no card on screen at all.
+    assert {"type": "booking", "booking_ref": "TD-2026-0003"} in created
+
+    moved = _events_for(monkeypatch, "reschedule_booking", booking)
+    assert {"type": "tool_event", "tool": "reschedule_booking",
+            "input": {"ref": "TD-2026-0003"}, "output": booking} in moved
+    # NO `booking` event: the UI draws the moved card from the tool_event above
+    # (and retires the old one in the same pass), so emitting both would draw
+    # the new card twice.
+    assert not [e for e in moved if e.get("type") == "booking"]
+
+    cancelled = _events_for(monkeypatch, "cancel_booking", booking)
+    assert {"type": "tool_event", "tool": "cancel_booking",
+            "input": {"ref": "TD-2026-0003"}, "output": booking} in cancelled
+    # A cancellation greys the existing card and draws none: the booking is
+    # gone, GET /api/booking/{ref} 404s it, and a `booking` event would leave
+    # the fallback pill saying "Booked TD-…" under "it has been cancelled".
+    assert not [e for e in cancelled if e.get("type") == "booking"]
+
+
 def test_the_state_machine_gate_is_passed_through(monkeypatch):
     """write.execute refuses an action the machine does not allow RIGHT NOW."""
     _patch_state(monkeypatch, {"hold_slot", "lock_slot"})
