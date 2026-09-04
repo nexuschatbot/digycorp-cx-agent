@@ -344,6 +344,92 @@ def _with_required_hold(db, session_id: str, agent: str, proposals: list[dict]) 
     return out
 
 
+def _derived_proposals(db, session_id: str, step, customer_id) -> list[dict]:
+    """The write the brief asked for, when server state already determines it.
+
+    WHY THIS EXISTS (measured 2026-09-04, over every sub-agent step in the test
+    VM's journal): 25 of 64 replies — 39% — were discarded by _parse_findings
+    because they did not fit `max_tokens`. Parsed replies run to 691 characters;
+    the failures start at 563 and reach 1,126. For a READ that costs a note and
+    nothing else, exactly as the ceiling's own comment promises: entities are
+    re-read from the tool results and `_evidence` carries them whole. A PROPOSAL
+    has no such second source — it exists only in the model's text — so the same
+    truncation costs the whole booking.
+
+    It did, twice in one turn. A customer with a held slot, an acknowledged
+    licence and recorded consent watched Aisha say she was "having a little
+    trouble completing the booking" and escalate to a human, while a correct
+    create_booking sat inside the unterminated note nobody could parse.
+
+    NOTHING HERE IS INFERRED. At that moment the server already held every part
+    of the answer, and had done before the model was called:
+
+      * WHICH WRITE — select.action_owners reads it off the brief
+        deterministically. It had already run: the step logged layer=fast_lane,
+        which is that lane.
+      * WHETHER IT MAY HAPPEN — booking_state.read, the same derived state the
+        write gate enforces. `create` means a slot locked BY THIS SESSION with
+        licence_ack set, which is the recap-yes and the licence reminder both
+        done.
+      * WHICH SLOT — that held slot.
+      * WHICH CAR — the slot's own row. booking.create refuses any other
+        (vehicle_slot_mismatch), so there is nothing to choose.
+      * WHICH CUSTOMER — never from here. write.py injects it.
+
+    COMPLETING THE ASK, NOT INVENTING ONE — the same principle as
+    _with_required_hold above, and the same reason: read the determined action
+    out of the state deterministically, once, rather than asking the model
+    again. The ask is Aisha's brief, and Aisha is the one who spoke to the
+    customer.
+
+    EVERY GUARD STILL RUNS. This returns a REQUEST on the ordinary path:
+    _validate_proposals checks it against the card, booking_state.allowed gates
+    it in write.execute_all, and booking.create independently re-checks the
+    lock, the licence and the vehicle. Duplicates are impossible by
+    construction — create flips the slot from `locked` to `booked`, and a
+    second attempt fails its `locked_by_session` check.
+
+    CREATE ONLY. reschedule_booking and cancel_booking name a booking the state
+    machine does not determine (which one, moved to when), so a derived version
+    would be a guess. This is a recovery for the one write whose every argument
+    is already known, not a general licence to act without the model.
+    """
+    if db is None or not session_id:
+        return []
+    try:
+        from app.orchestrator import booking_state as _booking_state
+        from app.orchestrator.select import action_owners
+
+        if "create_booking" not in set(_proposes(step.agent)):
+            return []
+        owners = action_owners(getattr(step, "brief", "") or "")
+        if step.agent not in owners.get("create_booking", set()):
+            return []
+
+        state = _booking_state.read(db, session_id, customer_id=customer_id)
+        if state.slot_id is None or "create_booking" not in state.allowed:
+            return []
+
+        from app.services import slots as _slots
+
+        vehicle_id = (_slots.facts_for_slot(db, state.slot_id) or {}).get("vehicle_id")
+        if vehicle_id is None:
+            return []
+
+        log.warning(
+            "%s proposed nothing for a create_booking brief; deriving it from "
+            "the held slot %s (vehicle %s) — session=%s",
+            step.agent, state.slot_id, vehicle_id, session_id,
+        )
+        return [{
+            "action": "create_booking",
+            "args": {"vehicle_id": vehicle_id, "slot_id": state.slot_id},
+        }]
+    except Exception:  # noqa: BLE001 — a recovery must never cost the turn
+        log.warning("could not derive the booking proposal", exc_info=True)
+        return []
+
+
 def _validate_proposals(agent: str, raw: list[dict]) -> list[dict]:
     """Keep only what this agent's card actually permits it to ask for.
 
@@ -735,6 +821,10 @@ def run_step(
     args_chars = 0
     reply_chars = 0
     json_chars = 0
+    # Set when the model ran out of budget mid-sentence, and when the write it
+    # was asked for had to be read back off the state instead of its reply.
+    truncated = False
+    derived = False
 
     client = _client()
 
@@ -760,7 +850,29 @@ def run_step(
             # brevity; this enforces it. Entities still thread even through a
             # truncated reply: _harvest_entities reads them from the raw tool
             # results, not from the model's JSON.
-            max_tokens=256,
+            #
+            # 512, UP FROM 256 (2026-09-04), and this is the first time the
+            # number has been set from the failures rather than from the
+            # largest success. Measured over all 64 steps in the test VM's
+            # journal: 25 of them — 39% — were discarded whole by
+            # _parse_findings. Parsed replies run 94..691 chars; the discarded
+            # ones start at 563 and reach 1,126. 256 tokens is ~650 chars, so
+            # the ceiling sat INSIDE the legitimate range and the two
+            # distributions overlap across it. It was chosen to just clear the
+            # largest reply then observed, which left no headroom at all.
+            #
+            # 11 of those 25 were cut mid-JSON; the other 14 never reached the
+            # JSON, having spent the budget on prose. _prose_note's docstring
+            # reads that second group as a formatting habit ("30% returned a
+            # reply with no JSON object in it at all") — it is the same
+            # truncation, hit earlier.
+            #
+            # THE BLOWOUT THIS CEILING EXISTS FOR IS STILL BOUNDED: the 1,156
+            # tokens of copied tool results that took it from 1024 to 400 to
+            # 256 remain well outside 512. And truncation is no longer silent —
+            # `stop_reason` is read below, so the next time this number is
+            # wrong the log says so instead of a customer finding out.
+            max_tokens=512,
             # CACHED, AND IT WAS NOT (found live, 2026-08-29). A card body is
             # 7-10k tokens and this loop re-sent every one of them, uncached,
             # on every round — while the single agent had cached its prefix
@@ -781,6 +893,9 @@ def run_step(
             tools=schemas,
             messages=_graph._cached_messages(messages),
         )
+
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            truncated = True
 
         u = getattr(response, "usage", None)
         if u is not None:
@@ -839,6 +954,14 @@ def run_step(
                     continue
                 seen_keys.add(key)
                 deduped.append(item)
+            if not deduped:
+                # NOTHING ASKED FOR. Before reporting that, check whether the
+                # brief asked for a write the state already determines — see
+                # _derived_proposals for the 39% of replies that never survive
+                # the token ceiling, and the booking that died in one.
+                deduped = _derived_proposals(db, session_id, step, customer_id)
+                if deduped:
+                    derived = True
             if deduped:
                 deduped = _with_required_hold(db, session_id, step.agent, deduped)
                 kept = _validate_proposals(step.agent, deduped)
@@ -848,6 +971,22 @@ def run_step(
                     findings.pop("_proposals", None)
             else:
                 findings.pop("_proposals", None)
+            # THE REPLY WAS CUT OFF, AND THAT IS NOT THE SAME AS HAVING NOTHING
+            # TO SAY. Never read before (2026-09-04): `stop_reason` was
+            # available on every response and consulted nowhere, so a step the
+            # ceiling truncated and a step that genuinely proposed nothing
+            # reached Aisha as the same event — and she escalated a customer
+            # who was one write away from booked. Carried under a reserved key
+            # so turn.py can tell her to re-brief instead.
+            if truncated:
+                findings["_truncated"] = True
+                log.warning(
+                    "%s was cut off at max_tokens (%d chars of reply, %d parsed"
+                    "%s) — session=%s",
+                    step.agent, reply_chars, json_chars,
+                    "; recovered the write from state" if derived else "",
+                    session_id,
+                )
             # Lifted off findings by run.execute, like _proposals. Underscored
             # so it can never be mistaken for something the model wrote.
             if evidence:

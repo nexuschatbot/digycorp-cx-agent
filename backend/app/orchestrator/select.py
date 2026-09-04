@@ -246,26 +246,18 @@ def _action_pattern(action: str) -> re.Pattern | None:
     )
 
 
-def action_owner(brief: str) -> Selection | None:
-    """The one card that may PERFORM the write this brief asks for.
+def action_owners(brief: str) -> dict[str, set[str]]:
+    """{action: cards that may perform it} for every write this brief names.
 
-    FOUND LIVE 2026-09-03, and it is why a confirmed booking spent eight
-    seconds in the wrong specialist. Aisha wrote "Create a booking for Ali
-    Test ... (vehicle_id 3) ... slot ID 1147" — `slot ID` spelled with a
-    space, so `entity_owner` below matched only `vehicle_id`, which Sales
-    produces, and sent a booking request to Sales. Sales has no write to
-    propose, answered in prose, and Aisha had to brief again.
-
-    ASKING FOR A WRITE IS THE STRONGEST SIGNAL A BRIEF CARRIES, so this runs
-    FIRST — ahead of the embedding lane and ahead of entity_owner. The cards
-    declare what they may ask for (`proposes`), write.py declares what it can
-    actually perform (PROPOSABLE), and exactly one routable card may do any of
-    it; a car named in passing is the object of the sentence, not its verb.
-    Two owners, or none, change nothing and fall through as before.
+    FACTORED OUT OF action_owner (2026-09-04) rather than re-implemented, so
+    routing and recovery can never disagree about what a brief asked for.
+    action_owner answers "who"; subagent._derived_proposals needs "what", and a
+    second matcher drifting from this one would put the two on different
+    answers for the same sentence.
     """
     text = (brief or "").strip()
     if not text:
-        return None
+        return {}
     from app.agents import loader
     from app.orchestrator.write import _ACTION_TO_TOOL, PROPOSABLE
 
@@ -284,6 +276,29 @@ def action_owner(brief: str) -> Selection | None:
                 pattern = _action_pattern(spelling)
                 if pattern is not None and pattern.search(text):
                     owners.setdefault(action, set()).add(agent)
+    return owners
+
+
+def action_owner(brief: str) -> Selection | None:
+    """The one card that may PERFORM the write this brief asks for.
+
+    FOUND LIVE 2026-09-03, and it is why a confirmed booking spent eight
+    seconds in the wrong specialist. Aisha wrote "Create a booking for Ali
+    Test ... (vehicle_id 3) ... slot ID 1147" — `slot ID` spelled with a
+    space, so `entity_owner` below matched only `vehicle_id`, which Sales
+    produces, and sent a booking request to Sales. Sales has no write to
+    propose, answered in prose, and Aisha had to brief again.
+
+    ASKING FOR A WRITE IS THE STRONGEST SIGNAL A BRIEF CARRIES, so this runs
+    FIRST — ahead of the embedding lane and ahead of entity_owner. The cards
+    declare what they may ask for (`proposes`), write.py declares what it can
+    actually perform (PROPOSABLE), and exactly one routable card may do any of
+    it; a car named in passing is the object of the sentence, not its verb.
+    Two owners, or none, change nothing and fall through as before.
+    """
+    owners = action_owners(brief)
+    if not owners:
+        return None
     asked = {a for a, who in owners.items() if len(who) == 1}
     if not asked:
         return None

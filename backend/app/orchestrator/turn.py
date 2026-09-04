@@ -392,15 +392,37 @@ def compose_input(result: run.TurnResult) -> dict:
             # one party who can recover: the composer.
             {
                 "agent": s.agent,
+                # CUT OFF IS NOT THE SAME AS SILENT (2026-09-04). A step the
+                # token ceiling truncated used to arrive here word for word as
+                # one that had nothing to ask for, and the sentence below ends
+                # with "offer a person" — so a customer with a held slot, an
+                # acknowledged licence and recorded consent was handed to the
+                # call centre because a reply ran long. Measured at 39% of all
+                # sub-agent steps (see subagent._derived_proposals). The write
+                # is now recovered from state where the state determines it;
+                # this is what Aisha is told when it does not.
                 "status": "no_action",
                 "detail": (
-                    "This specialist may only REQUEST holds, bookings, moves "
-                    "and cancellations, and it requested none — so nothing was "
-                    "held, booked, moved or cancelled by this step, whatever "
-                    "its note says. If the customer asked for one of those, it "
-                    "has NOT happened: never confirm it. Re-brief once, naming "
-                    "the exact action and every detail it needs, or tell the "
-                    "customer plainly and offer a person."
+                    (
+                        "This specialist's reply was CUT OFF before it finished "
+                        "— that is our ceiling, not a decision it made, and it "
+                        "is not evidence that anything is wrong or unavailable. "
+                        "Nothing was held, booked, moved or cancelled, so never "
+                        "confirm it. Brief it again, naming the exact action and "
+                        "every detail it needs, and keep the customer's own "
+                        "words for what they asked. Do NOT apologise for a "
+                        "technical problem and do NOT offer a person for this."
+                    )
+                    if (s.findings or {}).get("_truncated")
+                    else (
+                        "This specialist may only REQUEST holds, bookings, moves "
+                        "and cancellations, and it requested none — so nothing was "
+                        "held, booked, moved or cancelled by this step, whatever "
+                        "its note says. If the customer asked for one of those, it "
+                        "has NOT happened: never confirm it. Re-brief once, naming "
+                        "the exact action and every detail it needs, or tell the "
+                        "customer plainly and offer a person."
+                    )
                 ),
             }
             for s in result.steps
