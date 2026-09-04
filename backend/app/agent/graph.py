@@ -1655,10 +1655,12 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     # about to be said out loud to whoever is holding the device, so the anchor
     # can only be allowed to hold what is safe to say to a stranger.
     returning: dict | None = None
+    _prep_t0 = time.perf_counter()
     try:
         db = cfg.get("db")
         if db is not None:
             customer_id = state.get("customer_id")
+
             if customer_id is not None:
                 live_bookings = booking.for_customer(db, customer_id=customer_id)
             else:
@@ -1667,8 +1669,10 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     except Exception:  # noqa: BLE001 — an anchor must not be able to break a turn
         log.exception("bookings anchor failed — continuing without it (session=%s)", session_id)
         live_bookings, held_slot, returning = None, None, None
+    _reads_ms = int((time.perf_counter() - _prep_t0) * 1000)
 
     # Call turns may run a FASTER model (CALL_AGENT_MODEL, off by default) —
+
     # first-token time is the audible floor of a spoken reply. Same trusted
     # flag as the voice anchor and the effort dial.
     #
@@ -1690,11 +1694,14 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     # generation of the turn only — the compose call after a cascade already
     # holds its evidence and must not pay the tail twice. None everywhere the
     # flag is off (the shipped default), which keeps the prompt byte-identical.
+    _prefetch_t0 = time.perf_counter()
     passages = (
         _prefetch_passages(state, slot_pinned=cfg.get("provided_slot_id") is not None)
         if RETRIEVAL_FIRST and _multi_agent(cfg) and iterations == 0
         else None
     )
+    _prefetch_ms = int((time.perf_counter() - _prefetch_t0) * 1000)
+
     # SPECULATE_ON_MESSAGE (2026-09-03): the specialist selection starts NOW,
     # on the customer's own words, and runs under the whole generation below.
     # The brief-level offer in _stream_once fires on the brief's closing quote,
@@ -1729,7 +1736,18 @@ def _agent_node(state: AgentState, config: RunnableConfig) -> dict:
     )
     prev_start = state.get("history_start") or 0
     start = _window_start(outgoing, prev_start)
+    # Everything between entering the node and the model call, itemised. The
+    # prefetch is a CPU embedding under a process-wide lock and had never been
+    # timed outside a docstring; the DB reads run on every generation,
+    # including the compose call. See runner's "turn timing" line for the
+    # turn-level view these roll up into.
+    log.info(
+        "agent node prep session=%s iteration=%d total=%dms (reads=%dms prefetch=%dms)",
+        session_id, iterations, int((time.perf_counter() - _prep_t0) * 1000),
+        _reads_ms, _prefetch_ms,
+    )
     assistant = generate(
+
         outgoing[start:],
         model=model_for_turn,
         system=system_prompt_parts(
@@ -2300,9 +2318,12 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                     _w0({"type": "cascade_start", "briefs": len(briefs)})
             except Exception:  # noqa: BLE001 — a status hint never breaks a turn
                 log.debug("could not forward cascade_start", exc_info=True)
+            _t_known = time.perf_counter()
+            _known = _known_entities(state, cfg)
+            _t_cascade = time.perf_counter()
             result = _turn.execute(
-
                 briefs,
+
                 subagent.make_runner(
                     cfg["db"], session_id,
                     customer_id=state.get("customer_id"),
@@ -2313,8 +2334,9 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                     # read-only sub-agents get their own and never commit.
                     session_factory=SessionLocal,
                 ),
-                known=_known_entities(state, cfg),
+                known=_known,
                 judge=_judge,
+
                 deadline_seconds=remaining,
                 parent_writer=_stream_sink(_safe_writer()),
                 # Selections started while Aisha was still typing the briefs
@@ -2327,8 +2349,10 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                     session_id, first_generation=(state.get("iterations") or 0) <= 1
                 ),
             )
+            _t_compose = time.perf_counter()
             payload = _turn.compose_input(result)
             # THE STRIP, DECIDED ONCE (see _select_cards). Emitted here rather
+
             # than per search, and named in the payload so her prose and the
             # screen are anchored to the same three cars. Ahead of the compose
             # generation, so the row is queued before her first token — which is
@@ -2345,8 +2369,24 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                         "type": "tool_event", "tool": "search_vehicles",
                         "input": {}, "output": {"matches": _cards},
                     })
+            _t_writes = time.perf_counter()
             payload["actions"], _write_facts = _execute_proposals(result, state, cfg)
             facts = _fold_cascade_facts(state, result)
+            # The node's own cost around the specialists: entity snapshot,
+            # the cascade (specialist calls included), payload and cards, then
+            # the writes. Booking state is re-derived from the DB several
+            # times across these; this line is what says whether it matters.
+            _t_end = time.perf_counter()
+            log.info(
+                "orchestrator overhead session=%s known=%dms cascade=%dms "
+                "compose=%dms writes=%dms",
+                session_id,
+                int((_t_cascade - _t_known) * 1000),
+                int((_t_compose - _t_cascade) * 1000),
+                int((_t_writes - _t_compose) * 1000),
+                int((_t_end - _t_writes) * 1000),
+            )
+
             if _write_facts:
                 # A HELD SLOT OUTRANKS A SEARCH RESULT, and that ordering is the
                 # whole fix. _fold_cascade_facts carries what the specialists

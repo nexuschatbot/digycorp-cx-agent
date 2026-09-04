@@ -912,8 +912,16 @@ def run_step(
     derived = False
 
     client = _client()
+    # State reads, vehicle reconciliation and prompt assembly, before any
+    # model call. Timed because the step's `settled` line only starts the
+    # clock at `started` and nothing separated this from the first round.
+    log.info(
+        "%s prep %dms before its first call", step.agent,
+        int((time.monotonic() - started) * 1000),
+    )
 
     for _ in range(max_iterations):
+
         if time.monotonic() - started > timeout:
             raise TimeoutError(f"{step.agent} exceeded {timeout:.0f}s")
 
