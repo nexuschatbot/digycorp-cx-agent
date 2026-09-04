@@ -258,7 +258,17 @@ GET_VEHICLE_DETAILS_SCHEMA = {
         "reply and NEVER write ![image](url) markup — this channel renders no "
         "markdown, so both reach the customer as literal text. An empty list "
         "means we hold no interior photography for that model, so describe "
-        "the cabin in words and never promise photos."
+        "the cabin in words and never promise photos.\n\n"
+        "AND NEVER SAY YOU HAVE PUT SOMETHING ON THEIR SCREEN UNLESS THIS "
+        "CALL PUT IT THERE (seen live 2026-09-04). Asked what the G700 is "
+        "like inside, the agent answered from a card drawn two turns "
+        "earlier, called nothing at all, and still told the customer it "
+        "had pulled the interior photos up for them — so they went hunting "
+        "for photographs that were never drawn. A card is on screen "
+        "because THIS message called for it, never because you described "
+        "one. Answering from what you already know is fine and often "
+        "right: just answer, and say nothing about photos, cards or "
+        "anything else having been pulled up."
     ),
     "input_schema": {
         "type": "object",
