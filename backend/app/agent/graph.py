@@ -1519,7 +1519,15 @@ _PREFETCH_MAX_CHARS = 4000
 # signal to use instead: option chips send their label as plain typed text by
 # design (frontend/src/options.ts), so the shape of the text is all there is.
 _PHONE_RE = re.compile(r"\d[\d\s-]{7,}\d")
+# The first two pairs are the CURRENT starter cards (2026-09-04); the second two
+# are the wording those cards used to carry. Both are kept: the old phrasings are
+# still what a customer reaches for unprompted, and a stale entry costs a set
+# lookup while a missing one costs a pointless retrieval round-trip.
 _PREFILL_TEXTS = frozenset({
+    "i’d like to book a test drive, or manage one i already have.",
+    "i'd like to book a test drive, or manage one i already have.",
+    "i’d like to ask about models, pricing, offers or availability.",
+    "i'd like to ask about models, pricing, offers or availability.",
     "i’d like to book a test drive.",
     "i'd like to book a test drive.",
     "i’d like to reschedule or cancel my booking.",
@@ -2290,18 +2298,37 @@ def _execute_proposals(result, state: AgentState, cfg: dict) -> list[dict]:
         booked_ref = r.result.get("booking_ref") or inner.get("booking_ref")
         if r.ok and booked_ref:
             writer = _safe_writer()
-            if writer and write._ACTION_TO_TOOL.get(r.action) == "cancel_booking":
+            tool = write._ACTION_TO_TOOL.get(r.action)
 
-                # A CANCELLATION GREYS THE CARD, IT DOES NOT DRAW ONE (browser
-                # run, 2026-09-04): the `booking` event makes the UI fetch and
-                # redraw the booking, and a cancelled booking is no longer
-                # returned — so the fetch failed and the fallback pill said
-                # "Booked TD-…" directly under "your booking has been
-                # cancelled". tool_node reports a cancel as a tool_event, and
-                # the UI supersedes the old card on it; the same shape here.
-                writer({"type": "tool_event", "tool": "cancel_booking",
+            # EVERY BOOKING WRITE REPORTS ITSELF AS A tool_event, exactly as
+            # tool_node does, and that is what WRITES THE CARD DOWN (browser
+            # run, 2026-09-04, second shape). runner._card_anchor reads
+            # tool_event chunks and nothing else, so a create that announced
+            # itself only through the `booking` event below drew a card the
+            # transcript never recorded: ConversationTurn.cards was null on the
+            # very turn that said "you're all set, your reference is TD-…".
+            # The card then lived in the browser and nowhere else, so the first
+            # rebuild of the thread — a reload, or a voice call ending — redrew
+            # the conversation without it, permanently. Cancel already had this
+            # (see below); create and reschedule were missed.
+            if writer and tool:
+                writer({"type": "tool_event", "tool": tool,
                         "input": {"ref": booked_ref}, "output": r.result})
-            elif writer:
+
+            # AND ONLY A CREATE ALSO DRAWS ONE HERE. The three tools differ in how
+            # the card reaches the screen, and tool_node draws exactly this
+            # distinction:
+            #   create      — the `booking` event fetches and draws the card;
+            #                 the UI has no create_booking tool_event handler.
+            #   reschedule  — the UI draws from the tool_event above (it retires
+            #                 the old card in the same pass), so a `booking`
+            #                 event here would draw the new card TWICE.
+            #   cancel      — draws nothing at all. It greys the existing card:
+            #                 the booking is gone, GET /api/booking/{ref} 404s
+            #                 it, and a `booking` event would leave the fallback
+            #                 pill saying "Booked TD-…" directly under "your
+            #                 booking has been cancelled".
+            if writer and tool == "create_booking":
                 writer({"type": "booking", "booking_ref": booked_ref})
 
     log.info("orchestrator writes — session=%s %s%s", session_id,
