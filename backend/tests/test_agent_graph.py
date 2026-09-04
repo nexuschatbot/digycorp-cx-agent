@@ -650,7 +650,8 @@ def test_history_breakpoint_sits_on_the_last_block():
     ]
     out = _cached_messages(msgs)
 
-    assert out[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert out[-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
     # Exactly one, and only at the end — an accumulating set would burn the
     # 4-breakpoint budget the system prompt already draws on.
     marked = [
@@ -680,7 +681,23 @@ def test_string_content_still_gets_a_breakpoint():
     out = _cached_messages([{"role": "user", "content": "book me a T2"}])
     block = out[-1]["content"][-1]
     assert block["text"] == "book me a T2"
-    assert block["cache_control"] == {"type": "ephemeral"}
+    assert block["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+def test_history_breakpoint_lives_as_long_as_the_system_prefix():
+    """Seen on the test VM (2026-09-04): a 9-minute pause between two messages
+    cost a 24,684-token cache write and a 6.1s first token, because the system
+    prefix held for an hour and the conversation window for five minutes. The
+    two breakpoints carry the same TTL, so a pause shorter than an hour costs
+    nothing — and a longer-lived entry never follows a shorter one, which the
+    API requires."""
+    from app.agent.graph import _cached_messages, _system_blocks
+
+    history = _cached_messages([{"role": "user", "content": "hi"}])
+    system = _system_blocks("stable prompt body")
+    assert history[-1]["content"][-1]["cache_control"]["ttl"] == "1h"
+    assert system[0]["cache_control"]["ttl"] == "1h"
+
 
 
 def test_empty_history_is_left_alone():

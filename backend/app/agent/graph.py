@@ -530,7 +530,13 @@ def _system_blocks(system: str | tuple[str, str]) -> list[dict]:
     return blocks
 
 
+# The history breakpoint's cache_control — see _cached_messages for why it is
+# an hour and not the API's five-minute default.
+_HISTORY_CACHE_CONTROL: dict = {"type": "ephemeral", "ttl": "1h"}
+
+
 def _cached_messages(messages: list) -> list:
+
     """The message list with ONE moving cache breakpoint on its last block.
 
     WHY THIS EXISTS. Caching the system+tools prefix fixed the CONSTANT cost.
@@ -558,6 +564,20 @@ def _cached_messages(messages: list) -> list:
     COPIES rather than mutates: `messages` is graph state, and stamping
     cache_control onto it would checkpoint a request-shaping detail as if it
     were conversation content.
+
+    ONE HOUR, LIKE THE SYSTEM PREFIX (2026-09-04). This breakpoint used to take
+    the API default of five minutes while the system block above it held for an
+    hour, so a customer who paused to think for six minutes came back to a
+    prompt whose stable prefix hit and whose whole conversation window was
+    re-written. Seen on the test VM: a 9-minute pause cost a 24,684-token
+    cache write and a 6.1s first token on a turn that had nothing else wrong
+    with it. Nothing else refreshes this entry — the boot-time keep-alive warms
+    the system prefix with a throwaway message and never touches a real
+    conversation. A longer TTL costs more per write (2x base vs 1.25x) on the
+    small per-call delta; measured against a re-read of the window at full
+    price after every pause longer than a coffee, it is the cheaper of the two.
+    Both breakpoints now carry the same TTL, which also satisfies the API's
+    ordering rule that a longer-lived entry never follows a shorter one.
     """
     if not messages:
         return messages
@@ -569,13 +589,14 @@ def _cached_messages(messages: list) -> list:
         # Customer turns arrive as a plain string (chat.py). A one-block list is
         # equivalent on the wire and gives the breakpoint somewhere to live.
         last["content"] = [
-            {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+            {"type": "text", "text": content, "cache_control": _HISTORY_CACHE_CONTROL}
         ]
     elif isinstance(content, list) and content:
         blocks = [dict(b) if isinstance(b, dict) else b for b in content]
         if isinstance(blocks[-1], dict):
-            blocks[-1]["cache_control"] = {"type": "ephemeral"}
+            blocks[-1]["cache_control"] = dict(_HISTORY_CACHE_CONTROL)
         last["content"] = blocks
+
     else:
         return messages  # nothing markable; send it untouched
 
