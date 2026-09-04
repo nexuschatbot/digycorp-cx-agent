@@ -1017,3 +1017,134 @@ def test_a_single_step_with_a_non_thread_safe_runner_stays_inline():
     assert [s.status for s in result.steps] == ["ok"]
     assert where == [main]
 
+
+
+# --------------------------------------------------------------------------- #
+# A specialist's slot read draws times only when they are an OFFER
+# (found live 2026-09-04)
+# --------------------------------------------------------------------------- #
+def _slot_result(*times: str) -> dict:
+    return {"slots": [{"slot_id": i, "start": t} for i, t in enumerate(times, 1)]}
+
+
+class _FakeStep:
+    def __init__(self, evidence, ok=True):
+        self.ok = ok
+        self.evidence = evidence
+        self.agent = "testdrive"
+
+
+class _FakeResult:
+    def __init__(self, steps):
+        self.steps = steps
+
+
+def test_a_specialists_slot_read_is_dropped_when_the_turn_booked():
+    """THE LIVE FAILURE. Answering the consent question booked the drive, and the
+    testdrive step's availability read — machinery for the slot it was about to
+    book — streamed as an offer. The booking retired it the instant it landed,
+    so three struck-through times sat above the confirmation."""
+    from app.agent.graph import _emit_slot_rows
+
+    seen: list = []
+    _emit_slot_rows(
+        _FakeResult([_FakeStep([{"tool": "get_available_slots", "result": _slot_result("17:00")}])]),
+        [{"action": "create_booking", "status": "executed"}],
+        lambda payload: seen.append(payload),
+    )
+    assert seen == [], "a spent offer was drawn under a confirmed booking"
+
+
+def test_a_specialists_slot_read_is_replayed_when_nothing_was_written():
+    """The other half, and the reason this is a replay rather than a drop:
+    "what times do you have on Sunday" is the testdrive card's own utterance.
+    Those chips carry the trusted slot_id — losing them leaves nothing to tap."""
+    from app.agent.graph import _emit_slot_rows
+
+    out = _slot_result("09:00", "13:00")
+    seen: list = []
+    _emit_slot_rows(
+        _FakeResult([_FakeStep([{"tool": "get_available_slots", "result": out}])]),
+        [],
+        lambda payload: seen.append(payload),
+    )
+    assert [p["tool"] for p in seen] == ["get_available_slots"]
+    assert seen[0]["output"] == out, "the row must be the tool's own rows, verbatim"
+
+
+def test_a_refused_write_still_leaves_the_times_on_screen():
+    """Nothing was committed, so the customer still has to choose."""
+    from app.agent.graph import _emit_slot_rows
+
+    seen: list = []
+    _emit_slot_rows(
+        _FakeResult([_FakeStep([{"tool": "get_available_slots", "result": _slot_result("09:00")}])]),
+        [{"action": "create_booking", "status": "refused"}],
+        lambda payload: seen.append(payload),
+    )
+    assert len(seen) == 1
+
+
+def test_every_read_is_replayed_in_evidence_order():
+    """Deferring must not change what a non-booking turn streams: one event per
+    read, in the order the specialist made them, exactly as before."""
+    from app.agent.graph import _emit_slot_rows
+
+    a, b = _slot_result("09:00"), _slot_result("13:00")
+    seen: list = []
+    _emit_slot_rows(
+        _FakeResult([
+            _FakeStep([
+                {"tool": "get_available_slots", "result": a},
+                {"tool": "get_booking", "result": {}},
+                {"tool": "get_available_slots", "result": b},
+            ])
+        ]),
+        [],
+        lambda payload: seen.append(payload),
+    )
+    assert [p["output"] for p in seen] == [a, b]
+
+
+def test_a_failed_steps_reads_are_never_replayed():
+    from app.agent.graph import _emit_slot_rows
+
+    seen: list = []
+    _emit_slot_rows(
+        _FakeResult([_FakeStep([{"tool": "get_available_slots", "result": _slot_result("09:00")}], ok=False)]),
+        [],
+        lambda payload: seen.append(payload),
+    )
+    assert seen == []
+
+
+def test_aishas_own_slot_read_is_untouched_by_the_curation(monkeypatch):
+    """THE THING THAT MUST NOT BREAK. CURATED is applied in turn._queue_emit,
+    which wraps SPECIALIST steps only; Aisha holds get_available_slots herself
+    and her events go straight out through the tool node's writer. The real
+    "here are your times" row is unaffected by any of this."""
+    from app.orchestrator import select as select_mod
+    from app.orchestrator import turn as turn_mod
+
+    monkeypatch.setattr(
+        select_mod, "select",
+        lambda text, judge=None: select_mod.Selection(
+            agent="testdrive", layer="fast_lane", reason="stub"
+        ),
+    )
+
+    def runner_fn(step, ctx, *, emit=None, timeout=20.0, max_iterations=6):
+        for tool in ("get_booking", "get_available_slots", "nearest_showroom"):
+            emit("tool_event", {"tool": tool, "input": {}, "output": {}})
+        return {"agent": step.agent}
+
+    runner_fn.thread_safe = True
+    seen: list = []
+    turn_mod.execute(
+        ["Book TD-2026-BJN2 into slot_id 1478"],
+        runner_fn,
+        known={"vehicle_id"},
+        parent_writer=lambda kind, payload: seen.append(payload.get("tool")),
+    )
+    # The specialist's read is held back here; graph._emit_slot_rows decides.
+    assert seen == ["get_booking", "nearest_showroom"]

@@ -1992,6 +1992,50 @@ def _said_this_turn(state: AgentState) -> list[str]:
     return out
 
 
+def _emit_slot_rows(result, actions, writer) -> None:
+    """Replay the cascade's get_available_slots events — unless the turn booked.
+
+    THE TEST FOR AN OFFER IS WHETHER ANYTHING WAS COMMITTED. A specialist reads
+    times for one of two reasons, and they look identical at the moment it reads:
+
+      TO OFFER THEM    "what times do you have on Sunday" — the row IS the
+                       answer, and its chips carry the trusted slot_id the
+                       customer taps. Nothing is written; the next move is
+                       theirs. Replayed verbatim, in evidence order, so this
+                       path streams exactly what it streamed before the events
+                       were deferred at all (turn.CURATED).
+      TO USE THEM      the step was resolving the slot it was about to hold,
+                       book or move. A write landed in the same turn, so the
+                       customer had already chosen and the "offer" is spent
+                       before it is drawn — the live failure this exists to
+                       stop. Dropped.
+
+    A REFUSED OR FAILED write leaves the times on screen, deliberately: nothing
+    was committed, the customer still has to choose, and taking the row away
+    would leave them nothing to choose from.
+
+    Runs AFTER _execute_proposals because that is the first moment `executed` is
+    known — and still before the compose generation, so the row is queued ahead
+    of the first token exactly like the card strip above it.
+    """
+    if writer is None:
+        return
+    if any(isinstance(a, dict) and a.get("status") == "executed" for a in actions or []):
+        return
+    for step in getattr(result, "steps", None) or []:
+        if not step.ok:
+            continue
+        for item in step.evidence or []:
+            if not isinstance(item, dict) or item.get("tool") != "get_available_slots":
+                continue
+            out = item.get("result")
+            if isinstance(out, dict):
+                writer({
+                    "type": "tool_event", "tool": "get_available_slots",
+                    "input": {}, "output": out,
+                })
+
+
 def _brief_block(state: AgentState) -> dict | None:
 
     """The emit_briefs tool_use in the last assistant message, if there is one."""
@@ -2555,6 +2599,12 @@ def _orchestrator_node(state: AgentState, config: RunnableConfig) -> dict:
                     })
             _t_writes = time.perf_counter()
             payload["actions"], _write_facts = _execute_proposals(result, state, cfg)
+            # The times a specialist read, drawn only when they are an offer and
+            # not the machinery of a write that just landed. See _emit_slot_rows.
+            try:
+                _emit_slot_rows(result, payload["actions"], _safe_writer())
+            except Exception:  # noqa: BLE001 — a row must never cost a turn
+                log.debug("could not replay the cascade slot rows", exc_info=True)
             facts = _fold_cascade_facts(state, result)
             # The node's own cost around the specialists: entity snapshot,
             # the cascade (specialist calls included), payload and cards, then

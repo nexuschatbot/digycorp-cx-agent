@@ -205,7 +205,23 @@ def execute(
     # asks it with offer_options. nearest_showroom is deliberately NOT here:
     # its card names the one branch her answer names, so it matches what she
     # just said.
-    CURATED = {"search_vehicles", "get_showrooms"}
+    #
+    # get_available_slots JOINED THE SET 2026-09-04, seen live. A booking turn
+    # ("Yes please" to the consent question) drew a row of times above the
+    # confirmation: the testdrive step read availability to resolve the slot it
+    # was about to book, and that read streamed as an offer. The customer had
+    # already chosen — the booking landed in the same breath — so the row was
+    # retired the instant it appeared, leaving three struck-through times under
+    # a confirmed booking.
+    #
+    # UNLIKE THE OTHER TWO, THIS ONE IS REPLAYED, NOT DROPPED. A specialist
+    # reading times is sometimes the offer itself ("what times do you have on
+    # Sunday" is one of the testdrive card's own utterances), and dropping that
+    # would take away the chips the customer picks from — chips that carry a
+    # trusted slot_id, so there is no typing around them. graph._emit_slot_rows
+    # puts them back whenever the turn committed no write; see it for the test
+    # that tells an offer from machinery.
+    CURATED = {"search_vehicles", "get_showrooms", "get_available_slots"}
 
     def _queue_emit(agent: str):
         def _emit(kind: str, payload: dict) -> None:
