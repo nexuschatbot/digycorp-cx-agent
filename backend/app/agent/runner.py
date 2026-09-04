@@ -527,6 +527,11 @@ def run_turn(
                 # Per-turn like `closed` (C-options, 2026-08-14): "did chips go
                 # up on THIS turn", never a sticky property of the session.
                 "options_offered": False,
+                # Per-turn like the two above (2026-09-04): "did every tool on
+                # THIS turn come back with nothing to tell the customer", which
+                # is what stops the model filling the leftover generation with
+                # the customer's own answer. Never sticky.
+                "awaiting_customer": False,
                 # Per-turn like the two above (2026-08-31): how many times this
                 # turn has already gone back to the specialists. Reset here,
                 # enforced in _orchestrator_node against MAX_CASCADES_PER_TURN.

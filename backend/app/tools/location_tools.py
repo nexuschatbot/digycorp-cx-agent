@@ -63,9 +63,12 @@ NEAREST_SHOWROOM_SCHEMA = {
         "city or emirate ('Dubai', 'Abu Dhabi', 'Sharjah', 'Fujairah'), or we "
         "couldn't place them precisely. Warmly ASK FOR A NEARBY LANDMARK, mall, "
         "metro station or area — e.g. 'Could you share a nearby landmark so I can "
-        "find your closest showroom?' — then call again with it. Do NOT say we lack "
-        "a branch in their city, do NOT name a branch, and do NOT list branches or "
-        "distances yet.\n"
+        "find your closest showroom?' — AND THEN STOP. Their next message is the "
+        "landmark; you call this again on THAT turn, with what THEY said. You do "
+        "not have a landmark yet and there is none to be reasoned out: the "
+        "examples above are illustrations, never a place to pick one from. Do NOT "
+        "say we lack a branch in their city, do NOT name a branch, and do NOT list "
+        "branches or distances yet.\n"
         "- resolved=true means they gave a specific place (or GPS): present the "
         "nearest branch(es) with distance + directions.\n"
         "Reading the result when resolved=true:\n"
@@ -168,6 +171,8 @@ def _resolve_origin(location, latitude, longitude):
             return None, None, None, False, None, {
                 "resolved": False, "reason": "could_not_locate",
                 "location": str(location).strip(), "ask_for_landmark": True,
+                # See the ask_for_landmark note on the schema below.
+                "awaiting_customer": True,
             }
         coords = (g["lat"], g["lng"])
         return coords, (g.get("formatted") or str(location).strip()), \
@@ -175,6 +180,8 @@ def _resolve_origin(location, latitude, longitude):
     # 3) Nothing usable.
     return None, None, None, False, None, {
         "resolved": False, "reason": "no_location", "ask_for_landmark": True,
+        # See the ask_for_landmark note on the schema below.
+        "awaiting_customer": True,
     }
 
 
@@ -253,7 +260,9 @@ def nearest_showroom(
 
     def _ask_landmark():
         return {"resolved": False, "reason": "need_landmark",
-                "ask_for_landmark": True, "location": origin_label}
+                "ask_for_landmark": True, "location": origin_label,
+                # See the ask_for_landmark note on the schema below.
+                "awaiting_customer": True}
 
     # WHICH branch(es) to show — SIMPLE RULE (no emirate grouping):
     #   * a bare city or emirate on its own ('Dubai', 'Abu Dhabi') is not precise

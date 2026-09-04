@@ -287,6 +287,23 @@ class AgentState(TypedDict):
     # wide open and the composer must stay live; it is only the generation loop
     # that has nothing left to add. Per-turn control, reset by the caller.
     options_offered: bool
+    # THE THIRD TERMINAL, and the only one the model is never asked for
+    # (2026-09-04). The two above are actions Aisha TAKES; this one is a fact a
+    # TOOL RESULT reports: there is nothing here for the customer to hear, and
+    # the next move is theirs. Set by the tool node when EVERY result in a batch
+    # says so, read by the post-tools edge to END. Per-turn control, reset by
+    # the caller exactly like `closed` and `options_offered`.
+    #
+    # WHY IT CANNOT BE offer_options. That tool is forbidden on open questions
+    # by its own schema ("a name, a mobile number, an address, a landmark") and
+    # it is alone-only, so a question sharing a message with a write cannot use
+    # it either. Both holes were seen live on 2026-09-04 — ON A BOX ALREADY
+    # RUNNING the already-said block, which is why a reminder was not enough.
+    # Handed a generation with nothing left to say after asking a question, the
+    # model wrote the CUSTOMER'S answer and then acted on it: it invented a
+    # location ("Dubai Marina") and called nearest_showroom with it, and it
+    # invented a consent ("Yes please") and called record_consent with it.
+    awaiting_customer: bool
     # HOW MANY CASCADES THIS TURN HAS ALREADY RUN. Per-turn control, reset by
     # the caller exactly like `iterations` and `closed` — "how many times have
     # we gone back on THIS turn", never a property of the session. Counted
@@ -2627,6 +2644,10 @@ def _route_from_tools(state: AgentState, config: RunnableConfig) -> str:
     called in the same assistant message that asks it — so the turn is complete
     and the next move belongs to the customer.
 
+    On awaiting_customer the question is in the stream too, but it was an OPEN
+    one (a landmark, a consent) that no chip could carry; the tools that ran
+    alongside it returned nothing to say, and the turn ends for the same reason.
+
     On close, the farewell is ALREADY in the stream — the agent says goodbye in
     the same message that calls close_conversation, so those tokens have reached
     the customer AND STAY THERE: the tool node skips the rule-17 retraction on a
@@ -2644,6 +2665,14 @@ def _route_from_tools(state: AgentState, config: RunnableConfig) -> str:
     # more sentence, and the model WILL fill it — the same failure the close
     # branch above exists to prevent, in a less obvious costume.
     if state.get("options_offered"):
+        return END
+    # Same failure, the case chips cannot reach: every tool in that batch came
+    # back with nothing the customer needs told — a location we could not place,
+    # a licence flag flipped server-side — so the only sentence left to generate
+    # is the one the CUSTOMER is supposed to say next. The tool node sets this
+    # only once she has actually spoken this turn, so ending here always leaves a
+    # question on screen rather than silence.
+    if state.get("awaiting_customer"):
         return END
     return "agent"
 

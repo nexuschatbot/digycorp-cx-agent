@@ -127,3 +127,199 @@ def test_arabic_labels_survive_intact(db):
     mangle them."""
     out = offer_options(db, "s", options=["نعم", "لا"])
     assert out["options"] == ["نعم", "لا"]
+
+
+# --------------------------------------------------------------------------- #
+# THE THIRD TERMINAL (2026-09-04): a turn with nothing left to say
+#
+# Seen live on the test VM, twice inside one booking, and both times the model
+# did the same thing. It asked the customer a question, the tool it called
+# alongside came back with nothing worth repeating, and the graph handed it
+# another generation — so it wrote the CUSTOMER'S reply and acted on it:
+#
+#   "Whereabouts are you? …" / "Dubai Marina" / "Jetour Al Quoz is your nearest,
+#   about 14 km away."   -> nearest_showroom{location: "Dubai Marina"}, a place
+#                           nobody had named
+#   "May we send you WhatsApp confirmations?" / "Yes please" / "I'll need your
+#   name and mobile."    -> record_consent{messaging: true}, a decision nobody
+#                           had made
+#
+# THAT BOX WAS ALREADY RUNNING THE ALREADY-SAID BLOCK. Handing her own sentences
+# back stops her REPEATING a question; it does not stop her answering one. And
+# offer_options closes neither hole — its schema forbids it on open questions
+# ("a name, a mobile number, an address, a landmark") and it is alone-only, so a
+# question sharing a message with a write cannot use it. Hence a terminal keyed
+# on the RESULT rather than on the tool the model chose.
+# --------------------------------------------------------------------------- #
+from app.agent import build_config, build_graph, new_sqlite_checkpointer  # noqa: E402
+from app.models import Showroom  # noqa: E402
+from app.tools.location_tools import nearest_showroom  # noqa: E402
+from app.tools.slot_tools import acknowledge_licence_reminder  # noqa: E402
+
+
+class _Scripted:
+    """Replays canned assistant messages and COUNTS how many it was asked for.
+
+    The count is the assertion in every graph test below: the bug is not what the
+    model says, it is being asked to say anything at all.
+    """
+
+    def __init__(self, steps: list[dict]) -> None:
+        self.steps = steps
+        self.calls = 0
+
+    def __call__(self, messages, *, model, system, tools, config=None) -> dict:
+        assert self.calls < len(self.steps), "the graph asked for a generation it should not have"
+        step = self.steps[self.calls]
+        self.calls += 1
+        return step
+
+
+def _says_then_calls(text: str | None, *tools: tuple[str, dict]) -> dict:
+    content: list[dict] = []
+    if text is not None:
+        content.append({"type": "text", "text": text})
+    for i, (name, inp) in enumerate(tools):
+        content.append({"type": "tool_use", "id": f"u{i}", "name": name, "input": inp})
+    return {"role": "assistant", "content": content}
+
+
+def _run(db, session_id: str, first: str, steps: list[dict]) -> _Scripted:
+    model = _Scripted(steps)
+    graph = build_graph(new_sqlite_checkpointer())
+    graph.invoke(
+        {"messages": [{"role": "user", "content": first}], "iterations": 0, "customer_id": None},
+        build_config(db, session_id, generate=model),
+    )
+    return model
+
+
+def _place_the_branches(db, monkeypatch) -> None:
+    """The last two ask_for_landmark doors are reached only once the branches can
+    be ranked, so the fixture's showrooms need coordinates and the Salesforce
+    lookup needs to stay offline (it fails open to these anyway)."""
+    from app.services import salesforce
+
+    monkeypatch.setattr(salesforce, "showroom_coords", lambda: {})
+    for i, s in enumerate(db.query(Showroom).all()):
+        s.latitude, s.longitude = 25.10 + i * 0.05, 55.15 + i * 0.05
+    db.flush()
+
+
+# --- the producers: which results are silent -------------------------------- #
+def test_a_location_we_cannot_place_is_waiting_on_the_customer(db):
+    """The live failure's first tool call: nearest_showroom with no location.
+
+    The result is not an answer, it is a request for one — the customer has to
+    say where they are, and nothing in it can be said to them.
+    """
+    out = nearest_showroom(db, "sess-loc", vehicle_id=None)
+    assert out["ask_for_landmark"] is True
+    assert out["reason"] == "no_location"
+    assert out["awaiting_customer"] is True
+
+
+def test_an_ungeocodable_place_is_waiting_too(db, monkeypatch):
+    from app.services import maps
+
+    monkeypatch.setattr(maps, "geocode", lambda _q: None)
+    out = nearest_showroom(db, "sess-loc", location="somewhere that is not a place")
+    assert out["reason"] == "could_not_locate"
+    assert out["awaiting_customer"] is True
+
+
+def test_a_bare_city_is_waiting_too(db, monkeypatch):
+    """The third door into the same result — a city geocodes, but not precisely."""
+    from app.services import maps
+
+    _place_the_branches(db, monkeypatch)
+    monkeypatch.setattr(
+        maps, "geocode",
+        lambda _q: {"lat": 25.2, "lng": 55.27, "formatted": "Dubai", "precise": False, "emirate": "dubai"},
+    )
+    out = nearest_showroom(db, "sess-loc", location="Dubai")
+    assert out["reason"] == "need_landmark"
+    assert out["awaiting_customer"] is True
+
+
+def test_a_placed_location_is_not_waiting(db, monkeypatch):
+    """The other side of the guard: a real answer must still get its generation."""
+    from app.services import maps
+
+    _place_the_branches(db, monkeypatch)
+    monkeypatch.setattr(
+        maps, "geocode",
+        lambda _q: {"lat": 25.08, "lng": 55.14, "formatted": "Dubai Marina", "precise": True, "emirate": "dubai"},
+    )
+    monkeypatch.setattr(maps, "drive_times", lambda _o, dests: [None for _ in dests])
+    out = nearest_showroom(db, "sess-loc", location="Dubai Marina")
+    assert out["resolved"] is True
+    assert "awaiting_customer" not in out
+
+
+def test_the_licence_acknowledgement_has_nothing_to_say(db, monkeypatch):
+    """A server-side flag on the held slot. Not one word of it is for the
+    customer, and the message that calls it carries the consent question."""
+    from app.tools import slot_tools
+
+    monkeypatch.setattr(
+        slot_tools.slots, "acknowledge_licence_reminder",
+        lambda _db, session_id: {"acknowledged": True, "slot_id": 7},
+    )
+    assert acknowledge_licence_reminder(db, "sess-ack")["awaiting_customer"] is True
+
+
+def test_a_missing_slot_still_needs_a_generation(db, monkeypatch):
+    """no_locked_slot is an INSTRUCTION to the model — lock, remind, call again —
+    so it must not end the turn."""
+    from app.tools import slot_tools
+
+    monkeypatch.setattr(
+        slot_tools.slots, "acknowledge_licence_reminder",
+        lambda _db, session_id: {"acknowledged": False, "reason": "no_locked_slot"},
+    )
+    assert "awaiting_customer" not in acknowledge_licence_reminder(db, "sess-ack")
+
+
+# --- the terminal, through the real compiled graph -------------------------- #
+def test_the_turn_ends_when_the_only_tool_had_nothing_to_say(db):
+    """THE LIVE BUG. Step two is the model writing the customer's line; if the
+    graph ever asks for it, this fails on the call count."""
+    model = _run(
+        db, "sess-await-1", "Visit a showroom",
+        [
+            _says_then_calls("Whereabouts are you? Share a nearby landmark.", ("nearest_showroom", {})),
+            _says_then_calls("Dubai Marina", ("nearest_showroom", {"location": "Dubai Marina"})),
+        ],
+    )
+    assert model.calls == 1, "the model got a generation it could only fill with the customer's answer"
+
+
+def test_a_silent_result_beside_an_informative_one_still_gets_its_generation(db):
+    """ALL, not ANY. One tool with nothing to say among tools that do is normal —
+    the model has a real answer to give and must be allowed to give it."""
+    model = _run(
+        db, "sess-await-2", "Which showroom is closest?",
+        [
+            _says_then_calls(
+                "Let me look.",
+                ("nearest_showroom", {}),
+                ("get_vehicle_details", {"vehicle_id": 999999}),
+            ),
+            _says_then_calls("Here is what I found."),
+        ],
+    )
+    assert model.calls == 2
+
+
+def test_a_turn_that_has_said_nothing_is_never_ended(db):
+    """Ending here would leave the customer an empty bubble the client drops —
+    silence, where the whole point is that the question is already on screen."""
+    model = _run(
+        db, "sess-await-3", "Visit a showroom",
+        [
+            _says_then_calls(None, ("nearest_showroom", {})),
+            _says_then_calls("Whereabouts are you?"),
+        ],
+    )
+    assert model.calls == 2
