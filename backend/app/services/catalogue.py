@@ -987,6 +987,40 @@ def search(
     if feature_query and matched:
         result["catalogue_digest"] = _digest(matched)
 
+    # THE CARS THAT FITTED AND ARE NOT ON THE CARDS (2026-09-06).
+    #
+    # FOUND LIVE, session 9841adc7 on 2026-09-04. A customer described what
+    # they needed, was shown three cars, and asked "any other option you have
+    # for me". The same search ran again and returned THE IDENTICAL THREE —
+    # X70 FL Plus, X50, T2 Luxury Plus — because this function is deterministic
+    # and stateless: `_pick_spread` takes the best car per basis in a fixed
+    # order and has no memory of what was already shown. Six petrol models had
+    # matched; three of them (T1, Dashing, X70 FL) were unreachable by
+    # construction. The customer said so twice: "I asked for other option you
+    # are suggesting me the same."
+    #
+    # THE CAP IS NOT THE BUG AND IS NOT TOUCHED. Three recommendations is the
+    # rule (FR-BK-09/10), and MAX_RECOMMENDATIONS still governs the cards. What
+    # was missing is that the agent had NOTHING ELSE in the payload to offer:
+    # `catalogue_digest` only appears when a feature_query was passed, and on
+    # that turn there was none, so the whole result was three cars and an empty
+    # alternatives list. She reached outside the tool for a fourth car instead.
+    #
+    # ID AND NAME ONLY, NO PRICE, NO CARD — the same withholding `_digest`
+    # relies on. She can NAME these honestly; to say anything more about one she
+    # has to call get_vehicle_details, which re-grounds the claim (rule 2) and
+    # draws that car's card (rule 18). A price here would let a car be described
+    # and priced with no picture beside it, which is the defect this pairs with.
+    #
+    # OMITTED WHEN NOTHING WAS WITHHELD, so a search that offered everything it
+    # matched returns exactly the shape it always did.
+    shown = {v.id for v, _ in offered}
+    unshown = [v for v in matched if v.id not in shown]
+    if offered and unshown:
+        result["other_matches"] = [
+            {"vehicle_id": v.id, "name": v.name} for v in unshown
+        ]
+
     # `offered`, matching no_exact_match above: an unresolvable basis has
     # matches but no answer, and relaxing a criterion is exactly the right
     # recovery ("no petrol car is a hybrid — the nearest is the T2 i-DM").

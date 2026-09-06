@@ -470,6 +470,41 @@ def _fold_catalogue_facts(name: str, result: object, facts: dict) -> dict:
     return updated
 
 
+def _with_cards_shown(result: dict, strip: list) -> dict:
+    """`result` plus the cars the card row ACTUALLY DREW, as id and name.
+
+    FOUND LIVE, session 9841adc7 on 2026-09-04. Asked for "any other option",
+    Aisha wrote about the Jetour T1 i-DM while the row on screen still showed
+    the X70 FL Plus, X50 and T2 Luxury Plus — the three she had already shown.
+    The T1 i-DM is a PHEV and her own search had passed fuel=petrol, so it was
+    never in the result at all; she had it from the retrieval passages. The
+    customer read a paragraph about one car beside pictures of three others.
+
+    THE CASCADE ALREADY SOLVED THIS AND THIS PATH NEVER GOT IT. compose_input
+    hands the specialists' answer back with `cards_shown`, and aisha/v2.md tells
+    her to lead with those cars — but that key is built only in
+    _orchestrator_node, so when she searches the catalogue HERSELF
+    (config.AISHA_CATALOGUE_READS) nothing tells her what is on screen. This is
+    the same fact, delivered on the same tool result that drew the row.
+
+    TAKEN FROM THE STRIP, NOT FROM `matches`. The row is what the customer can
+    see, and it is capped and deduped (_merged_search_strip / MAX_CARDS) — so
+    naming `matches` here would claim pictures that were never drawn, which is
+    the defect wearing the other hat.
+
+    COPIES, NEVER MUTATES: the same dict is streamed to the browser, and the
+    card anchor and the reload row are both derived from it.
+    """
+    shown = [
+        {"vehicle_id": row.get("vehicle_id"), "name": row.get("name")}
+        for row in strip
+        if isinstance(row, dict) and row.get("vehicle_id") is not None
+    ]
+    if not shown:
+        return result
+    return {**result, "cards_shown": shown}
+
+
 def _fold_session_facts(db, name: str, result: object, facts: dict) -> dict:
     """Fold ONE tool RESULT into session_facts — the date-anchor pattern applied to
     identity (2026-07-24). Returns a NEW dict; the caller replaces its running copy.
@@ -611,6 +646,17 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         _aisha_catalogue_reads(cfg)
         and sum(1 for b in tool_uses if b.get("name") == "search_vehicles") > 1
     )
+    # WHAT THE CUSTOMER CAN SEE, TOLD TO THE ONE WHO WRITES THE SENTENCE
+    # (2026-09-06) — see _with_cards_shown for the live failure. Gated on the
+    # SAME flag as `curating` above, so the single-agent path's tool results
+    # stay byte-identical: that path is the kill switch and its card selection
+    # is deliberately frozen (OPEN-ISSUES #4).
+    #
+    # A curated batch cannot be annotated inside the loop — the strip is only
+    # known once every search in the generation has run — so those entries are
+    # remembered by position and rebuilt after it.
+    annotating = _aisha_catalogue_reads(cfg)
+    curated_slots: list[tuple[int, str, dict]] = []
 
     results: list[dict] = []
     for idx, block in enumerate(tool_uses):
@@ -771,7 +817,18 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
                 if not result.get("already_closed"):
                     writer({"type": "closed"})
 
-        results.append(_tool_result(tool_use_id, result, is_error=isinstance(result, dict) and "error" in result))
+        # THE MODEL'S COPY MAY CARRY `cards_shown`; THE BROWSER'S NEVER DOES.
+        # The streamed event above is what draws the row and what the reload
+        # anchor is derived from, so it is left exactly as the service returned
+        # it — the annotation is for the generation that writes the reply.
+        model_result = result
+        if annotating and name == "search_vehicles" and isinstance(result, dict) and writer:
+            if curating:
+                curated_slots.append((len(results), tool_use_id, result))
+            else:
+                model_result = _with_cards_shown(result, _merged_search_strip([result]))
+
+        results.append(_tool_result(tool_use_id, model_result, is_error=isinstance(result, dict) and "error" in result))
 
     # (4) REMEMBER THIS BROWSER (C10). Once per turn, at the end, rather than
     # inside the identity branch above — because the two facts it needs arrive in
@@ -788,6 +845,16 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
     # anchor in runner and cards.ts all read it exactly as they read a search.
     if writer and curated_searches:
         strip = _merged_search_strip(curated_searches)
+        # EVERY SEARCH IN THE BATCH IS TOLD THE SAME STRIP, because one row is
+        # drawn for all of them — see _with_cards_shown. Rebuilt by position so
+        # each tool_use keeps the tool_result it already had if the strip is
+        # empty (a search that matched nothing draws no row and claims none).
+        for index, use_id, raw in curated_slots:
+            annotated = _with_cards_shown(raw, strip)
+            if annotated is not raw:
+                results[index] = _tool_result(
+                    use_id, annotated, is_error="error" in raw
+                )
         if strip:
             writer({
                 "type": "tool_event",
