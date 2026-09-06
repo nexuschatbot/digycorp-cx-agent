@@ -1334,7 +1334,28 @@ export function useChat(): UseChat {
         // which fires only on a genuine create (never an idempotent replay).
         if (e.tool === 'reschedule_booking') {
           const ref = bookingRefOf(e.output)
-          if (ref) void showBookingCard(ref, turnDirRef.current)
+          if (ref) {
+            // AND THE PRE-MOVE CARD STILL IN THE QUEUE (2026-09-06), exactly as
+            // cancel does below and for the same reason: on the multi-agent
+            // path the specialist looks the booking up BEFORE the move, so a
+            // get_booking row holding the old time is queued — not yet
+            // committed — when this event lands. showBookingCard retires rows
+            // it can SEE, and it cannot see a queued one; worse, its fetch is a
+            // local call that usually resolves before the first token flushes
+            // the queue, so the stale row would land BELOW the fresh card
+            // instead of above it, unmuted.
+            //
+            // DROPPED, NOT MUTED. A muted row is history the customer actually
+            // saw; this one was never on screen, and the move it predates
+            // happened in the same breath.
+            for (let i = pendingRows.length - 1; i >= 0; i--) {
+              const row = pendingRows[i]
+              if (row.kind === 'bookings' && row.bookings.some((b) => b.ref === ref)) {
+                pendingRows.splice(i, 1)
+              }
+            }
+            void showBookingCard(ref, turnDirRef.current)
+          }
           return
         }
         // A cancelled booking draws NO card — there is nothing to show, and

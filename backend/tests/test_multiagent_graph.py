@@ -1381,3 +1381,109 @@ def test_the_tool_node_hands_back_what_she_already_said(db, monkeypatch):
     monkeypatch.setattr(turn, "enabled", lambda *a, **k: False)
     out = tool_node.tool_node(state, {"configurable": {"db": db, "session_id": "s1"}})
     assert all(b["type"] == "tool_result" for b in out["messages"][0]["content"])
+
+
+# --------------------------------------------------------------------------- #
+# A booking WRITE is not a duplicate of the read before it (2026-09-06)
+# --------------------------------------------------------------------------- #
+def test_a_lookup_and_a_move_of_one_booking_anchor_identically():
+    """The collision itself, stated once. A booking anchor is the REFERENCE and
+    nothing else, so it cannot tell a move from the lookup that preceded it —
+    unlike a vehicle anchor, which carries the ids and therefore changes when
+    the row's content changes."""
+    from app.agent.runner import _card_anchor
+
+    looked_up = _card_anchor("get_booking", {"bookings": [{"booking_ref": "TD-2026-XQ8M"}]})
+    moved = _card_anchor("reschedule_booking", {"booking": {"booking_ref": "TD-2026-XQ8M"}})
+
+    assert looked_up == moved == {"booking_refs": ["TD-2026-XQ8M"]}
+
+
+def test_the_move_still_reaches_the_browser_after_the_lookup(db, slots):
+    """THE LIVE BUG (browser run, 2026-09-06). She said "moved to 5 PM" and the
+    card beside it read 9:00 am, because the specialist's get_booking registered
+    the anchor first and the reschedule_booking event — the one useChat turns
+    into a re-fetch of the booking — was dropped as a repeat. A reload showed
+    5 PM, so screen and transcript disagreed until the customer refreshed."""
+    import threading
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from app.agent import runner
+    from app.models import LocationType, Slot, SlotStatus
+    from app.services import booking, customers
+    from app.services import slots as slots_service
+
+    session_id = "sess-move-redraws"
+    cid = customers.find_or_create(db, mobile="+971501112233", name="Ravi Sharma")["customer"]["customer_id"]
+    open_showroom = db.scalars(
+        select(Slot).where(
+            Slot.status == SlotStatus.open,
+            Slot.location_type == LocationType.showroom,
+            Slot.start > datetime.now() + timedelta(hours=25),
+        ).order_by(Slot.start, Slot.id)
+    ).all()
+    assert len(open_showroom) > 1, "need one slot to book and one to move to"
+    first, second = open_showroom[0], open_showroom[1]
+
+    assert slots_service.lock(db, session_id=session_id, slot_id=first.id)["locked"] is True
+    slots_service.acknowledge_licence_reminder(db, session_id=session_id)
+    ref = booking.create(
+        db, session_id=session_id, customer_id=cid,
+        vehicle_id=first.vehicle_id, slot_id=first.id,
+    )["booking"]["booking_ref"]
+    db.commit()
+
+    steps = [
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "u0", "name": "identify_by_reference_or_mobile",
+             "input": {"ref": ref}}]},
+        # The lookup that registers the anchor — what the specialist does first.
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "u1", "name": "get_booking", "input": {"ref": ref}}]},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "u2", "name": "lock_slot",
+             "input": {"slot_id": second.id}}]},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "u3", "name": "reschedule_booking",
+             "input": {"ref": ref, "new_slot_id": second.id}}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Done — moved."}]},
+    ]
+    calls = {"n": 0}
+
+    def generate(messages, *, model, system, tools, config=None):
+        step = steps[min(calls["n"], len(steps) - 1)]
+        calls["n"] += 1
+        return step
+
+    events: list[tuple[str, dict]] = []
+    runner.run_turn(
+        session_id, "please move my test drive",
+        on_event=lambda e, d: events.append((e, d)),
+        cancel=threading.Event(),
+        generate=generate,
+        session_factory=lambda: Session(db.get_bind()),
+    )
+
+    drew = [d["tool"] for e, d in events if e == "tool_event"]
+    assert "reschedule_booking" in drew, (
+        "the move's event was suppressed as a duplicate of the lookup — the "
+        "browser never re-fetched the booking and kept the pre-move card"
+    )
+
+    # AND THE RELOAD STILL DRAWS ONE CARD. The event goes out twice over; the
+    # ANCHOR must not, because rebuildTurns renders every row of the last turn
+    # holding a ref and two identical rows would rebuild the booking twice.
+    from app.models import ConversationTurn
+
+    turn = db.scalars(
+        select(ConversationTurn)
+        .where(ConversationTurn.session_id == session_id)
+        .where(ConversationTurn.speaker == "agent")
+        .order_by(ConversationTurn.id.desc())
+    ).first()
+    anchors = [r for r in (turn.cards or []) if r.get("booking_refs")]
+    assert len(anchors) == 1, f"the reload would draw the booking twice: {anchors}"
+    assert anchors[0]["booking_refs"] == [ref]

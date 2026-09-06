@@ -323,3 +323,49 @@ def test_a_stranger_still_cannot_act_on_a_booking_they_did_not_identify(db, slot
     out = TOOL_FNS["cancel_booking"](db, SESSION, customer_id=mine, ref=their_ref)
 
     assert out["error"] == "booking_not_found"
+
+
+# --------------------------------------------------------------------------- #
+# She cannot answer the question herself
+# --------------------------------------------------------------------------- #
+def test_neither_identifier_ends_the_turn(db, slots):
+    """BROWSER RUN, 2026-09-06. Asked in Arabic to cancel, Aisha called this with
+    nothing, asked for the reference or the number — and, handed a generation
+    with nothing left to fill it, filled it with TD-2026-HTXE, the example out of
+    this tool's own schema: said it to the customer, called this again with it,
+    and reported no booking found. The reference matched nothing, so it failed
+    harmlessly; against one that exists the same reflex opens a stranger's
+    booking.
+
+    The marker is the one _AWAITING_KEY was added for (an invented landmark, an
+    invented consent) — the tool node reads it and the graph ENDs the turn, so
+    there is no generation in which to invent an answer."""
+    out = TOOL_FNS["identify_by_reference_or_mobile"](db, SESSION)
+
+    assert out["error"] == "identifier_required"
+    assert out["awaiting_customer"] is True
+
+
+def test_a_failed_lookup_still_gets_its_generation(db, slots):
+    """The line location_tools draws between no_location and its other two
+    branches. 'We have nothing under that' and 'could you read that back?' are
+    facts the customer must HEAR, so those turns must not end."""
+    unknown = TOOL_FNS["identify_by_reference_or_mobile"](db, SESSION, ref="TD-2026-ZZZZ")
+    unreadable = TOOL_FNS["identify_by_reference_or_mobile"](db, SESSION, mobile="12")
+
+    assert unknown["error"] == "no_booking_found"
+    assert "awaiting_customer" not in unknown
+    assert unreadable["error"] == "invalid_uae_mobile"
+    assert "awaiting_customer" not in unreadable
+
+
+def test_a_successful_identification_is_untouched(db, slots):
+    """The envelope the tool node binds the session from is unchanged — the
+    marker rides only on the branch that has nothing to report."""
+    cid = _customer(db, name="Ravi Sharma")
+    ref = _book(db, _far_slot(db), cid)
+
+    out = TOOL_FNS["identify_by_reference_or_mobile"](db, SESSION, ref=ref)
+
+    assert out["customer"]["customer_id"] == cid
+    assert "awaiting_customer" not in out

@@ -116,6 +116,34 @@ def _attach_voice_customer(db, graph, config, session_id: str, *, customer_id=_U
 # showed — the one thing this feature exists to prevent.
 _MAX_RECOMMENDATION_CARDS = 3
 
+# THE TWO TOOLS THAT CHANGE A BOOKING RATHER THAN READ ONE (browser run,
+# 2026-09-06). The card dedupe below keys on the anchor, and a booking anchor is
+# the REFERENCE and nothing else — identical before and after a move. So a
+# reschedule that followed a lookup of the same booking, which is exactly what
+# the multi-agent path does (the specialist calls get_booking, then the write
+# runs and reports itself as a tool_event), looked like a repeat and was
+# dropped:
+#
+#     customer  yes, move it to 5 PM
+#     Aisha     "Done! …moved to Monday 7 September at 5 PM"
+#     card      Monday, 7 September 2026, 9:00 am – 10:30 am
+#
+# The row the browser drew came from the get_booking BEFORE the move, and the
+# event that would have replaced it — useChat's reschedule_booking branch
+# re-fetches the booking and retires the old card — never arrived. A reload
+# showed 5 PM, because the anchor resolves through GET /api/booking/{ref} and
+# that returns the booking's current state.
+#
+# For VEHICLES the dedupe's premise holds: the anchor carries the ids, so a row
+# whose content changed has a different key. For bookings the content is not in
+# the key at all, which makes a write indistinguishable from the read before it.
+# A write is never a duplicate of a read — it is the only event carrying what
+# changed.
+#
+# cancel_booking is absent because it anchors nothing (_card_anchor returns None
+# for it: a cancelled booking draws no card and 404s on reload).
+_BOOKING_WRITES = frozenset({"create_booking", "reschedule_booking"})
+
 
 def _card_anchor(tool: str, output: object) -> dict | None:
     """Which cards did this tool_event render? Two entry shapes, one union:
@@ -594,7 +622,20 @@ def run_turn(
                 # is meaningful.
                 if anchor is not None:
                     key = _json.dumps(anchor, sort_keys=True)
-                    if key in drawn_anchors:
+                    # A WRITE IS NEVER A DUPLICATE OF THE READ BEFORE IT (see
+                    # _BOOKING_WRITES). The event goes out — it is what redraws
+                    # the card with the new time — but the anchor is NOT
+                    # recorded a second time: both rows would sit in the same
+                    # turn, and rebuildTurns renders every row of the LAST turn
+                    # holding a ref, so a duplicate anchor draws the booking
+                    # twice on reload.
+                    already_drawn = key in drawn_anchors
+                    if already_drawn and chunk["tool"] in _BOOKING_WRITES:
+                        log.info(
+                            "%s redraws the booking it just changed — session=%s",
+                            chunk["tool"], session_id,
+                        )
+                    elif key in drawn_anchors:
                         log.info(
                             "suppressing duplicate %s card — session=%s",
                             chunk["tool"], session_id,
@@ -645,9 +686,10 @@ def run_turn(
                         key = _json.dumps(anchor, sort_keys=True)
                         if key in drawn_anchors:
                             continue
-                    drawn_vehicle_ids.update(ids or [])
-                    drawn_anchors.add(key)
-                    card_rows.append(anchor)
+                    if not already_drawn:
+                        drawn_vehicle_ids.update(ids or [])
+                        drawn_anchors.add(key)
+                        card_rows.append(anchor)
                 event = {
                     "tool": chunk["tool"], "input": chunk["input"], "output": chunk["output"],
                 }

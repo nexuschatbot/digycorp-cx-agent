@@ -350,3 +350,193 @@ def test_a_turn_that_has_said_nothing_is_never_ended(db):
         ],
     )
     assert model.calls == 2
+
+
+def test_she_cannot_invent_the_booking_reference_she_just_asked_for(db):
+    """BROWSER RUN, 2026-09-06 — the same failure wearing a third costume.
+
+    Asked in Arabic to cancel a booking, Aisha asked for the reference or the
+    number and called identify_by_reference_or_mobile with NEITHER. Handed a
+    generation with nothing left to fill it, she filled it with TD-2026-HTXE —
+    THE EXAMPLE OUT OF THAT TOOL'S OWN SCHEMA — said it to the customer, looked
+    it up, and reported no booking found. It matched nothing, so the lookup
+    failed harmlessly; against a reference that exists the same reflex opens a
+    stranger's booking.
+
+    Step two is that invention. If the graph ever buys it, this fails on the
+    call count."""
+    model = _run(
+        db, "sess-await-5", "I want to cancel my test drive",
+        [
+            _says_then_calls(
+                "Of course — could I have your booking reference or the mobile on it?",
+                ("identify_by_reference_or_mobile", {}),
+            ),
+            _says_then_calls("TD-2026-HTXE", ("identify_by_reference_or_mobile", {"ref": "TD-2026-HTXE"})),
+        ],
+    )
+    assert model.calls == 1, "she was handed a generation she could only fill with the customer's answer"
+
+
+def test_a_reference_that_matches_nothing_still_gets_its_generation(db):
+    """The other side: 'we have nothing under that' is a fact the customer must
+    hear, so a failed LOOKUP — unlike a missing identifier — must not end the
+    turn."""
+    model = _run(
+        db, "sess-await-6", "Cancel TD-2026-ZZZZ please",
+        [
+            _says_then_calls("Let me look that up.", ("identify_by_reference_or_mobile", {"ref": "TD-2026-ZZZZ"})),
+            _says_then_calls("I could not find a booking under that reference."),
+        ],
+    )
+    assert model.calls == 2, "she was cut off before she could say it was not found"
+
+
+# --- one question, one tappable row ----------------------------------------- #
+def _batch(db, blocks: list[dict], history: list | None = None) -> list[dict]:
+    """One tool_node batch, and the results it handed back. `history` is what
+    came BEFORE the assistant message under test, in this same customer turn."""
+    import json as _json
+
+    from app.agent import build_config
+    from app.agent.tool_node import tool_node
+
+    state = {
+        "messages": [
+            {"role": "user", "content": "move my test drive later please"},
+            *(history or []),
+            {"role": "assistant", "content": blocks},
+        ],
+        "customer_id": None,
+    }
+    out = tool_node(state, build_config(db, "sess-affordance"))
+    return [
+        _json.loads(b["content"])
+        for b in out["messages"][0]["content"]
+        if isinstance(b, dict) and b.get("type") == "tool_result"
+    ]
+
+
+def _use(call_id: str, name: str, **args) -> dict:
+    return {"type": "tool_use", "id": call_id, "name": name, "input": args}
+
+
+def _drew_slots(slots: int = 3) -> list[dict]:
+    """An earlier generation of the SAME turn that fetched times. `slots=0` is the
+    honest empty answer — the tool ran and NOTHING went on screen."""
+    import json as _json
+
+    rows = [{"slot_id": i, "start_iso": f"2026-09-07T0{9 + i}:00:00"} for i in range(slots)]
+    return [
+        {"role": "assistant", "content": [_use("s0", "get_available_slots", days_ahead=1)]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "s0",
+             "content": _json.dumps({"slots": rows})},
+        ]},
+    ]
+
+
+def test_a_second_row_of_the_same_answers_is_refused(db, slots):
+    """BROWSER RUN, 2026-09-06. Asked to move a booking, she fetched the times —
+    which draw their own tappable row — and then, an iteration later, offered
+    "1 PM", "3 PM", "6:30 PM" as chips. The customer saw the same three times
+    twice, one row under the other, both live. Her schema already forbids it;
+    the alone-only veto tests ONE BATCH and these were an iteration apart."""
+    out = _batch(
+        db,
+        [_use("o1", "offer_options", options=["1 PM", "3 PM", "6:30 PM"])],
+        history=_drew_slots(),
+    )
+
+    assert out[0]["error"] == "answer_already_offered"
+    assert "offered" not in out[0], "no chips were drawn"
+
+
+def test_the_refusal_still_ends_the_turn(db, slots):
+    """THE FIRST CUT OF THIS VETO BROKE THIS, live. A successful offer_options IS
+    the terminal — options_offered ends the turn and the customer answers.
+    Refusing it took the terminal away, and the generation handed back had one
+    thing left to fill it: she wrote "Yes please" in her own bubble, answering
+    her own question, and acted on it."""
+    out = _batch(
+        db,
+        [_use("o1", "offer_options", options=["1 PM", "3 PM"])],
+        history=_drew_slots(),
+    )
+
+    assert out[0]["awaiting_customer"] is True
+
+
+def test_a_tool_that_found_nothing_drew_no_row_and_vetoes_nothing(db, slots):
+    """ALSO BROKEN LIVE, and the reason this reads the RESULT. There were no
+    times later that day, so get_available_slots returned an empty list and the
+    screen stayed bare — her chips beside "shall I check from tomorrow?" were the
+    only thing to tap, and the first cut refused them."""
+    out = _batch(
+        db,
+        [_use("o1", "offer_options", options=["Yes please", "No thanks"])],
+        history=_drew_slots(slots=0),
+    )
+
+    assert out[0]["offered"] is True
+
+
+def test_options_are_untouched_when_no_row_was_drawn(db, slots):
+    """The ordinary case, and most of them: a closed question with nothing
+    tappable already on screen."""
+    out = _batch(db, [_use("o1", "offer_options", options=["Yes", "No"])])
+
+    assert out[0]["offered"] is True
+
+
+def test_cards_are_not_an_answer_and_never_veto(db, slots):
+    """DELIBERATE. A slot chip and a showroom's Select ARE the answer to the
+    question; a vehicle card opens a detail panel and answers nothing. "Tell me
+    more about the T1 / about the Dashing" under a row of cars was seen working
+    in the same browser run and must keep working."""
+    history = [
+        {"role": "assistant", "content": [_use("v0", "search_vehicles", fuel="petrol")]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "v0", "content": "{}"},
+        ]},
+    ]
+    out = _batch(
+        db,
+        [_use("o1", "offer_options", options=["Tell me about the T1", "About the Dashing"])],
+        history=history,
+    )
+
+    assert out[0]["offered"] is True
+
+
+def test_a_row_drawn_on_an_EARLIER_turn_does_not_veto(db, slots):
+    """The window is THIS customer turn. Times offered before they last spoke
+    are spent — chips for a fresh question are exactly right."""
+    history = [
+        *_drew_slots(),
+        {"role": "assistant", "content": [{"type": "text", "text": "Which time suits?"}]},
+        {"role": "user", "content": "actually, may we message you about it?"},
+    ]
+    out = _batch(db, [_use("o1", "offer_options", options=["Yes", "No"])], history=history)
+
+    assert out[0]["offered"] is True
+
+
+def test_a_refused_chip_row_never_buys_her_the_customers_line(db, slots):
+    """The live regression, end to end. Step two is her writing "Yes please" in
+    her own bubble; if the graph ever asks for it, this fails on the call count.
+
+    The real run had the times already on screen when she offered the chips, so
+    the veto fires — and the turn must end on the row, not on a generation."""
+    model = _run(
+        db, "sess-chips-1", "move my test drive later",
+        [
+            _says_then_calls(
+                "Here is what is free tomorrow. Which suits you?",
+                ("get_available_slots", {"vehicle_id": 1, "showroom_id": 1}),
+            ),
+            _says_then_calls(None, ("offer_options", {"options": ["9 AM", "11 AM"]})),
+            _says_then_calls("Yes please", ("get_available_slots", {"vehicle_id": 1})),
+        ],
+    )
+    assert model.calls == 2, "she was handed a generation she could only fill with the customer's line"

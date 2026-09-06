@@ -173,6 +173,39 @@ _CLOSE_TOOL = "close_conversation"
 # question has already streamed as text in the same message, so a generation
 # after it would only staple a spare sentence under the chips.
 _OPTIONS_TOOL = "offer_options"
+# THE TOOLS THAT ALREADY DREW THE ANSWER (browser run, 2026-09-06). Asked to move
+# a booking, Aisha called get_available_slots — which draws a row of tappable
+# times — and then, in the NEXT generation of the same turn, offer_options with
+# "1 PM", "3 PM", "6:30 PM". The customer got the same three times twice, one row
+# under the other, both live.
+#
+# HER OWN SCHEMA ALREADY FORBIDS IT ("Do not use it for times or showrooms
+# either: those already draw their own tappable cards from the tools that fetch
+# them, and a second set of buttons saying the same thing would be shown twice")
+# and the alone-only veto below could not reach it: that tests ONE BATCH, and
+# these two calls were an iteration apart.
+#
+# THE ROW THAT WAS DRAWN, NEVER WHAT SHE WROTE. Comparing "1 PM" against a chip
+# reading "1:00 pm" means parsing a model's prose in two languages and two digit
+# sets, and options.ts settled that argument for this codebase already: "Text is
+# not a contract". A row of times is up or it is not — see _row_was_drawn, which
+# reads the RESULT, because the tool having RUN is not the same thing and the
+# difference cost a live turn.
+#
+# VEHICLE CARDS ARE DELIBERATELY ABSENT. A slot chip and a showroom's Select ARE
+# the answer to the question being asked; a vehicle card opens a detail panel and
+# answers nothing. "Tell me more about the T1 / about the Dashing / compare two"
+# under a row of cars is the pattern working as intended (seen in the same run),
+# and it must keep working.
+#
+# ⚠️ THE CASCADE PATH IS NOT COVERED, knowingly. A specialist's
+# get_available_slots is replayed by graph._emit_slot_rows and never appears as a
+# tool_use in Aisha's own history, so the walk below cannot see it. It fails
+# OPEN — exactly today's behaviour — rather than guessing from emit_briefs, which
+# would refuse the good pattern above after every cascade.
+_AFFORDANCE_TOOLS = frozenset({
+    "get_available_slots", "get_showrooms", "nearest_showroom",
+})
 # The THIRD terminal (2026-09-04), and the only one no tool NAME can express:
 # whether the turn is over depends on the RESULT. A tool with nothing for the
 # customer to hear — a location we could not place, a licence flag flipped
@@ -182,6 +215,91 @@ _OPTIONS_TOOL = "offer_options"
 # ask_for_landmark branch) and slot_tools.acknowledge_licence_reminder; the key
 # is a literal there because app.tools cannot import this module back.
 _AWAITING_KEY = "awaiting_customer"
+def _row_was_drawn(tool: str, result: object) -> bool:
+    """Did THIS result actually put a tappable row on screen?
+
+    THE RESULT, NOT THE CALL, and a live run is why (2026-09-06). The first
+    version of this asked only whether the tool had RUN. It ran — and returned
+    no times at all ("nothing later today"), so no row was drawn — and the chips
+    she offered beside "shall I check from tomorrow?" were refused for competing
+    with a row that did not exist. An empty answer is a valid, honest one (see
+    get_available_slots' own schema) and leaves the screen with nothing on it.
+
+    Mirrors the frontend's own emptiness rules — extractSlotChips,
+    extractShowroomChoices, extractNearestShowroomChoices — because "was a row
+    drawn" has exactly one right answer and it is theirs.
+
+    NOT byte-for-byte theirs, and the gap is stated rather than hidden: they also
+    drop individual rows missing an id or a name, so a non-empty list of
+    malformed rows would draw nothing while this says it drew. That direction
+    costs a chip row and nothing else — the refusal still ends the turn — and
+    reaching into their per-row rules from here would couple this to a shape that
+    is the UI's to change.
+    """
+    if not isinstance(result, dict):
+        return False
+    if tool == "get_available_slots":
+        return bool(result.get("slots"))
+    if tool == "get_showrooms":
+        return bool(result.get("showrooms"))
+    if tool == "nearest_showroom":
+        return result.get("resolved") is True and bool(result.get("nearest"))
+    return False
+
+
+def _drew_its_own_answer_this_turn(state: dict) -> bool:
+    """Has a row the customer can TAP already been drawn since they last spoke?
+
+    Reads the same window _said_this_turn does, through the same
+    _turn_context_key, so "this turn" has one definition here and not two.
+    Failing to read it means "no row" — the veto below then behaves exactly as
+    it did before, which is the safe direction for a presentation guard.
+    """
+    try:
+        from app.agent import graph as _graph
+
+        key = _graph._turn_context_key(state)
+    except Exception:  # noqa: BLE001 — a chip must never cost a turn
+        log.debug("could not read the turn boundary", exc_info=True)
+        return False
+    if key is None:
+        return False
+
+    window = (state.get("messages") or [])[int(key) + 1:]
+    # tool_use_id -> tool name, for the affordance calls she made this turn. The
+    # results arrive in a LATER message, keyed by that id, so the two halves are
+    # matched rather than assumed to be adjacent.
+    pending: dict[str, str] = {}
+    for msg in window:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        if msg.get("role") == "assistant":
+            for b in content:
+                if (
+                    isinstance(b, dict)
+                    and b.get("type") == "tool_use"
+                    and b.get("name") in _AFFORDANCE_TOOLS
+                ):
+                    pending[str(b.get("id"))] = b["name"]
+            continue
+        for b in content:
+            if not isinstance(b, dict) or b.get("type") != "tool_result":
+                continue
+            tool = pending.get(str(b.get("tool_use_id")))
+            if tool is None:
+                continue
+            try:
+                result = json.loads(b.get("content") or "null")
+            except (TypeError, ValueError):
+                continue
+            if _row_was_drawn(tool, result):
+                return True
+    return False
+
+
 def _tool_result(tool_use_id: str, result: dict, *, is_error: bool = False) -> dict:
     """Anthropic tool_result content block. Result is JSON so Claude reads it as
     data — the tool's own error envelope, not a stack trace."""
@@ -470,6 +588,41 @@ def _fold_catalogue_facts(name: str, result: object, facts: dict) -> dict:
     return updated
 
 
+def _with_cards_shown(result: dict, strip: list) -> dict:
+    """`result` plus the cars the card row ACTUALLY DREW, as id and name.
+
+    FOUND LIVE, session 9841adc7 on 2026-09-04. Asked for "any other option",
+    Aisha wrote about the Jetour T1 i-DM while the row on screen still showed
+    the X70 FL Plus, X50 and T2 Luxury Plus — the three she had already shown.
+    The T1 i-DM is a PHEV and her own search had passed fuel=petrol, so it was
+    never in the result at all; she had it from the retrieval passages. The
+    customer read a paragraph about one car beside pictures of three others.
+
+    THE CASCADE ALREADY SOLVED THIS AND THIS PATH NEVER GOT IT. compose_input
+    hands the specialists' answer back with `cards_shown`, and aisha/v2.md tells
+    her to lead with those cars — but that key is built only in
+    _orchestrator_node, so when she searches the catalogue HERSELF
+    (config.AISHA_CATALOGUE_READS) nothing tells her what is on screen. This is
+    the same fact, delivered on the same tool result that drew the row.
+
+    TAKEN FROM THE STRIP, NOT FROM `matches`. The row is what the customer can
+    see, and it is capped and deduped (_merged_search_strip / MAX_CARDS) — so
+    naming `matches` here would claim pictures that were never drawn, which is
+    the defect wearing the other hat.
+
+    COPIES, NEVER MUTATES: the same dict is streamed to the browser, and the
+    card anchor and the reload row are both derived from it.
+    """
+    shown = [
+        {"vehicle_id": row.get("vehicle_id"), "name": row.get("name")}
+        for row in strip
+        if isinstance(row, dict) and row.get("vehicle_id") is not None
+    ]
+    if not shown:
+        return result
+    return {**result, "cards_shown": shown}
+
+
 def _fold_session_facts(db, name: str, result: object, facts: dict) -> dict:
     """Fold ONE tool RESULT into session_facts — the date-anchor pattern applied to
     identity (2026-07-24). Returns a NEW dict; the caller replaces its running copy.
@@ -611,6 +764,17 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
         _aisha_catalogue_reads(cfg)
         and sum(1 for b in tool_uses if b.get("name") == "search_vehicles") > 1
     )
+    # WHAT THE CUSTOMER CAN SEE, TOLD TO THE ONE WHO WRITES THE SENTENCE
+    # (2026-09-06) — see _with_cards_shown for the live failure. Gated on the
+    # SAME flag as `curating` above, so the single-agent path's tool results
+    # stay byte-identical: that path is the kill switch and its card selection
+    # is deliberately frozen (OPEN-ISSUES #4).
+    #
+    # A curated batch cannot be annotated inside the loop — the strip is only
+    # known once every search in the generation has run — so those entries are
+    # remembered by position and rebuilt after it.
+    annotating = _aisha_catalogue_reads(cfg)
+    curated_slots: list[tuple[int, str, dict]] = []
 
     results: list[dict] = []
     for idx, block in enumerate(tool_uses):
@@ -690,6 +854,36 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
                     "question in words and there is nothing else to do. Finish "
                     "the other work first, then ask, then offer."
                 ),
+            }
+        elif name == _OPTIONS_TOOL and _drew_its_own_answer_this_turn(state):
+            # THE SAME RULE, ONE ITERATION WIDER (see _AFFORDANCE_TOOLS). The
+            # times or the branches are already on screen as chips the customer
+            # can tap; a second row saying the same thing is the duplicate a
+            # browser run put in front of a customer. Refused as DATA and logged;
+            # the question she asked in words stands, with the row under it.
+            log.info(
+                "offer_options REFUSED (a tappable row is already up) — session=%s",
+                session_id,
+            )
+            result = {
+                "error": "answer_already_offered",
+                "detail": (
+                    "The times or branches you fetched are already on screen as "
+                    "buttons the customer can tap, so there is nothing to add "
+                    "here — a second row would show the same answers twice. Ask "
+                    "anything else you need in words."
+                ),
+                # AND THE TURN STILL ENDS (live run, 2026-09-06, the first cut of
+                # this veto). A successful offer_options IS the terminal —
+                # options_offered ends the turn and the customer answers. Refusing
+                # it took that terminal away, and the generation it handed back
+                # had exactly one thing left to fill it: she wrote "Yes please"
+                # in her own bubble, answering her own question, and acted on it.
+                # That is the failure _AWAITING_KEY exists for (graph.AgentState),
+                # so the refusal carries the marker the success carried: the
+                # question is on screen, the row is under it, the next move is
+                # the customer's.
+                _AWAITING_KEY: True,
             }
         elif name == _CLOSE_TOOL and len(tool_uses) > 1:
             log.info(
@@ -771,7 +965,18 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
                 if not result.get("already_closed"):
                     writer({"type": "closed"})
 
-        results.append(_tool_result(tool_use_id, result, is_error=isinstance(result, dict) and "error" in result))
+        # THE MODEL'S COPY MAY CARRY `cards_shown`; THE BROWSER'S NEVER DOES.
+        # The streamed event above is what draws the row and what the reload
+        # anchor is derived from, so it is left exactly as the service returned
+        # it — the annotation is for the generation that writes the reply.
+        model_result = result
+        if annotating and name == "search_vehicles" and isinstance(result, dict) and writer:
+            if curating:
+                curated_slots.append((len(results), tool_use_id, result))
+            else:
+                model_result = _with_cards_shown(result, _merged_search_strip([result]))
+
+        results.append(_tool_result(tool_use_id, model_result, is_error=isinstance(result, dict) and "error" in result))
 
     # (4) REMEMBER THIS BROWSER (C10). Once per turn, at the end, rather than
     # inside the identity branch above — because the two facts it needs arrive in
@@ -788,6 +993,16 @@ def tool_node(state: dict, config: RunnableConfig) -> dict:
     # anchor in runner and cards.ts all read it exactly as they read a search.
     if writer and curated_searches:
         strip = _merged_search_strip(curated_searches)
+        # EVERY SEARCH IN THE BATCH IS TOLD THE SAME STRIP, because one row is
+        # drawn for all of them — see _with_cards_shown. Rebuilt by position so
+        # each tool_use keeps the tool_result it already had if the strip is
+        # empty (a search that matched nothing draws no row and claims none).
+        for index, use_id, raw in curated_slots:
+            annotated = _with_cards_shown(raw, strip)
+            if annotated is not raw:
+                results[index] = _tool_result(
+                    use_id, annotated, is_error="error" in raw
+                )
         if strip:
             writer({
                 "type": "tool_event",
