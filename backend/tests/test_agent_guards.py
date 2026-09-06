@@ -350,3 +350,43 @@ def test_a_turn_that_has_said_nothing_is_never_ended(db):
         ],
     )
     assert model.calls == 2
+
+
+def test_she_cannot_invent_the_booking_reference_she_just_asked_for(db):
+    """BROWSER RUN, 2026-09-06 — the same failure wearing a third costume.
+
+    Asked in Arabic to cancel a booking, Aisha asked for the reference or the
+    number and called identify_by_reference_or_mobile with NEITHER. Handed a
+    generation with nothing left to fill it, she filled it with TD-2026-HTXE —
+    THE EXAMPLE OUT OF THAT TOOL'S OWN SCHEMA — said it to the customer, looked
+    it up, and reported no booking found. It matched nothing, so the lookup
+    failed harmlessly; against a reference that exists the same reflex opens a
+    stranger's booking.
+
+    Step two is that invention. If the graph ever buys it, this fails on the
+    call count."""
+    model = _run(
+        db, "sess-await-5", "I want to cancel my test drive",
+        [
+            _says_then_calls(
+                "Of course — could I have your booking reference or the mobile on it?",
+                ("identify_by_reference_or_mobile", {}),
+            ),
+            _says_then_calls("TD-2026-HTXE", ("identify_by_reference_or_mobile", {"ref": "TD-2026-HTXE"})),
+        ],
+    )
+    assert model.calls == 1, "she was handed a generation she could only fill with the customer's answer"
+
+
+def test_a_reference_that_matches_nothing_still_gets_its_generation(db):
+    """The other side: 'we have nothing under that' is a fact the customer must
+    hear, so a failed LOOKUP — unlike a missing identifier — must not end the
+    turn."""
+    model = _run(
+        db, "sess-await-6", "Cancel TD-2026-ZZZZ please",
+        [
+            _says_then_calls("Let me look that up.", ("identify_by_reference_or_mobile", {"ref": "TD-2026-ZZZZ"})),
+            _says_then_calls("I could not find a booking under that reference."),
+        ],
+    )
+    assert model.calls == 2, "she was cut off before she could say it was not found"

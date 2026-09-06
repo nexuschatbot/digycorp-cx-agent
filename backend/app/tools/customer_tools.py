@@ -300,8 +300,33 @@ def identify_by_reference_or_mobile(
     Returns the SAME envelope find_or_create_customer returns, which is what lets
     the tool node bind the session from either tool without knowing which journey
     the customer is on (see _IDENTITY_TOOLS in app/agent/tool_node.py).
+
+    AND SHE CANNOT ANSWER THE QUESTION HERSELF (browser run, 2026-09-06). Asked
+    in Arabic to cancel a booking, Aisha called this with NOTHING, asked for the
+    reference or the number — and was then handed a generation with only one
+    thing left to fill it with. She filled it with TD-2026-HTXE, THE EXAMPLE OUT
+    OF THIS FILE'S OWN SCHEMA, said it to the customer, called this again with
+    it, and told them no booking was found. It matched nothing, so the lookup
+    failed harmlessly; against a reference that DOES exist the same reflex opens
+    a stranger's booking.
+
+    Exactly the failure _AWAITING_KEY was added for two days earlier, in the
+    same costume: an invented landmark, an invented consent, now an invented
+    reference. `identifier_required` means she called this with neither and is
+    asking the customer AS she calls — there is nothing here for them to hear,
+    so the turn ends and the question stands on screen. The tool node ends it
+    only once she has actually spoken this turn, so a call she made BEFORE
+    asking still buys the generation in which to ask.
+
+    ONLY THIS BRANCH. no_booking_found and invalid_uae_mobile are facts she must
+    relay ("we have nothing under that", "could you read that back?"), and each
+    needs the generation to say it in — the same line location_tools draws
+    between its no_location branch and the other two.
     """
-    return booking_service.identify(db, ref=ref, mobile=mobile)
+    result = booking_service.identify(db, ref=ref, mobile=mobile)
+    if isinstance(result, dict) and result.get("error") == "identifier_required":
+        return {**result, "awaiting_customer": True}
+    return result
 
 
 # --------------------------------------------------------------------------- #
