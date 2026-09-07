@@ -71,6 +71,11 @@ class FakeAgentSession:
         self.after_tool = after_tool or []
         self.audio_calls = 0
         self.tool_results: list[tuple[str, dict]] = []
+        # Whether each tool result ASKED FOR A REPLY. The real session takes
+        # request_reply=False for a successful close (see the gateway), and a
+        # fake that ignored it would let "she says nothing after goodbye" pass
+        # without testing anything.
+        self.tool_reply_requested: list[bool] = []
         self.seeded: list[tuple[str, str]] = []
         self.cancelled = False
         self.closed = False
@@ -87,8 +92,16 @@ class FakeAgentSession:
         for event in self.script.get(self.audio_calls, []):
             self.on_event(event)
 
-    async def send_tool_result(self, call_id: str, result: dict) -> None:
+    async def send_tool_result(
+        self, call_id: str, result: dict, *, request_reply: bool = True
+    ) -> None:
         self.tool_results.append((call_id, result))
+        self.tool_reply_requested.append(request_reply)
+        if not request_reply:
+            # `after_tool` MODELS THE REPLY A TOOL RESULT EARNS, so asking for
+            # none must emit none — otherwise the fake would speak where the
+            # real session stays silent.
+            return
         for event in self.after_tool:
             self.on_event(event)
 
@@ -356,6 +369,10 @@ def test_a_specialist_read_actually_runs_on_a_call(db, client, rt_env, tool, key
     session = rt_env["session"]
     assert session.tool_results and session.tool_results[0][0] == "call_spec"
     assert session.tool_results[0][1].get(key)
+    # AN ORDINARY TOOL STILL EARNS A REPLY — the contrast that keeps
+    # test_a_successful_close_earns_no_further_reply from passing because
+    # nothing ever asks for one.
+    assert session.tool_reply_requested == [True]
 
     # Audited at the same choke point as every other call tool (rule 15).
     db.expire_all()
@@ -587,6 +604,118 @@ def test_the_same_hello_transcribed_twice_is_answered_once(db, rt_env):
         assert calls == ["create:en"]
 
     _asyncio.run(scenario())
+
+
+def test_one_word_answered_twice_in_a_breath_is_answered_once(db, rt_env):
+    """THE UNSOLICITED QUESTION (live 2026-09-07). The customer said "No." and
+    the vendor sent it twice, a second apart. `_near_repeat` refuses one-word
+    utterances on purpose — a lone "yes" legitimately follows a lone "yes" —
+    so both became turns. The first drew her recap; the SECOND's create was
+    refused (conversation_already_has_active_response), so no reply ever began
+    for it, `_awaiting_reply_since` stayed set, and six seconds later
+    `_rescue_owed_reply` asked again — putting the licence reminder and the
+    WhatsApp consent question on the line while the recap she had just asked
+    about was still unanswered.
+
+    The rescue was right. It was rescuing a turn that never needed answering.
+    """
+    import asyncio as _asyncio
+    from unittest.mock import MagicMock
+
+    calls: list[str] = []
+
+    class Fake:
+        async def cancel_response(self) -> None:
+            calls.append("cancel")
+
+        async def request_response(self, lang=None, *, note=None, tools_off=False) -> None:
+            calls.append(f"create:{lang}")
+
+    session = rt_module.RealtimeCallSession(MagicMock(), SESSION)
+    sent: list[dict] = []
+    session._send_json = sent.append  # type: ignore[method-assign]
+    session.session = Fake()
+
+    async def scenario() -> None:
+        session._decide_turn(9600, "No.")
+        await _asyncio.sleep(0)
+        assert calls == ["create:en"]
+        calls.clear()
+        sent.clear()
+
+        # The same one-word answer again, a moment later, while the first is
+        # still owed a reply: delivered as a turn, but not answered twice.
+        session._decide_turn(9600, "No.")
+        await _asyncio.sleep(0)
+        assert calls == [], "the duplicate earned a second reply"
+        assert any(m.get("type") == "utterance" for m in sent), (
+            "the customer did say it — the turn must still be delivered"
+        )
+
+        # AND THE OWED-REPLY CLOCK MUST NOT BE RE-ARMED BY IT, which is the
+        # whole point: a second `_awaiting_reply_since` is what the watchdog
+        # later rescued into an unsolicited question.
+        assert session._awaiting_reply_since is not None  # the FIRST is still owed
+        first_owed = session._awaiting_reply_since
+        session._decide_turn(9600, "No.")
+        await _asyncio.sleep(0)
+        assert session._awaiting_reply_since == first_owed
+
+        # A GENUINE SECOND "No." IS STILL ANSWERED. Past the short window, the
+        # customer answering a new question with the same word is ordinary —
+        # this is exactly what _near_repeat's two-word minimum protects.
+        session._on_agent_event({"type": "response_started"})
+        session._on_agent_event({"type": "response_done"})
+        session._answered_at -= rt_module._SHORT_DUPLICATE_WINDOW_S + 1
+        session._decide_turn(9600, "No.")
+        await _asyncio.sleep(0)
+        assert calls == ["create:en"]
+
+    _asyncio.run(scenario())
+
+
+def test_every_path_that_silences_her_says_which_one_it_was(db, rt_env):
+    """A TRUNCATION MUST BE ATTRIBUTABLE AFTERWARDS (2026-09-07).
+
+    Three paths kill her audio — a supersede, a new turn's reply beginning,
+    and the client's own barge detector — and only the supersede logged
+    anything of its own. So a goodbye cut off at 420 ms on a live call could
+    not be pinned on any of them: two explanations fitted the log equally
+    well. Ordering cannot settle it either, because the truncate line is
+    written from a task and lands after the code that scheduled it.
+
+    This asserts the reason TRAVELS WITH THE CALL, which is the only way it
+    can be right.
+    """
+    import asyncio as _asyncio
+    from unittest.mock import MagicMock
+
+    reasons: list[str] = []
+    session = rt_module.RealtimeCallSession(MagicMock(), SESSION)
+    session._send_json = lambda _m: None  # type: ignore[method-assign]
+    session._truncate_reply = lambda why="?": reasons.append(why)  # type: ignore[method-assign]
+
+    async def scenario() -> None:
+        session._silence_playback("an interruption superseding the reply")
+        assert reasons == ["an interruption superseding the reply"]
+
+    _asyncio.run(scenario())
+
+    # And every real call site names itself — no bare `_truncate_reply()` and
+    # no bare `_silence_playback()` left anywhere in the gateway.
+    import inspect
+
+    src = inspect.getsource(rt_module)
+    assert "_truncate_reply()" not in src, "a truncation with no reason attached"
+    assert "_silence_playback()" not in src, "a silencing with no reason attached"
+
+
+def test_the_short_duplicate_window_is_tighter_than_the_general_one():
+    """It has to be. The general window guards multi-word utterances, where a
+    repeat is almost always the transcriber; the short one guards a single
+    word, where a repeat is usually a real second answer. Widening it to match
+    would start swallowing answers."""
+    assert rt_module._SHORT_DUPLICATE_WINDOW_S < rt_module._DUPLICATE_WINDOW_S
 
 
 def test_near_repeat_tolerates_respelling_but_not_a_new_sentence():
@@ -1694,6 +1823,59 @@ def test_speaking_over_the_farewell_cancels_the_hangup(db, rt_env):
         assert session.ended is True and session.end_reason == "closed"
 
     _asyncio.run(scenario())
+
+
+def test_a_successful_close_earns_no_further_reply(db, client, rt_env):
+    """THE MACHINE LINE AFTER THE GOODBYE (live 2026-09-07).
+
+        [115.0s] AISHA 'Take care, goodbye.'
+        [116.0s] AISHA 'The conversation is now closed. You're all set.'
+
+    Every tool result asked the vendor for a reply, unconditionally — right for
+    a lookup, wrong for the one tool that means there is nothing left to say.
+    So closing the conversation bought her one more turn, which she filled;
+    and one more reply is also one more thing able to silence the farewell
+    still leaving the speaker.
+
+    Chat has forbidden this since the close edge was written
+    (graph._route_from_tools): "Routing back to the agent here would buy one
+    more generation after the goodbye, which the model would fill: a second
+    sign-off, or worse, a cheerful new question."
+    """
+    rt_env["install"](
+        {
+            1: [
+                {"type": "function_call", "name": "close_conversation",
+                 "call_id": "call_bye", "arguments": {}},
+            ],
+        },
+        # The reply a tool result normally earns. The fake emits these only
+        # when one was asked for, so a regression here shows up as her
+        # speaking again rather than as a silent flag.
+        after_tool=REPLY_EVENTS,
+    )
+    with client.websocket_connect(f"/api/call/{SESSION}") as ws:
+        _drain_until(ws, "vad")
+        ws.send_bytes(PCM_HALF_SECOND)
+
+        tool_event, _ = _drain_until(ws, "tool_event")
+        assert tool_event["tool"] == "close_conversation"
+        assert tool_event["output"].get("closed") is True
+        ws.send_json({"type": "hangup"})
+        _, after = _drain_until(ws, "call_ended")
+
+    # NOTHING SPOKEN AFTER THE CLOSE. Checked on the WIRE, from the tool event
+    # onwards, rather than on the flag alone: `after_tool` is what the fake
+    # emits for a reply, so a regression surfaces here as her talking.
+    assert not any(m.get("type") in ("token", "done") for m in after), (
+        f"she spoke again after closing: {[m.get('type') for m in after]}"
+    )
+
+    session = rt_env["session"]
+    # The result still reaches the vendor — the record stays complete — but
+    # nothing is asked of it.
+    assert session.tool_results and session.tool_results[0][0] == "call_bye"
+    assert session.tool_reply_requested == [False]
 
 
 def test_rtc_takeover_waits_for_the_reply_boundary():
