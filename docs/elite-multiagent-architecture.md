@@ -270,6 +270,19 @@ work. And **measured wrong** is worse again — it returns a number.
 - **Voice stays single-agent.** Its 400 ms first-audio budget cannot absorb a
   fan-out; the measured Haiku round trip alone is 1,088 ms p50. `turn.enabled()`
   excludes it even when the flag is on.
+
+  **But it now holds the specialists' TOOLS** (2026-09-07). Staying
+  single-agent was read as "the call keeps the single agent's *registry*", and
+  those are not the same sentence: the eight reads the cards moved into
+  `SUBAGENT_ONLY` — finance, stock, colours, accessories, trims, the brochures
+  — were then answerable by typing and unanswerable by phone, and both call
+  personas sent every money question to a human callback. The realtime session
+  binds `tools/call_schemas.call_tool_schemas()` instead of `TOOL_SCHEMAS`, and
+  `_dispatch` is given the matching `fns` table so an offered tool can actually
+  run. **No cascade, no delegation, no fan-out** — the decision above is
+  unchanged; the call simply calls them itself, which costs one round trip
+  rather than a judge plus a Haiku step. `tests/test_call_tool_parity.py`
+  compares the two channels so this cannot silently reopen.
 - **Salesforce stays dormant** (`SF_ENABLED=false`), not deleted.
 - **T0.4b:** ~60 brochure marketing pages unread, three files still
   `draft-partial` (`dashing`, `t1-i-dm`, `t2-idm`). The one that bites is the

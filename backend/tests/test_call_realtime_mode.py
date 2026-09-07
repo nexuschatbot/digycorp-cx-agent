@@ -311,6 +311,64 @@ def test_function_calls_run_through_the_audited_choke_point(db, client, rt_env):
     assert row.payload["correlation_id"] == "call_123"  # stamped into payload (see audit.record)
 
 
+@pytest.mark.parametrize(
+    "tool, key",
+    [("get_finance_options", "banks"), ("get_accessories", "accessories")],
+)
+def test_a_specialist_read_actually_runs_on_a_call(db, client, rt_env, tool, key):
+    """THE EIGHT ADDITIONS RUN, not merely appear in a list.
+
+    `tests/test_call_tool_parity.py` proves the call is OFFERED what chat can
+    reach and that the dispatch table matches. Neither of those would have
+    caught the failure this guards: `_run_tool_sync` called `_dispatch` with no
+    `fns`, so it resolved against TOOL_FNS — the single-agent registry — and
+    every one of these came back `unknown_tool` AFTER the model had already said
+    "let me check". Offered and runnable are two facts, and this is the second
+    one, driven through the real gateway with scripted vendor events.
+
+    Two no-argument tools on purpose: the point is the wiring, not id
+    plumbing, and a tool that needs a variant_id would fail here for a reason
+    that has nothing to do with what is being asserted.
+    """
+    rt_env["install"](
+        {
+            1: [
+                {"type": "function_call", "name": tool,
+                 "call_id": "call_spec", "arguments": {}},
+            ],
+        },
+        after_tool=REPLY_EVENTS,
+    )
+    with client.websocket_connect(f"/api/call/{SESSION}") as ws:
+        _drain_until(ws, "vad")
+        ws.send_bytes(PCM_HALF_SECOND)
+
+        tool_event, _ = _drain_until(ws, "tool_event")
+        assert tool_event["tool"] == tool
+        assert "error" not in tool_event["output"], (
+            f"{tool} did not dispatch: {tool_event['output']}"
+        )
+        assert tool_event["output"].get(key), "the real tool ran and returned rows"
+        _drain_until(ws, "done")
+        ws.send_json({"type": "hangup"})
+
+    # And the vendor got the result back, so she can speak it.
+    session = rt_env["session"]
+    assert session.tool_results and session.tool_results[0][0] == "call_spec"
+    assert session.tool_results[0][1].get(key)
+
+    # Audited at the same choke point as every other call tool (rule 15).
+    db.expire_all()
+    row = db.scalar(
+        select(AuditEvent).where(
+            AuditEvent.session == SESSION, AuditEvent.type == AuditType.tool_call
+        )
+    )
+    assert row is not None and row.payload["tool"] == tool
+    assert row.actor is Actor.agent
+    assert row.payload["engine"] == "realtime"
+
+
 def test_vendor_vad_may_end_turns_but_never_interrupt(monkeypatch):
     """The session config pins interrupt_response FALSE in both VAD modes: 48
     replies died to `turn_detected` blips across two live calls (2026-07-30).
@@ -2578,7 +2636,19 @@ def test_natural_persona_is_one_config_flip_away(db, client, rt_env):
     # ~10 characters longer than August's, and a TPM budget is not sensitive
     # to a hundred characters. The frozen date above is what makes this a
     # test of the brief and not of the calendar.
-    assert len(rt_env["instructions"]) < 6900
+    #
+    # Raised again from 6900, for the specialist-parity change: the brief was
+    # sitting ON the old ceiling, so ANY addition tripped it. The call gained
+    # the eight reads the chat cascade had kept to its specialists — finance,
+    # stock, colours, accessories, trims, the brochures — and two sentences
+    # had to say so, because the PEOPLE paragraph directly above told her to
+    # hand every money question to a human. Left as it was, the eight new
+    # tools would have been reachable and never reached. The tool descriptions
+    # carry what each one DOES (services/realtime_agent._openai_tools), so the
+    # brief only states the policy change and the variant_id chain; naming all
+    # eight cost ~280 characters more and bought nothing the schemas do not
+    # already say.
+    assert len(rt_env["instructions"]) < 7300
     assert rt_env["session"].greeted is True
 
 
