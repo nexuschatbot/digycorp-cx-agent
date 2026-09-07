@@ -90,6 +90,7 @@ from app.services.realtime_agent import VENDOR_SAMPLE_RATE, make_agent_session
 from app.services.realtime_stt import resample_pcm16
 from app.services.rtc_transport import make_rtc_transport
 from app.services.speech_gate import make_speech_gate
+from app.tools.call_schemas import CALL_TOOL_FNS
 
 log = logging.getLogger("app.api.call_realtime")
 
@@ -1048,8 +1049,17 @@ class RealtimeCallSession:
                     name, refusal["error"], self.session_id[:8],
                 )
                 return refusal
+            # `fns` IS THE BINDING, and without it the eight tools the call now
+            # OFFERS could not be RUN: _dispatch resolves against TOOL_FNS by
+            # default, which holds the single-agent registry only, so
+            # get_finance_estimate and its siblings would come back
+            # `unknown_tool` after the model had already said "let me check".
+            # CALL_TOOL_FNS names exactly what _openai_tools() offered, so the
+            # two cannot disagree — anything else still falls through to
+            # unknown_tool, which is the allowlist this path has always had.
             result = _dispatch(
-                db, self.session_id, name, arguments, self.customer_id, call_id or ""
+                db, self.session_id, name, arguments, self.customer_id, call_id or "",
+                fns=CALL_TOOL_FNS,
             )
             db.commit()
             envelope = result if isinstance(result, dict) else {"result": result}

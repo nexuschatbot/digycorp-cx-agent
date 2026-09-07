@@ -47,7 +47,7 @@ from app.config import (
     REALTIME_AGENT_MODEL,
     REALTIME_VOICE,
 )
-from app.tools import TOOL_SCHEMAS
+from app.tools.call_schemas import call_tool_schemas, essentials_for
 
 log = logging.getLogger("app.services.realtime_agent")
 
@@ -86,18 +86,39 @@ def _slim_schema(node):
 
 
 def _openai_tools() -> list[dict]:
-    """The REGISTRY's schemas in the vendor's function format — names, types,
+    """The CALL's schemas in the vendor's function format — names, types,
     enums and required lists verbatim (one source of truth, AD-H); every
-    description trimmed to its opening for the per-response token budget."""
-    return [
-        {
+    description trimmed to its opening for the per-response token budget.
+
+    THE LIST IS THE CALL'S, NOT THE SINGLE AGENT'S. This read `TOOL_SCHEMAS`,
+    which is the single-agent REGISTRY, so everything the chat cascade had moved
+    to a specialist — finance, stock, colours, accessories, trims, the brochures
+    — was unreachable by phone. `call_tool_schemas()` is REGISTRY plus those
+    eight reads; see app/tools/call_schemas.py.
+
+    AND THE TRIM PUTS BACK WHAT IT WOULD HAVE CUT. `_brief` keeps the first
+    paragraph, and these eight briefings carry their grounding rules further
+    down — the injection rule on a retrieved passage, "never estimate a price we
+    do not publish", "never a bank quote". `essentials_for` appends those
+    verbatim, AFTER the cut (before it, `_brief` would take the first paragraph
+    and drop them again). It is selection, not a rewrite: no description is
+    copied here, so the drift this function's trimmer exists to prevent is not
+    reintroduced.
+    """
+    out: list[dict] = []
+    for schema in call_tool_schemas():
+        name = schema["name"]
+        description = _brief(schema.get("description", ""))
+        restored = essentials_for(name)
+        if restored:
+            description = f"{description} {restored}"
+        out.append({
             "type": "function",
-            "name": schema["name"],
-            "description": _brief(schema.get("description", "")),
+            "name": name,
+            "description": description,
             "parameters": _slim_schema(schema.get("input_schema", {"type": "object"})),
-        }
-        for schema in TOOL_SCHEMAS
-    ]
+        })
+    return out
 
 
 class RealtimeAgentSession:
