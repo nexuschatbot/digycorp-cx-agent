@@ -64,7 +64,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.agent import build_graph, new_sqlite_checkpointer
 from app.agent.call_persona import NATURAL_GREETING, natural_instructions
 from app.agent.prompt import realtime_instructions
-from app.agent.tool_node import _IDENTITY_TOOLS, _dispatch
+from app.agent.tool_node import _CLOSE_TOOL, _IDENTITY_TOOLS, _dispatch
 from app.api.intents import _synthetic_pair
 from app.config import (
     AGENT_CHECKPOINT_PATH,
@@ -342,6 +342,12 @@ def _edit1(a: str, b: str) -> bool:
 # cannot catch it; per-word edit-1 tolerance can. This is the CUSTOMER-side
 # twin of _is_reply_echo, which does the same job for her own voice.
 _DUPLICATE_WINDOW_S = 4.0
+# The tighter window for a ONE-WORD repeat (2026-09-07, see _decide_turn).
+# Deliberately half the general one: the whole reason `_near_repeat` refuses
+# single words is that "yes" after "yes" is usually two real answers, so the
+# only case worth catching is the one where the clock says a human could not
+# have produced both. The live pair that motivated it arrived ~1s apart.
+_SHORT_DUPLICATE_WINDOW_S = 2.0
 _DUPLICATE_SHARE = 0.6
 
 
@@ -1225,7 +1231,7 @@ class RealtimeCallSession:
             # let me check" off mid-word.
             if self._reply_for_new_turn:
                 self._reply_for_new_turn = False
-                self._silence_playback()
+                self._silence_playback("a new turn's reply beginning")
             self._lang_checked = False
             self._ref_warned = False
             self._price_warned = False
@@ -1378,10 +1384,22 @@ class RealtimeCallSession:
             remaining = max(0.0, self.speaking_until_mono - time.monotonic()) * 1000.0
         return max(0, min(int(fed), int(fed - remaining)))
 
-    def _truncate_reply(self) -> None:
+    def _truncate_reply(self, why: str = "?") -> None:
         """THE CORRECTION THAT MAKES AN INTERRUPTION HONEST. Called wherever
         her audio is killed, BEFORE the queue is cleared — once it is cleared
-        there is no longer any way to know what was heard."""
+        there is no longer any way to know what was heard.
+
+        `why` NAMES THE CALLER, and it is not decoration (2026-09-07). Three
+        paths silence her — a supersede, a new turn's reply beginning, and the
+        client's own barge detector — and only the supersede logged anything of
+        its own, so a truncation from either of the other two arrived as a bare
+        line with no cause attached. A goodbye cut off at 420 ms on a live call
+        could not be attributed afterwards: two explanations fitted the log
+        equally well and nothing in it could separate them. The log line is
+        written asynchronously, after the code that scheduled it, so ORDER
+        cannot be used to infer the caller either — the name has to travel with
+        the call.
+        """
         session = self.session
         if session is None:
             return
@@ -1400,8 +1418,8 @@ class RealtimeCallSession:
             try:
                 if await session.truncate_reply(played):
                     log.info(
-                        "reply truncated at %s ms — she said only what was heard "
-                        "(session=%s)", played, self.session_id[:8],
+                        "reply truncated at %s ms by %s — she said only what was "
+                        "heard (session=%s)", played, why, self.session_id[:8],
                     )
             except Exception:  # never let a correction kill a live call
                 log.warning("truncate failed (session=%s)", self.session_id[:8])
@@ -1411,7 +1429,7 @@ class RealtimeCallSession:
         except RuntimeError:
             pass
 
-    def _silence_playback(self) -> None:
+    def _silence_playback(self, why: str = "?") -> None:
         """Stop her voice everywhere it might still be sounding: the server's
         own send queue, the peer connection's jitter buffer, and the client's
         WS player. Idempotent — clearing an empty queue costs nothing, which
@@ -1419,7 +1437,7 @@ class RealtimeCallSession:
         # FIRST, while the queue still says what went unheard: tell the vendor
         # where her voice really stopped. Everything below destroys that
         # evidence.
-        self._truncate_reply()
+        self._truncate_reply(why)
         # The unplayed remainder is gone, so the silence clock must start NOW.
         # Without this a barged-in 15-second reply would keep the ladder
         # asleep for 15 seconds of real, audible silence.
@@ -1456,7 +1474,7 @@ class RealtimeCallSession:
             # Frames of the superseded reply still in flight must die on
             # arrival — the embargo lifts when the NEXT reply begins.
             self._start_embargo()
-            self._silence_playback()
+            self._silence_playback("an interruption superseding the reply")
             self._maybe_promote_rtc()
         self.speech_over_reply = False
         if self.state != "thinking":
@@ -1657,7 +1675,9 @@ class RealtimeCallSession:
         one-shot corrective note riding that response's instructions. The
         first-exchange no-regreet note is appended whenever it is due."""
         self._start_embargo()
-        self._truncate_reply()  # before the queue is cleared — see _silence_playback
+        # Three guards share this path (language, reference, price), so the
+        # reason names the mechanism rather than guessing which one fired.
+        self._truncate_reply("a guard killing and redoing the reply")
         if self.rtc is not None and self.rtc.track is not None:
             self.rtc.track.clear()
         if self.audio_open:
@@ -1862,10 +1882,34 @@ class RealtimeCallSession:
         # a turn either way — dropping the bubble would lose words the
         # customer really said; what is suppressed is the second ANSWER.
         answering = self.response_active or self._awaiting_reply_since is not None
+        _since_answered = time.monotonic() - self._answered_at
         if (
             answering
-            and time.monotonic() - self._answered_at < _DUPLICATE_WINDOW_S
-            and _near_repeat(words, self._answered_words)
+            and (
+                (_since_answered < _DUPLICATE_WINDOW_S
+                 and _near_repeat(words, self._answered_words))
+                # A ONE-WORD ANSWER, TWICE, IN THE SAME BREATH (found live
+                # 2026-09-07). `_near_repeat` requires two words on purpose —
+                # "a lone 'yes' legitimately follows a lone 'yes'" — and that
+                # is true of a customer answering two questions. It is not true
+                # inside two seconds, while the first copy's reply is still
+                # owed: nobody answers the same question twice that fast, and
+                # the transcriber splitting one utterance is far likelier.
+                #
+                # WHAT IT COST. A customer said "No." and the vendor sent it
+                # twice, a second apart. Both became turns. The first drew the
+                # recap; the SECOND's response.create was refused
+                # (conversation_already_has_active_response), so no reply ever
+                # began for it, `_awaiting_reply_since` stayed set, and six
+                # seconds later _rescue_owed_reply asked again — putting the
+                # licence reminder and the WhatsApp consent question on the
+                # line while the recap she had just asked about was still
+                # unanswered. The rescue is right; it was rescuing a turn that
+                # never needed answering.
+                or (_since_answered < _SHORT_DUPLICATE_WINDOW_S
+                    and len(words) == 1
+                    and words == self._answered_words)
+            )
         ):
             log.info(
                 "duplicate transcript %r — already answering it (session=%s)",
@@ -2106,7 +2150,7 @@ class RealtimeCallSession:
             ref = booking.get("booking_ref") if isinstance(booking, dict) else None
             if ref and ref not in self.booking_refs:
                 self.booking_refs.append(ref)
-        if name == "close_conversation" and result.get("closed") is True:
+        if name == _CLOSE_TOOL and result.get("closed") is True:
             # Let her say goodbye; the call ends when the farewell finishes.
             self.pending_close = True
 
@@ -2122,7 +2166,30 @@ class RealtimeCallSession:
         self._send_json({"type": "tool_event", "tool": name, "input": arguments, "output": result})
         if self.ended or self.session is None:
             return
-        await self.session.send_tool_result(call_id, result)
+        # A CLOSE EARNS NO FURTHER REPLY (2026-09-07). Every tool result asked
+        # the vendor for one, unconditionally — right for a lookup, wrong for
+        # the tool that means the conversation is over. She says goodbye, calls
+        # close_conversation, and the result then bought her one more turn,
+        # which she filled: live, "Take care, goodbye." was followed by "The
+        # conversation is now closed. You're all set." — a machine line after a
+        # human farewell, and one more reply able to silence the goodbye still
+        # leaving the speaker.
+        #
+        # THE SAME RULE CHAT HAS HAD ALL ALONG. graph._route_from_tools ENDs the
+        # turn on a successful close for this exact reason: "Routing back to the
+        # agent here would buy one more generation after the goodbye, which the
+        # model would fill: a second sign-off, or worse, a cheerful new question."
+        # This is that edge, on the channel that had no edge.
+        #
+        # ONLY ON A GENUINE CLOSE. A refused one (close_not_alone, or an error)
+        # leaves the conversation open and she must be able to speak to it, so
+        # it takes the ordinary path. `_note_outcome` has already armed
+        # pending_close, and _finish_response's own close branch ends the call
+        # once her farewell has drained — nothing here shortens that.
+        closing = name == _CLOSE_TOOL and result.get("closed") is True
+        await self.session.send_tool_result(
+            call_id, result, request_reply=not closing
+        )
 
     def _finish_response(self) -> None:
         if self.ended:
@@ -2252,7 +2319,7 @@ class RealtimeCallSession:
             # The client killed playback; stop the vendor writing more of it.
             self.last_activity_mono = time.monotonic()
             self._nudge_done = False  # a barge is presence too
-            self._truncate_reply()  # before the queue is cleared
+            self._truncate_reply("the client's own barge detector")  # before the queue is cleared
             if self.rtc is not None and self.rtc.track is not None:
                 self.rtc.track.clear()
             if self.audio_open:

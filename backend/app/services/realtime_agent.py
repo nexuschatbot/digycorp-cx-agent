@@ -312,12 +312,22 @@ class RealtimeAgentSession:
                 "audio": base64.b64encode(pcm).decode("ascii"),
             })
 
-    async def send_tool_result(self, call_id: str, result: dict) -> None:
+    async def send_tool_result(
+        self, call_id: str, result: dict, *, request_reply: bool = True
+    ) -> None:
         """Hand a function call's result back and let her keep speaking —
         with the turn's language pin still attached: the follow-up after a
         tool call is the reply the customer actually HEARS, and it was the
         one path that used to go out unpinned (Arabic question -> English
-        answer whenever a tool ran, live 2026-07-30)."""
+        answer whenever a tool ran, live 2026-07-30).
+
+        `request_reply=False` HANDS THE RESULT BACK AND ASKS FOR NOTHING
+        (2026-09-07). Every tool used to earn a reply unconditionally, which is
+        right for a lookup — she called it to say something — and wrong for the
+        one tool whose whole meaning is that there is nothing left to say.
+        See the gateway's close branch; the result still goes into the
+        conversation, so the record is complete either way.
+        """
         await self._send({
             "type": "conversation.item.create",
             "item": {
@@ -326,7 +336,8 @@ class RealtimeAgentSession:
                 "output": json.dumps(result, ensure_ascii=False, default=str),
             },
         })
-        await self._send(self._response_payload())
+        if request_reply:
+            await self._send(self._response_payload())
 
     async def greet(self) -> None:
         """Aisha answers the call — she speaks FIRST, like a person picking up
