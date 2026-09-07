@@ -402,7 +402,27 @@ _TOOL_SPELLINGS: dict[str, str] = {"lock_slot": "hold_slot"}
 # told the stock check "didn't return" anything, because it never ran. A step
 # whose only calls so far are resolvers has not started answering; it keeps
 # its next round.
+#
+# THIS BASELINE APPLIES TO EVERY AGENT; a card may name MORE with a `resolvers`
+# key, and cannot take these away. The list stayed at one member for three days
+# and the identical defect came back through the other door — measured live
+# 2026-09-07, twice in one morning. Finance was briefed "what is the indicative
+# monthly EMI for the X70 FL" (trace 279) and "what would be the financial plan
+# for x70 fl" (trace 304); it called get_vehicle_details, whose result carries
+# `on_road_aed` — the single entity the finance card declares — so the gate
+# read the step as finished at link ONE of the three-link chain its own prose
+# describes, and get_finance_estimate never ran. Aisha was handed a price with
+# no instalment and told the customer the finance team would work it out.
+# get_vehicle_details is NOT added here, because for Sales it is a real answer;
+# it is named on the finance card, where it is only ever a resolver.
 _RESOLVER_READS: frozenset[str] = frozenset({"get_variants"})
+
+
+def _resolver_reads(agent: str) -> frozenset[str]:
+    """The baseline plus whatever this agent's card adds. Never less."""
+    from app.orchestrator.order import resolvers
+
+    return _RESOLVER_READS | frozenset(resolvers(agent))
 
 
 
@@ -1274,7 +1294,7 @@ def run_step(
             clean = not any(
                 isinstance(r, dict) and r.get("error") for r in seen_results
             )
-            answered = any(t not in _RESOLVER_READS for t in called)
+            answered = any(t not in _resolver_reads(step.agent) for t in called)
             if wanted and wanted <= set(got) and clean and answered:
                 settle_after_tools = True
 
@@ -1301,12 +1321,19 @@ def run_step(
             findings = dict(got)
             if evidence:
                 findings["_evidence"] = evidence
+            # HARVESTED, NOT DECLARED. This printed `sorted(wanted)` — the
+            # card's `produces` list — under the word "produced", so it
+            # reported what the card CLAIMS rather than what the tools
+            # returned. The two are identical whenever the gate above fired
+            # and different on every other path, which is exactly when the
+            # line is being read to work out why a step settled: it cost real
+            # time in the 2026-09-07 investigation.
             log.info(
                 "%s settled after its tool round in %d round(s), %dms — "
                 "model=%s tools=[%s] (no summary round: proposes nothing and "
                 "produced %s)",
                 step.agent, rounds, int((time.monotonic() - started) * 1000),
-                model, ", ".join(called) or "none", sorted(wanted),
+                model, ", ".join(called) or "none", sorted(got),
             )
             return findings
 

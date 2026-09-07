@@ -129,6 +129,27 @@ def produces(agent: str) -> set[str]:
     return set(_card(agent).get("produces") or [])
 
 
+def resolvers(agent: str) -> set[str]:
+    """The tools that, FOR THIS AGENT, only fetch an id and answer nothing.
+
+    `produces` says what threads FORWARD to the next step. The settle gate in
+    subagent.py reads it as "this step has finished", and those are different
+    questions — which is the whole reason this key exists. A tool can hand over
+    a declared entity as a by-product of resolving a name, having answered no
+    part of the brief.
+
+    IT IS PER-AGENT BECAUSE THE SAME TOOL IS BOTH. get_vehicle_details ANSWERS a
+    Sales brief ("tell me about the T2") and merely RESOLVES a Finance one — the
+    finance card's own GETTING_TO_A_FIGURE spells its chain out as
+    details -> variants -> estimate, and the first two links answer nothing
+    about what the car costs a month.
+
+    Cards add to the shared baseline rather than replacing it, so a card that
+    omits the key keeps every guarantee the baseline carries.
+    """
+    return set(_card(agent).get("resolvers") or [])
+
+
 def resolve(steps: list[Step], *, known: set[str] | None = None) -> Plan:
     """Order the steps so every requirement is met before it is needed.
 

@@ -9,6 +9,7 @@ retry loop against a FAKE Anthropic client — fully offline, per the no-live-
 vendor-calls rule.
 """
 
+import pytest
 from types import SimpleNamespace
 
 import app.agent.graph as graph
@@ -330,3 +331,115 @@ def test_visible_switch_injects_the_note_on_the_first_attempt(monkeypatch):
     assert last["content"][0]["text"] == "no"
     note = last["content"][-1]["text"]
     assert note.startswith("[System note") and "switched language" in note and "English" in note
+
+
+# --- the vendor-overload retry (2026-09-07) --------------------------------
+#
+# Lives here because it shares _default_generate's retry loop with the language
+# guard, and the two must not spend each other's attempts.
+
+class _OverloadedError(Exception):
+    """Shaped like the SDK's mid-stream failure, which is the whole subtlety.
+
+    anthropic/_streaming.py builds the error from the SSE body but passes the
+    ORIGINAL response — a 200, because the stream opened before it failed. So
+    `status_code` is 200 and the class is the base APIStatusError, never
+    OverloadedError: only `type` identifies it.
+    """
+
+    def __init__(self):
+        super().__init__("Overloaded")
+        self.status_code = 200
+        self.type = "overloaded_error"
+        self.request_id = "req_test"
+
+
+class _DyingStream(_FakeStream):
+    """Streams `events`, then fails the way the vendor failed live."""
+
+    def __iter__(self):
+        for event in self._events:
+            yield event
+        raise _OverloadedError()
+
+
+def test_an_overload_before_any_text_is_retried_once(monkeypatch):
+    dying = _DyingStream([])
+    good = _FakeStream(_text_events("The X70 FL is ", "AED 79,000."))
+    client, emitted, result = _run_generate(monkeypatch, [dying, good], "en")
+
+    assert len(client.calls) == 2, "a turn nobody saw should not die"
+    assert "".join(e["text"] for e in emitted) == "The X70 FL is AED 79,000."
+
+
+def test_an_overload_after_text_is_on_screen_is_not_retried(monkeypatch):
+    """Deltas are forwarded as they arrive and cannot be taken back. Retrying
+    would put a whole reply underneath half of one — observed live as
+    "…For your 100 km" followed by the error banner. A dead turn is honest."""
+    dying = _DyingStream(_text_events("The X70 FL is ", "AED 79,000. For your 100 km"))
+    spare = _FakeStream(_text_events("a second whole reply"))
+    client = _FakeClient([dying, spare])
+    emitted = []
+    monkeypatch.setattr(graph, "_client", client)
+    monkeypatch.setattr(graph, "_safe_writer", lambda: emitted.append)
+
+    with pytest.raises(_OverloadedError):
+        graph._default_generate(
+            [{"role": "user", "content": "hi"}],
+            model="test-model", system="SYSTEM", tools=[],
+            config={"configurable": {"session_id": "s-test", "expected_lang": "en"}},
+        )
+    assert len(client.calls) == 1, "the second reply must never be requested"
+
+
+def test_a_second_overload_gives_up_rather_than_looping(monkeypatch):
+    client = _FakeClient([_DyingStream([]), _DyingStream([])])
+    monkeypatch.setattr(graph, "_client", client)
+    monkeypatch.setattr(graph, "_safe_writer", lambda: [].append)
+
+    with pytest.raises(_OverloadedError):
+        graph._default_generate(
+            [{"role": "user", "content": "hi"}],
+            model="test-model", system="SYSTEM", tools=[],
+            config={"configurable": {"session_id": "s-test", "expected_lang": "en"}},
+        )
+    assert len(client.calls) == 2
+
+
+def test_an_ordinary_api_error_is_not_retried(monkeypatch):
+    """Only `overloaded_error`. A 400 is a bug in what we sent and repeating it
+    just spends another call to be told the same thing."""
+    class _BadRequest(Exception):
+        status_code = 400
+        type = "invalid_request_error"
+
+    class _BadStream(_FakeStream):
+        def __iter__(self):
+            raise _BadRequest()
+            yield  # pragma: no cover — generator marker
+
+    client = _FakeClient([_BadStream([]), _FakeStream(_text_events("never reached"))])
+    monkeypatch.setattr(graph, "_client", client)
+    monkeypatch.setattr(graph, "_safe_writer", lambda: [].append)
+
+    with pytest.raises(_BadRequest):
+        graph._default_generate(
+            [{"role": "user", "content": "hi"}],
+            model="test-model", system="SYSTEM", tools=[],
+            config={"configurable": {"session_id": "s-test", "expected_lang": "en"}},
+        )
+    assert len(client.calls) == 1
+
+
+def test_an_overload_does_not_spend_the_language_guard_attempt(monkeypatch):
+    """The two retries answer different questions. An overload on the first
+    generation must still leave the guard its discard-and-retry, or a turn that
+    hit both would stream a wrong-language reply it was meant to discard."""
+    overloaded = _DyingStream([])                       # nothing seen
+    wrong_lang = _FakeStream(_text_events("عندنا خيارات "))  # discarded unseen
+    right = _FakeStream(_text_events("We have great options."))
+    client, emitted, _ = _run_generate(
+        monkeypatch, [overloaded, wrong_lang, right], "en"
+    )
+    assert len(client.calls) == 3
+    assert "".join(e["text"] for e in emitted) == "We have great options."

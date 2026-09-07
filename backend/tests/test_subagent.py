@@ -972,3 +972,144 @@ def test_the_testdrive_card_says_a_named_slot_needs_no_lookup():
 
     assert loader.origins("testdrive")["THE_SLOT_IN_THE_BRIEF_IS_THE_DECISION"] == "testdrive"
     assert own.strip() in loader.body_for("testdrive")
+
+
+# --------------------------------------------------------------------------- #
+# A resolver answers nothing — FOR THIS AGENT (2026-09-07)
+# --------------------------------------------------------------------------- #
+def test_finance_keeps_its_round_after_only_resolving_the_car(patched, db):
+    """FOUND LIVE 2026-09-07, trace 304: "what would be the financial plan for
+    x70 fl". Finance called get_vehicle_details, whose result carries
+    `on_road_aed` — the single entity its card declares — so the gate read link
+    ONE of the details -> variants -> estimate chain as the finished step.
+    get_finance_estimate never ran and the customer was told the finance team
+    would work it out."""
+    def _dispatch(db_, sid, name, inp, *a, **k):
+        if name == "get_vehicle_details":
+            return {"vehicle": {"vehicle_id": 8, "name": "Jetour X70 FL",
+                                "variants": [{"variant_id": 14, "on_road_aed": 81700}]}}
+        return {"on_road_aed": 81700, "options": [{"bank": "Emirates NBD", "monthly_aed": 1852}]}
+
+    client = patched(
+        [[_use("get_vehicle_details", {"name": "X70 FL"})],
+         [_use("get_finance_estimate", {"variant_id": 14}, uid="u2")],
+         [_text('{"findings": {}}')]],
+        dispatch=_dispatch,
+    )
+    out = subagent.run_step(
+        Step(brief="what would the financial plan for the X70 FL be", agent="finance", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) >= 2, "resolving the car is not answering the brief"
+    assert [e["tool"] for e in out["_evidence"]] == [
+        "get_vehicle_details", "get_finance_estimate",
+    ]
+
+
+def test_finance_keeps_its_round_through_the_whole_resolver_chain(patched, db):
+    """FOUND LIVE 2026-09-07, trace 279: "compare the emi for me on x70 fl plus
+    and x70 fl". BOTH links of the chain ran and the gate still fired, because
+    only get_variants was named as a resolver."""
+    def _dispatch(db_, sid, name, inp, *a, **k):
+        if name == "get_variants":
+            return {"vehicle_id": 8, "variants": [{"variant_id": 14, "on_road_aed": 81700}]}
+        if name == "get_vehicle_details":
+            return {"vehicle": {"vehicle_id": 8, "variants": [{"variant_id": 14,
+                                                               "on_road_aed": 81700}]}}
+        return {"on_road_aed": 81700, "options": [{"bank": "Mashreq", "monthly_aed": 1859}]}
+
+    client = patched(
+        [[_use("get_variants", {"vehicle_id": 8}, uid="u1"),
+          _use("get_vehicle_details", {"name": "X70 FL"}, uid="u2")],
+         [_use("get_finance_estimate", {"variant_id": 14}, uid="u3")],
+         [_text('{"findings": {}}')]],
+        dispatch=_dispatch,
+    )
+    subagent.run_step(
+        Step(brief="compare the EMI on the X70 FL Plus and the X70 FL", agent="finance", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) >= 2
+
+
+def test_the_estimate_itself_still_settles_finance_in_one_round(patched, db):
+    """The fix must not cost the round it was measured to save: a step that
+    actually reached the estimate has answered, and pays no summary round."""
+    client = patched(
+        [[_use("get_finance_estimate", {"variant_id": 14})]],
+        dispatch=lambda *a, **k: {"on_road_aed": 81700,
+                                  "options": [{"bank": "A", "monthly_aed": 1852}]},
+    )
+    subagent.run_step(
+        Step(brief="monthly instalments on the X70 FL", agent="finance", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) == 1
+
+
+def test_get_vehicle_details_still_answers_a_sales_brief(patched, db):
+    """PER-AGENT, and this is the case that makes it so. The same tool that only
+    resolves for Finance IS the answer for Sales, so naming it globally would
+    buy a summary round on the commonest sales brief there is."""
+    client = patched(
+        [[_use("get_vehicle_details", {"name": "T2 Luxury Plus"})]],
+        dispatch=lambda *a, **k: {"vehicle": {"vehicle_id": 3, "variants": [
+            {"variant_id": 6, "name": "Luxury Plus"}]}},
+    )
+    subagent.run_step(
+        Step(brief="tell me about the T2 Luxury Plus", agent="sales", index=0),
+        {}, db=db, session_id="s1",
+    )
+    assert len(client.calls) == 1
+
+
+def test_a_card_cannot_take_the_baseline_resolver_away():
+    """Cards ADD to the shared list. get_variants earned its place on
+    2026-09-04 and no card may drop it by declaring its own."""
+    from app.orchestrator import subagent as sa
+
+    for agent in ("sales", "finance", "testdrive"):
+        assert "get_variants" in sa._resolver_reads(agent), agent
+    assert "get_vehicle_details" in sa._resolver_reads("finance")
+    assert "get_vehicle_details" not in sa._resolver_reads("sales")
+
+
+def test_the_settle_line_reports_what_was_harvested_not_what_was_declared(patched, db):
+    """It printed `sorted(wanted)` — the card's `produces` — under the word
+    "produced", so it reported a claim as a measurement. That cost real time in
+    the 2026-09-07 investigation, where it read as proof the tools had returned
+    a figure they never returned.
+
+    Handler attached straight to the module's logger rather than via caplog:
+    the app configures logging at import, and under the full suite the records
+    do not reach caplog's root handler."""
+    import logging
+
+    records: list[str] = []
+
+    class _Catch(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    patched(
+        [[_use("get_colours", {"variant_id": 6})]],
+        dispatch=lambda *a, **k: {"colours": ["Sand"]},
+    )
+    handler = _Catch(level=logging.INFO)
+    logger = logging.getLogger("app.orchestrator.subagent")
+    previous = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        subagent.run_step(
+            Step(brief="which colours", agent="sales", index=0),
+            {}, db=db, session_id="s1",
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous)
+
+    line = next(m for m in records if "settled after its tool round" in m)
+    # get_colours produces neither of Sales' declared entities, so a line that
+    # says "produced ['variant_id', 'vehicle_id']" is reading the card.
+    assert "produced []" in line, line
