@@ -12,9 +12,21 @@
 // is a WORK QUEUE: the person waiting longest is the one being let down most,
 // and sorting them to the bottom is how a queue quietly starves its oldest entry.
 //
-// AGE IS THE COLUMN THAT MATTERS, so it is rendered as elapsed time rather than
-// a timestamp. "3 hours ago" is actionable; "2026-08-29T11:04:22" has to be
-// subtracted from now before it means anything.
+// THE ELAPSED-TIME COLUMN IS GONE (2026-09-07), and the reason is worth keeping
+// so nobody adds it back unguarded. It rendered "3 h ago" from `h.ts`, which
+// console.py serialises with a bare `.isoformat()` — no offset. The value is
+// UTC; JavaScript parses a date-time with no offset as LOCAL. So the age was a
+// UTC instant subtracted from a local `Date.now()`, and every row read high by
+// exactly the viewer's own offset: measured against live data, a handoff
+// written seven minutes earlier rendered as "5 h ago".
+//
+// The ordering below is unaffected — the server sorts, and it sorts correctly.
+// Only the rendered age was wrong, so only the rendered age was removed.
+//
+// IF IT COMES BACK, parse the timestamp as UTC first. Do NOT reach for a shared
+// fix in format.ts: slot times in Slots and Bookings are stored as local
+// wall-clock and are already correct, so a blanket "append Z" would shift every
+// appointment on the console by the same offset this column was wrong by.
 
 import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
@@ -36,26 +48,6 @@ import { useList } from '../useList'
 import { CardSkeletons, EmptyState, ErrorState, TopBar } from '../components/ui'
 import TakeoverDialog from '../components/TakeoverDialog'
 
-/** Elapsed time, in the words an operator would use. */
-function ageOf(ts: string | null): { label: string; hours: number } {
-  if (!ts) return { label: '—', hours: 0 }
-  const then = new Date(ts).getTime()
-  if (Number.isNaN(then)) return { label: '—', hours: 0 }
-  const mins = Math.max(0, Math.round((Date.now() - then) / 60000))
-  const hours = mins / 60
-  if (mins < 60) return { label: `${mins} min ago`, hours }
-  if (hours < 24) return { label: `${Math.round(hours)} h ago`, hours }
-  return { label: `${Math.round(hours / 24)} d ago`, hours }
-}
-
-/** Waiting longer reads louder. Not a severity — nobody set a priority; it is
- *  simply how long somebody has been waiting for a call. */
-function ageTone(hours: number): 'default' | 'warning' | 'error' {
-  if (hours >= 24) return 'error'
-  if (hours >= 4) return 'warning'
-  return 'default'
-}
-
 const REASONS = ['price', 'finance', 'complaint', 'requested_human', 'repeated_failure', 'other']
 
 export default function Handoffs() {
@@ -70,7 +62,7 @@ export default function Handoffs() {
     <Box>
       <TopBar
         title="Handoffs"
-        subtitle="Callbacks Aisha promised a person would make. Oldest first — the longest wait is the most overdue."
+        subtitle="Callbacks Aisha promised a person would make. Oldest first."
         countLabel={`Waiting: ${list.total.toLocaleString('en-US')}`}
       />
 
@@ -102,7 +94,6 @@ export default function Handoffs() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Waiting</TableCell>
                 <TableCell>Customer</TableCell>
                 <TableCell>Reason</TableCell>
                 <TableCell>What they asked about</TableCell>
@@ -111,85 +102,78 @@ export default function Handoffs() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {list.rows.map((h) => {
-                const age = ageOf(h.ts)
-                return (
-                  <TableRow key={h.audit_id} hover>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                      <Chip size="small" label={age.label} color={ageTone(age.hours)}
-                            variant={ageTone(age.hours) === 'default' ? 'outlined' : 'filled'} />
-                    </TableCell>
-                    <TableCell>
-                      {h.customer_name ? (
-                        <>
-                          <Typography variant="body2">{h.customer_name}</Typography>
-                          <Typography variant="caption" color="text.secondary"
-                                      sx={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>
-                            {h.customer_mobile}
-                          </Typography>
-                        </>
-                      ) : (
-                        // A callback needs somebody to call. Rule 13 makes Aisha
-                        // ask for a name and number BEFORE handing off, so this
-                        // should not happen — and if it does, it is the row an
-                        // operator most needs to notice.
-                        <Typography variant="body2" color="error.main">
-                          not identified
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                      <Chip size="small" variant="outlined" label={h.reason.replace(/_/g, ' ')} />
-                    </TableCell>
-                    <TableCell sx={{ maxWidth: 360 }}>
-                      {/* The customer's own words, never spoken back as policy. */}
-                      <Typography variant="body2" color={h.topic ? 'text.primary' : 'text.disabled'}>
-                        {h.topic ?? 'not recorded'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Tooltip title={h.session}>
-                        <Typography variant="caption"
+              {list.rows.map((h) => (
+                <TableRow key={h.audit_id} hover>
+                  <TableCell>
+                    {h.customer_name ? (
+                      <>
+                        <Typography variant="body2">{h.customer_name}</Typography>
+                        <Typography variant="caption" color="text.secondary"
                                     sx={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>
-                          {h.session.slice(0, 10)}…
+                          {h.customer_mobile}
                         </Typography>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                      {/* Human takeover (2026-08-31): step into the chat as a
-                          person — the AI is refused from that moment on. A row
-                          someone holds says who; opening it again rejoins.
-                          THE BUTTON IS EARNED, NOT DEFAULT: only a chat that is
-                          still open AND where the customer explicitly asked for
-                          a person (reason explicit_request) offers a live
-                          takeover. Every other row — closed chats, and
-                          escalations Aisha raised herself for price, finance or
-                          a complaint — is a callback promise, and showing a
-                          dead-end button on those would only invite refusals. */}
-                      {h.taken_over_by ? (
-                        <Chip
-                          size="small"
-                          color={h.session_active ? 'success' : 'default'}
-                          variant="outlined"
-                          label={h.session_active
-                            ? `Held by ${h.taken_over_by}`
-                            : `Closed — was ${h.taken_over_by}'s`}
-                          onClick={() => setTakingOver(h)}
-                        />
-                      ) : h.session_active && h.reason === 'explicit_request' ? (
-                        <Button size="small" variant="outlined"
-                                onClick={() => setTakingOver(h)}>
-                          Take over
-                        </Button>
-                      ) : (
-                        <Typography variant="caption" color="text.disabled">
-                          {h.session_active ? 'callback only' : 'chat closed'}
-                        </Typography>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
+                      </>
+                    ) : (
+                      // A callback needs somebody to call. Rule 13 makes Aisha
+                      // ask for a name and number BEFORE handing off, so this
+                      // should not happen — and if it does, it is the row an
+                      // operator most needs to notice.
+                      <Typography variant="body2" color="error.main">
+                        not identified
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    <Chip size="small" variant="outlined" label={h.reason.replace(/_/g, ' ')} />
+                  </TableCell>
+                  <TableCell sx={{ maxWidth: 360 }}>
+                    {/* The customer's own words, never spoken back as policy. */}
+                    <Typography variant="body2" color={h.topic ? 'text.primary' : 'text.disabled'}>
+                      {h.topic ?? 'not recorded'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Tooltip title={h.session}>
+                      <Typography variant="caption"
+                                  sx={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>
+                        {h.session.slice(0, 10)}…
+                      </Typography>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    {/* Human takeover (2026-08-31): step into the chat as a
+                        person — the AI is refused from that moment on. A row
+                        someone holds says who; opening it again rejoins.
+                        THE BUTTON IS EARNED, NOT DEFAULT: only a chat that is
+                        still open AND where the customer explicitly asked for
+                        a person (reason explicit_request) offers a live
+                        takeover. Every other row — closed chats, and
+                        escalations Aisha raised herself for price, finance or
+                        a complaint — is a callback promise, and showing a
+                        dead-end button on those would only invite refusals. */}
+                    {h.taken_over_by ? (
+                      <Chip
+                        size="small"
+                        color={h.session_active ? 'success' : 'default'}
+                        variant="outlined"
+                        label={h.session_active
+                          ? `Held by ${h.taken_over_by}`
+                          : `Closed — was ${h.taken_over_by}'s`}
+                        onClick={() => setTakingOver(h)}
+                      />
+                    ) : h.session_active && h.reason === 'explicit_request' ? (
+                      <Button size="small" variant="outlined"
+                              onClick={() => setTakingOver(h)}>
+                        Take over
+                      </Button>
+                    ) : (
+                      <Typography variant="caption" color="text.disabled">
+                        {h.session_active ? 'callback only' : 'chat closed'}
+                      </Typography>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </Box>
