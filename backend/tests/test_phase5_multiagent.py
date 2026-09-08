@@ -275,3 +275,69 @@ def test_the_promotion_note_is_what_save_memory_would_store():
     note = profile_mod.promotion_note(p)
     assert "6 seats" in note and "Deira" in note and "good audio" in note
     assert profile_mod.promotion_note(profile_mod.Profile()) == ""
+
+
+# --------------------------------------------------------------------------- #
+# The money answers reach the specialist (2026-09-07)
+# --------------------------------------------------------------------------- #
+#
+# ASSERTED AGAINST prompt._resolved_body, NOT loader.body_for. The latter is the
+# SUB-AGENT loader and carries DELEGATING unconditionally, so it cannot tell the
+# single-agent body from the multi-agent one — the exact trap _delegating_body's
+# own docstring records.
+def _served(monkeypatch, *, multi_agent: bool, catalogue_reads: bool = True) -> str:
+    from app.agent import prompt as prompt_mod
+
+    monkeypatch.setattr(prompt_mod.config, "AISHA_CATALOGUE_READS", catalogue_reads)
+    return prompt_mod._resolved_body(multi_agent=multi_agent)
+
+
+@pytest.mark.parametrize("catalogue_reads", [True, False])
+def test_the_route_to_a_money_figure_is_corrected_on_the_delegating_path(
+    monkeypatch, catalogue_reads
+):
+    """WHY THIS EXISTS. base/BRINGING_IN_A_PERSON tells her financing is no
+    longer a handoff and that she may quote "roughly what it would come to a
+    month" — true, and correct on the SINGLE-agent path where she holds the
+    finance tools. On the multi-agent path the tools moved to the specialist and
+    that prose never said so, so she supplied the number herself. Measured live
+    2026-09-07: eleven finance-shaped turns briefed nobody, two of them
+    inventing a monthly figure by dividing a price by a term.
+
+    The correction rides in DELEGATING, not in base, because base is served
+    UNCHANGED to the single agent, where it is right."""
+    body = _served(monkeypatch, multi_agent=True, catalogue_reads=catalogue_reads)
+
+    # The base prose it supersedes is still there, and still says what it said.
+    assert "Financing and insurance are no longer on that list" in body
+
+    correction = "THE MONEY ANSWERS ARE STILL YOURS TO GIVE AND NO LONGER YOURS TO WORK OUT"
+    assert correction in body
+    # Downstream of the prose it corrects, so it reads last.
+    assert body.index(correction) > body.index(
+        "Financing and insurance are no longer on that list"
+    ), "a superseding rule that reads first is not superseding anything"
+
+    assert "NEVER DO THE SUM YOURSELF" in body
+    assert "A FINANCE CALLBACK IS THE LAST STEP AND NEVER THE FIRST" in body
+    # The bank panel needs no car, and she stopped briefing for it.
+    assert "WHICH BANKS, ISLAMIC FINANCE, DOWN PAYMENTS AND TENURES ARE BRIEFS TOO" in body
+
+
+def test_the_single_agent_body_is_left_exactly_as_it_was(monkeypatch):
+    """Multi-agent-only for the same reason DELEGATING is: with the flag off she
+    holds the finance tools herself and base is already correct. Telling her
+    there to fetch the figure from a specialist would send her to somebody who
+    is not running."""
+    single = _served(monkeypatch, multi_agent=False)
+    assert "Financing and insurance are no longer on that list" in single
+    assert "THE MONEY ANSWERS ARE STILL YOURS TO GIVE" not in single
+    assert "NEVER DO THE SUM YOURSELF" not in single
+
+
+def test_the_correction_names_the_arithmetic_it_forbids():
+    """A rule the model can read as advice gets followed as advice. Both live
+    inventions are quoted, so the instruction is unmistakable."""
+    section = loader.sections("aisha")["DELEGATING"]
+    assert "AED 6,680 per month before interest" in section
+    assert "AED 850 a month before interest" in section

@@ -84,6 +84,50 @@ class StreamAborted(Exception):
     departed customer never gets a booking written."""
 
 
+class _CountingWriter:
+    """The SSE writer, counting the token events that actually reached the client.
+
+    EXISTS FOR ONE DECISION: whether a failed generation may be retried. Text is
+    forwarded delta by delta (AD-A), so anything already sent cannot be taken
+    back, and a second attempt would append a whole new reply underneath half of
+    the first one. `sent` is how the retry knows which case it is in — read from
+    the writer rather than from _stream_once's `n_tokens`, which is a local
+    three hundred lines deep inside a `with` block.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.sent = 0
+
+    def __call__(self, event):
+        if isinstance(event, dict) and event.get("type") == "token":
+            self.sent += 1
+        return self._inner(event)
+
+
+def _is_overloaded(err: BaseException) -> bool:
+    """The vendor gave up MID-STREAM — and it does not look like a 5xx.
+
+    OBSERVED LIVE 2026-09-07 (req_011Ceowgp69UWsF3q73V3VN5): a turn streamed ~60
+    tokens, the SSE then carried an `overloaded_error` event, runner.py rolled
+    the turn back, and the customer read half a sentence above "Something went
+    wrong on our side." They re-sent the same message ten minutes later.
+
+    A STATUS-CODE CHECK WOULD MISS IT, which is why this is a function and not
+    an `except OverloadedError`. The SDK raises from inside the iterator
+    (anthropic/_streaming.py) and builds the error from the SSE body while
+    passing the ORIGINAL response — a 200, because the stream opened fine and
+    failed later. So `status_code` is 200 and the class is the base
+    APIStatusError, not OverloadedError. `type`, parsed from the body by
+    APIStatusError.__init__, is the only honest discriminator.
+
+    Read as an attribute rather than caught as a class so this module keeps its
+    import-light rule (see _build_client) and so both providers — direct and
+    Foundry — are covered by the one check.
+    """
+    return getattr(err, "type", None) == "overloaded_error"
+
+
 class _WrongLanguage(Exception):
     """Raised inside a generation's token loop when the reply's opening script
     contradicts the turn's language directive (rule 3). Only ever raised while
@@ -964,28 +1008,55 @@ def _default_generate(messages: list, *, model: str, system: str, tools: list, c
 
     sys_blocks = _system_blocks(system)
     for attempt in (1, 2):
-        # ONE stripper per attempt (rule 17). Its state — the held ambiguous tail
-        # and whether we sit at a line start — is meaningless across generations,
-        # and a tail carried into the next one would surface as corruption.
-        stripper = MarkdownStripper()
-        # ONE window per attempt (rule 3). Downstream of the stripper, so it holds
-        # exactly the text that would otherwise be emitted. On the retry it only
-        # observes: a second wrong opening streams anyway — a wrong-language reply
-        # beats a dead turn — and is logged in _stream_once.
-        window = _ScriptWindow(expected_lang, enforce=(attempt == 1))
         try:
-            return _stream_once(
-                model=model,
-                sys_blocks=sys_blocks,
-                tools=tools,
-                messages=messages,
-                cancel=cancel,
-                writer=writer,
-                session_id=session_id,
-                stripper=stripper,
-                window=window,
-                effort=effort,
-            )
+            # ONE MORE GO WHEN THE VENDOR GIVES UP BEFORE SHE HAS SAID ANYTHING
+            # (2026-09-07). Nested INSIDE the language attempt rather than
+            # sharing its counter: the two retries answer different questions,
+            # and `enforce` is tied to the language attempt number, so an
+            # overload must never spend the language guard's second chance.
+            # Three dead turns in the eighteen days of journal retention, so it
+            # is rare — but the customer has to re-type the message, and the SDK
+            # does not retry it: its own retry loop wraps the REQUEST, which by
+            # then has already succeeded (see _is_overloaded).
+            for vendor_attempt in (1, 2):
+                # ONE stripper per attempt (rule 17). Its state — the held ambiguous tail
+                # and whether we sit at a line start — is meaningless across generations,
+                # and a tail carried into the next one would surface as corruption.
+                stripper = MarkdownStripper()
+                # ONE window per attempt (rule 3). Downstream of the stripper, so it holds
+                # exactly the text that would otherwise be emitted. On the retry it only
+                # observes: a second wrong opening streams anyway — a wrong-language reply
+                # beats a dead turn — and is logged in _stream_once.
+                window = _ScriptWindow(expected_lang, enforce=(attempt == 1))
+                counted = _CountingWriter(writer) if writer else None
+                try:
+                    return _stream_once(
+                        model=model,
+                        sys_blocks=sys_blocks,
+                        tools=tools,
+                        messages=messages,
+                        cancel=cancel,
+                        writer=counted or writer,
+                        session_id=session_id,
+                        stripper=stripper,
+                        window=window,
+                        effort=effort,
+                    )
+                except Exception as exc:  # noqa: BLE001 — re-raised unless it is THE one
+                    # ANYTHING ALREADY ON SCREEN MAKES THE RETRY THE WORSE
+                    # OUTCOME: the customer would read half a reply and then a
+                    # whole one. A dead turn is honest; a doubled turn is not.
+                    # _WrongLanguage lands here too and is re-raised untouched,
+                    # for the handler below that owns it.
+                    sent = counted.sent if counted else 0
+                    if not _is_overloaded(exc) or vendor_attempt == 2 or sent:
+                        raise
+                    log.warning(
+                        "vendor overloaded mid-stream with nothing on screen yet; "
+                        "retrying once — session=%s request_id=%s",
+                        session_id, getattr(exc, "request_id", None),
+                    )
+            raise AssertionError("unreachable: the vendor retry returns or raises")
         except _WrongLanguage:
             names = {"en": "English", "ar": "Arabic"}
             want = names[expected_lang]
