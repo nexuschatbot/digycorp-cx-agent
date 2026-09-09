@@ -96,6 +96,20 @@ if [ -d "${NGINX_SRC}" ]; then
   sudo install -D -m 0644 "${NGINX_SRC}/digycorp-app.conf" \
     /etc/nginx/snippets/digycorp-app.conf
 
+  # THE RENEWAL HOOK. certbot renews the certificate and never reloads nginx,
+  # which holds ssl_certificate in memory — the hook's own header has the full
+  # story. Installed from the repo on every deploy so a reprovisioned box cannot
+  # come back without it: a hook that lives only on the VM is precisely the
+  # hand-written drift the header of site-http.conf is about.
+  # Deliberately NOT gated on the certificate existing — it is inert without one
+  # (certbot only runs deploy hooks after an actual renewal), and that is one
+  # less ordering rule to get wrong the first time a fresh box is issued one.
+  HOOK_SRC="${DEPLOY_PATH}/deploy/letsencrypt/reload-nginx.sh"
+  if [ -f "${HOOK_SRC}" ]; then
+    sudo install -D -m 0755 "${HOOK_SRC}" \
+      /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+  fi
+
   # THE TLS BLOCK ONLY WHEN THERE IS A CERTIFICATE. nginx will not start with
   # an `ssl_certificate` that does not exist, and certbot's HTTP-01 challenge
   # needs nginx already up — so a fresh box comes up on HTTP, gets its

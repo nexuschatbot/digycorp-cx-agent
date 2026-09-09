@@ -181,11 +181,35 @@ Live on the test VM. Let's Encrypt, obtained with:
 certbot certonly --webroot -w /var/www/html -d <hostname>
 ```
 
+**One certificate, two names.** It covers both
+`digycorp-cx-test.uaenorth.cloudapp.azure.com` and `elite-group.digycorp.com`
+— the Cloudflare DNS name for the box, grey-cloud (DNS-only), so Cloudflare
+does not terminate TLS and the browser sees *this* certificate. A name is added
+to the **existing** lineage, never as a second certificate:
+
+```bash
+certbot certonly --webroot -w /var/www/html \
+  --cert-name digycorp-cx-test.uaenorth.cloudapp.azure.com \
+  -d digycorp-cx-test.uaenorth.cloudapp.azure.com -d <new-name> --expand
+```
+
+A new lineage means a new `live/` directory, and `CERT_DIR` in
+`scripts/remote-deploy.sh` guards the install of `site-tls.conf` on that exact
+path — the guard that has already taken the site off HTTPS once (§5).
+
 **`certonly`, deliberately** — certbot never edits nginx, so `deploy/nginx/`
 stays the only description of the server. Renewal is certbot's own systemd
-timer and needs nothing from the deploy except that the
-`/.well-known/acme-challenge/` location in `site-http.conf` keeps answering on
-plain **HTTP**.
+timer and needs two things from the deploy: the
+`/.well-known/acme-challenge/` location in `site-http.conf` answering on plain
+**HTTP**, and the renewal hook below.
+
+**The renewal hook is load-bearing.** nginx reads `ssl_certificate` once and
+holds it in memory; `certbot -q renew` replaces the files under `live/` and
+reloads nothing. Without `deploy/letsencrypt/reload-nginx.sh` — installed to
+`/etc/letsencrypt/renewal-hooks/deploy/` on every deploy — nginx serves the old
+certificate and begins serving an **expired** one roughly 30 days after a
+successful renewal, while certbot reports success throughout. Masked until
+2026-09-09 only because a deploy reloads nginx and deploys were frequent.
 
 `site-tls.conf` is a separate file installed only when a certificate exists,
 because nginx will not start with an `ssl_certificate` that is missing and
@@ -221,6 +245,8 @@ here because the diff never showed any of them.
 | — (never fired) | `rsync --delete` would have deleted `.env` and both databases | excludes, above |
 | `onnxruntime==1.28.0` unresolvable | VM Python 3.10; app needs 3.12 | install 3.12, rebuild the venv when its interpreter is wrong |
 | Deploy **succeeded** and took the site off HTTPS | `[ -f /etc/letsencrypt/live/…/fullchain.pem ]` is false for the deploy user — certbot makes those dirs `0700 root` | `sudo test -f` |
+| Browser refused the site outright; every health gate green | the certificate covered only the Azure hostname, not `elite-group.digycorp.com`; `curl -sf` and the `%{http_code}` gates never verify the name | the name added to the same certificate with `--expand` |
+| — (would have, ~Dec 2026) | certbot renews and nothing reloads nginx, which caches the certificate in memory; masked because deploys reload it | `renewal-hooks/deploy/reload-nginx.sh`, installed by the deploy |
 | Blank page, 200, healthy backend | `crypto.randomUUID` is secure-context-only; it threw at first render. Works on `localhost`, so no dev machine can reproduce it | `newId()` fallback via `getRandomValues` |
 | Every `/api` route 404 through nginx | `proxy_pass http://127.0.0.1:8000/` — the trailing slash strips the matched prefix | nginx config moved into `deploy/nginx/` and deployed |
 | — (would have) | 40 s boot vs a 30 s health wait, once `.env` enabled prewarm + retrieval | 120 s, and it reports how long it took |
