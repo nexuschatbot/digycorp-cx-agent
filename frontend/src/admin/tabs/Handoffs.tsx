@@ -48,7 +48,7 @@ import { useList } from '../useList'
 import { CardSkeletons, EmptyState, ErrorState, TopBar } from '../components/ui'
 import TakeoverDialog from '../components/TakeoverDialog'
 
-const REASONS = ['price', 'finance', 'complaint', 'requested_human', 'repeated_failure', 'other']
+const REASONS = ['price', 'finance', 'complaint', 'requested_human', 'repeated_failure', 'test_drive_unavailable', 'other']
 
 export default function Handoffs() {
   const [reason, setReason] = useState('')

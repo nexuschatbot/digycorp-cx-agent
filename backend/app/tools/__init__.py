@@ -336,6 +336,39 @@ SUBAGENT_ONLY: dict[str, dict] = {
     },
 }
 
+# EVERY TOOL THAT ONLY EXISTS BECAUSE WE TAKE TEST DRIVES (config.
+# TEST_DRIVE_ENABLED, 2026-09-09). Nine of REGISTRY's twenty-two.
+#
+# THE LICENCE ACKNOWLEDGEMENT IS IN HERE and it is the one worth pausing on: it
+# reads like a consent record and is not. It records that the customer was told
+# to bring a driving licence TO A DRIVE, create_booking refuses without it, and
+# with no drive to bring it to there is nothing for it to acknowledge.
+#
+# get_showrooms AND nearest_showroom ARE IN HERE TOO, which is the judgement
+# call in this tuple. A showroom is not only where you take a drive — someone
+# may want to walk in and look at a car. But both tools exist in the prose as
+# the FIRST STEP of the booking sequence (SHOWROOMS_FIRST, NEAREST_BRANCH), the
+# branch card they draw is a booking affordance, and answering "which branch is
+# closest" is what invites the next question we can no longer answer. Sending
+# someone to a showroom to book a drive we have just handed to a colleague is a
+# worse outcome than the helpline, so they go.
+#
+# NOT IN HERE: send_brochure, record_consent, offer_options. A brochure is a
+# car-choosing act with its own WhatsApp consent, and both survive the flag.
+TEST_DRIVE_TOOLS: frozenset[str] = frozenset(
+    {
+        "get_showrooms",
+        "nearest_showroom",
+        "get_available_slots",
+        "get_booking",
+        "lock_slot",
+        "acknowledge_licence_reminder",
+        "create_booking",
+        "reschedule_booking",
+        "cancel_booking",
+    }
+)
+
 # What a sub-agent may reach: everything Aisha can read, plus the reads above.
 SUBAGENT_REGISTRY: dict[str, dict] = {**REGISTRY, **SUBAGENT_ONLY}
 SUBAGENT_TOOL_FNS = {name: entry["fn"] for name, entry in SUBAGENT_REGISTRY.items()}
@@ -389,6 +422,17 @@ def aisha_schemas() -> list[dict]:
     declared = list(loader.frontmatter("aisha").get("tools") or [])
     out = []
     for name in declared:
+        if name in TEST_DRIVE_TOOLS and not config.TEST_DRIVE_ENABLED:
+            # UNBOUND, NOT JUST UNMENTIONED. TEST_DRIVE_OFF tells her the drive
+            # is a colleague's now, but prose is not what stops a tool call —
+            # the binding is. Of her card's fifteen this takes four:
+            # acknowledge_licence_reminder, get_available_slots, get_booking and
+            # nearest_showroom. The rest of TEST_DRIVE_TOOLS she never held on
+            # this path anyway (the writes are the orchestrator's, get_showrooms
+            # is a specialist read), so the tuple is shared with the voice
+            # binding rather than split per surface — one list, checked in both
+            # places, is what stops the two drifting.
+            continue
         if name in COMMERCIAL_WRITE_TOOLS:
             # Doc §2: holding inventory and booking are the orchestrator's.
             # Belt and braces behind the card test, for the same reason
@@ -425,6 +469,7 @@ __all__ = [
     "TOOL_FNS",
     "WRITE_TOOLS",
     "COMMERCIAL_WRITE_TOOLS",
+    "TEST_DRIVE_TOOLS",
     "READ_TOOLS",
     "SUBAGENT_ONLY",
     "SUBAGENT_REGISTRY",

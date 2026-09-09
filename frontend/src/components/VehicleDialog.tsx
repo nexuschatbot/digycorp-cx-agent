@@ -41,6 +41,12 @@ interface Props {
   onClose: () => void
   /** Commit: hands the model name back so the caller can start the booking. */
   onBook: (vehicle: VehicleDetail) => void
+  /** Whether we are taking test drives at all (config.TEST_DRIVE_ENABLED,
+   *  served by /api/config). False hides the one commit in this dialog —
+   *  a button that starts a booking we would immediately hand to a
+   *  colleague is a promise the page has no business making. Browsing is
+   *  unaffected: the dialog is a catalogue read and stays fully useful. */
+  canBook?: boolean
   /** The row this was opened from, so the customer can browse it in place. */
   siblings?: { vehicleId?: number | null }[]
   index?: number
@@ -59,6 +65,7 @@ export default function VehicleDialog({
   lang,
   onClose,
   onBook,
+  canBook = true,
   // The row this was opened from, so the customer can move along it without
   // closing. Both optional: a dialog opened from a single card (a booking
   // receipt, a direct link) simply has no siblings and renders no arrows.
@@ -433,9 +440,11 @@ export default function VehicleDialog({
               )}
 
               {/* COMMIT — the one action here that wakes the agent. */}
-              <button className="vdlg-book" onClick={() => onBook(detail)}>
-                {t.bookTestDrive}
-              </button>
+              {canBook && (
+                <button className="vdlg-book" onClick={() => onBook(detail)}>
+                  {t.bookTestDrive}
+                </button>
+              )}
             </div>
           </>
         )}

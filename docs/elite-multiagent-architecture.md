@@ -63,6 +63,24 @@ Two other switches gate the other new capabilities:
 | `MULTI_AGENT_ENABLED` | off | Aisha → orchestrator → sub-agents. **Excludes voice even when on.** |
 | `RETRIEVAL_ENABLED` | off | `search_knowledge` and the catalogue vector pass |
 | `PROMPT_VERSIONS` | unset | per-agent prompt version override, no deploy needed |
+| `TEST_DRIVE_ENABLED` | **on** | whether we take test-drive work at all (2026-09-09) |
+
+`TEST_DRIVE_ENABLED` is the one that defaults **on**, because it withdraws
+rather than adds. Off, it unbinds the nine test-drive tools from the multi-agent
+chat binding *and* from the voice call's own binding, drops `testdrive` from
+`select.routable()`, replaces Aisha's twelve journey sections with
+`TEST_DRIVE_OFF`, answers the slot and licence taps with 409, and hides the
+booking affordances in the SPA — so every test-drive request, including looking
+one up and cancelling one, becomes a `request_human_callback` with reason
+`test_drive_unavailable`. Existing bookings, the reminder pipeline and the
+console are untouched: what stops is the agent taking the work.
+
+The single-agent path is deliberately **not** gated — it is the frozen rollback
+target for the fan-out, and putting two switches on one behaviour would leave
+that target changed. `tests/test_test_drive_switch.py` asserts on-means-unchanged
+for every gated surface. Running the suite with the flag off fails 48 tests that
+legitimately assert booking behaviour; the flag is a runtime withdrawal, not a
+supported CI configuration.
 
 ---
 

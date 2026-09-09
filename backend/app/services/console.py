@@ -95,6 +95,29 @@ AGENT_REGISTRY: tuple[dict[str, str], ...] = (
     {"agent": "Test Drive Booking Agent", "status": "live"},
 )
 
+# WHAT THE REGISTRY SAYS WHEN WE ARE NOT TAKING DRIVES (2026-09-09). The row
+# above is the one live agent and it is named for the errand it no longer runs,
+# so leaving it as "live" with config.TEST_DRIVE_ENABLED off is precisely the
+# over-claim rule 16 names outright — an operator reading the dashboard would
+# see a booking agent taking bookings that all go to their own queue instead.
+#
+# `retired`, NOT REMOVED. The console shows what exists; an agent that has been
+# stood down is a fact about the system, and deleting the row would leave the
+# registry empty and say nothing at all.
+AGENT_REGISTRY_TEST_DRIVE_OFF: tuple[dict[str, str], ...] = (
+    {"agent": "Test Drive Booking Agent", "status": "retired"},
+    {"agent": "Sales & Finance Assistant", "status": "live"},
+)
+
+
+def agent_registry() -> tuple[dict[str, str], ...]:
+    """The registry as it stands today. Read per request, like every other flag."""
+    from app import config
+
+    if config.TEST_DRIVE_ENABLED:
+        return AGENT_REGISTRY
+    return AGENT_REGISTRY_TEST_DRIVE_OFF
+
 
 def _clamp_page(limit: object, offset: object) -> tuple[int, int]:
     """Clamp paging into a sane window.
@@ -1175,7 +1198,7 @@ def metrics(db: Session) -> dict:
         "turns_by_lang": turns_by_lang,
         "bookings": bookings,
         "notifications_sent": notifications_sent,
-        "agent_registry": [dict(entry) for entry in AGENT_REGISTRY],
+        "agent_registry": [dict(entry) for entry in agent_registry()],
     }
 
 

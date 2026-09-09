@@ -29,26 +29,72 @@ import logging
 
 log = logging.getLogger("app.orchestrator.judge")
 
-SYSTEM = """\
-You route one request to exactly one specialist at a car dealership.
+_ROSTER: dict[str, str] = {
+    "sales": (
+        "sales      — choosing a car: models, trims, specs, prices, colours, "
+        "stock, brochures, comparisons, warranty, delivery times, accessories."
+    ),
+    "testdrive": (
+        "testdrive  — test drives: showrooms, days, times, availability, "
+        "doorstep, and looking up, moving or cancelling a booking that already "
+        "exists."
+    ),
+    "finance": (
+        "finance    — what a car costs to own: on-road price, instalments, "
+        "banks, Islamic finance, down payment, tenure, offers, and buying or "
+        "negotiating."
+    ),
+}
 
-sales      — choosing a car: models, trims, specs, prices, colours, stock, \
-brochures, comparisons, warranty, delivery times, accessories.
-testdrive  — test drives: showrooms, days, times, availability, doorstep, and \
-looking up, moving or cancelling a booking that already exists.
-finance    — what a car costs to own: on-road price, instalments, banks, \
-Islamic finance, down payment, tenure, offers, and buying or negotiating.
+# The contrasts that decide most cases, each keyed by the agent it needs to
+# exist. A distinction between two specialists is worthless — worse, actively
+# misleading — when one of them is not on the roster: told "move my booking to
+# Sunday is testdrive" with no testdrive in the enum, the model has been handed
+# a rule it can only break, and the nearest wrong answer is `sales`.
+_DISTINCTIONS: tuple[tuple[str | None, str], ...] = (
+    (None, 'A LIST price is sales ("how much is the X70"). A TOTAL cost of '
+           'ownership is finance ("on-road price with insurance", "monthly '
+           'instalments").'),
+    ("testdrive", '"Change" is not always a booking. "Move my booking to '
+                  'Sunday" is testdrive; "can I change to the 7-seater instead" '
+                  'is sales — they are choosing a car.'),
+    (None, "Negotiation and buying are finance, not a refusal: it answers what "
+           "it can and hands over to a person."),
+)
 
-THREE DISTINCTIONS THAT DECIDE MOST CASES:
-- A LIST price is sales ("how much is the X70"). A TOTAL cost of ownership is \
-finance ("on-road price with insurance", "monthly instalments").
-- "Change" is not always a booking. "Move my booking to Sunday" is testdrive; \
-"can I change to the 7-seater instead" is sales — they are choosing a car.
-- Negotiation and buying are finance, not a refusal: it answers what it can and \
-hands over to a person.
 
-Answer with the route tool: name the one specialist that owns the request, or \
-"none" when no specialist does."""
+def _system(agents: tuple[str, ...]) -> str:
+    """The routing brief for one roster.
+
+    BUILT FROM THE ROSTER RATHER THAN FROZEN (2026-09-09), because a specialist
+    can now leave it — config.TEST_DRIVE_ENABLED retires TestDrive. Describing
+    an agent the `route` enum does not contain is the mirror image of the bug
+    _route_tool's docstring records: there the schema was narrower than the
+    prose and every finance brief died as "fallback"; here the prose would be
+    wider than the schema, and a drive question would be routed confidently to
+    whichever of the remaining two sounded closest.
+    """
+    lines = [_ROSTER[a] for a in agents if a in _ROSTER]
+    rules = [
+        f"- {text}" for needs, text in _DISTINCTIONS
+        if needs is None or needs in agents
+    ]
+    count = {1: "ONE DISTINCTION THAT DECIDES", 2: "TWO DISTINCTIONS THAT DECIDE"}.get(
+        len(rules), f"{len(rules)} DISTINCTIONS THAT DECIDE"
+    )
+    return (
+        "You route one request to exactly one specialist at a car dealership.\n\n"
+        + "\n".join(lines)
+        + f"\n\n{count} MOST CASES:\n"
+        + "\n".join(rules)
+        + '\n\nAnswer with the route tool: name the one specialist that owns '
+          'the request, or "none" when no specialist does.'
+    )
+
+
+# The full-roster brief, kept as a name because that is what it has always been
+# called and what the evals read.
+SYSTEM = _system(("sales", "testdrive", "finance"))
 
 
 def _route_tool(agents: list[str]) -> dict:
@@ -94,9 +140,10 @@ def _examples() -> str:
     exactly the contrast a router needs to see.
     """
     from app.agents import loader
+    from app.orchestrator import select
 
     lines: list[str] = []
-    for agent in ("sales", "testdrive", "finance"):
+    for agent in select.routable():
         try:
             fm = loader.frontmatter(agent) or {}
         except Exception:  # noqa: BLE001
@@ -123,7 +170,10 @@ def judge(brief: str, agents: list[str], *, model: str | None = None) -> str | N
         from app.agent.router import classifier
 
         raw = classifier._live_generate(
-            SYSTEM + "\n\nExamples:\n" + _examples(),
+            # THE BRIEF DESCRIBES THE ROSTER IT WAS HANDED, never the full one:
+            # `agents` is what the enum will allow, so it is what the prose must
+            # describe. See _system().
+            _system(tuple(agents)) + "\n\nExamples:\n" + _examples(),
             f"Request: {text}",
             model=model or config.CLAUDE_MODEL,
             # THE JUDGE'S OWN ROSTER, never the legacy classifier's — see

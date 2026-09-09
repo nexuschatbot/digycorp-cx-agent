@@ -57,9 +57,40 @@ from dataclasses import dataclass
 
 log = logging.getLogger("app.orchestrator.select")
 
-# Cards that can be routed TO. Aisha is `routable: false` — nothing routes to
-# her, she is the one writing the briefs.
+# Every card that CAN be routed to. Aisha is `routable: false` — nothing routes
+# to her, she is the one writing the briefs.
+#
+# THE FULL ROSTER, NOT THE LIVE ONE. `routable()` below is what selection reads;
+# this is the declaration it filters. They are separate because the two answer
+# different questions — "which specialists exist" is a fact about the cards,
+# "which are taking work today" is a fact about the configuration — and the
+# eval harnesses, the calibration and the differential check all want the first.
 ROUTABLE: tuple[str, ...] = ("sales", "testdrive", "finance")
+
+# Cards that only exist because we take test drives. Removed from the live
+# roster by config.TEST_DRIVE_ENABLED; the card file stays on disk, versioned
+# and gate-checked, so turning the flag back on needs no prompt change.
+TEST_DRIVE_AGENTS: frozenset[str] = frozenset({"testdrive"})
+
+
+def routable() -> tuple[str, ...]:
+    """The specialists taking work right now.
+
+    READ ON EVERY SELECTION rather than frozen at import, so the flag can be
+    flipped and the process restarted without a deploy — the same contract
+    PROMPT_VERSIONS and ROUTER_ENABLED hold. It is three membership tests
+    against a three-element tuple, which is nothing beside the embedding.
+
+    NOTE FOR CALLERS THAT CACHE: `cards()` and `_vectors()` below are keyed on
+    this answer implicitly, so a flag change inside a live process must be
+    followed by `reset()`. Production never does that; tests do.
+    """
+    from app import config
+
+    if config.TEST_DRIVE_ENABLED:
+        return ROUTABLE
+    return tuple(a for a in ROUTABLE if a not in TEST_DRIVE_AGENTS)
+
 
 # THE CALIBRATED RULE. See the module docstring: the winner must beat the
 # runner-up by this much. Measured on 32 card utterances, leave-one-out —
@@ -108,7 +139,7 @@ def cards() -> dict[str, str]:
     """{agent: domain text} for every routable agent. Cached per process."""
     global _cards
     if _cards is None:
-        _cards = {a: _card_text(a) for a in ROUTABLE}
+        _cards = {a: _card_text(a) for a in routable()}
     return _cards
 
 
@@ -212,7 +243,7 @@ def entity_owner(brief: str) -> Selection | None:
     if not wanted:
         return None
     owners: set[str] = set()
-    for agent in ROUTABLE:
+    for agent in routable():
         try:
             if wanted & produces(agent):
                 owners.add(agent)
@@ -262,7 +293,7 @@ def action_owners(brief: str) -> dict[str, set[str]]:
     from app.orchestrator.write import _ACTION_TO_TOOL, PROPOSABLE
 
     owners: dict[str, set[str]] = {}
-    for agent in ROUTABLE:
+    for agent in routable():
         try:
             declared = list(loader.frontmatter(agent).get("proposes") or [])
         except Exception:  # noqa: BLE001 — a missing card is the judge's problem
@@ -346,12 +377,12 @@ def select(brief: str, *, judge=None) -> Selection:
         )
 
     try:
-        chosen = judge(brief, list(ROUTABLE))
+        chosen = judge(brief, list(routable()))
     except Exception:  # noqa: BLE001 — a dead judge must not kill the turn
         log.exception("routing judge failed")
         chosen = None
 
-    if chosen not in ROUTABLE:
+    if chosen not in routable():
         # An unroutable brief is a real outcome, not an error: Aisha may have
         # written something no specialist owns, and the orchestrator answers it
         # herself rather than guessing an agent.

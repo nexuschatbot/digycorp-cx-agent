@@ -763,9 +763,13 @@ def _prefixes_to_warm() -> list[tuple[str, list]]:
 
         from app.agent.prompt import _DATE_ANCHOR, _relative_dates
         from app.agents import loader as _loader
+        from app.orchestrator import select as _select
         from app.orchestrator import subagent as _sub
 
-        for agent in ("sales", "testdrive", "finance"):
+        # THE LIVE ROSTER, not the declared one. Warming a prefix for a
+        # specialist nothing can route to spends a prefill on a cache entry no
+        # turn will ever read.
+        for agent in _select.routable():
             body = (
                 _loader.body_for(agent)
                 + _DATE_ANCHOR.format(**_relative_dates(_date.today()))
@@ -2177,10 +2181,15 @@ def _known_entities(state: AgentState, cfg: dict | None = None) -> set[str]:
     before this existed.
     """
     from app.orchestrator import order as _order
+    from app.orchestrator import select as _select
 
     facts = state.get("session_facts") or {}
     producible: set[str] = set()
-    for agent in ("sales", "testdrive", "finance"):
+    # THE LIVE ROSTER. An entity only a retired card produces is not producible
+    # this turn, and asserting it would unblock an ordering for a step that can
+    # never run — the deadlock order.py's docstring warns about, arriving from
+    # the other direction.
+    for agent in _select.routable():
         producible |= _order.produces(agent)
     # NAME -> VALUE, not just the names (found live, 2026-08-31). Seeding the
     # ordering with names alone unblocked Finance and then handed it an empty

@@ -153,6 +153,7 @@ const ESCALATION_REASON: Record<string, string> = {
   repeated_failure: 'Repeated failure',
   explicit_request: 'Asked for a person',
   safety: 'Safety',
+  test_drive_unavailable: 'Test drive (handled by a person)',
   other: 'Other',
 }
 

@@ -51,6 +51,7 @@ not the evidence trail; the audit is the evidence trail, and it tells the truth.
 from __future__ import annotations
 
 import json
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -63,6 +64,8 @@ from app.db import get_db
 from app.models import Actor, AuditType
 from app.services import audit, slots
 from app.tools import REGISTRY
+
+log = logging.getLogger("app.api.intents")
 
 router = APIRouter(prefix="/api/intent")
 
@@ -117,6 +120,28 @@ def _tap(db: Session, session_id: str, tool: str, tool_input: dict) -> dict:
     entry = REGISTRY.get(tool)
     if entry is None:  # unreachable via the typed routes; a guard, not a path
         raise HTTPException(status_code=500, detail="unknown_tool")
+
+    # WE ARE NOT TAKING TEST DRIVES (config.TEST_DRIVE_ENABLED, 2026-09-09).
+    #
+    # THIS IS THE GATE THAT ACTUALLY MATTERS ON THIS PATH, and the reason it is
+    # here rather than in the routes: everything above this module is about what
+    # a MODEL may call, and these routes exist precisely because no model is in
+    # the loop. Unbinding a tool from every prompt in the codebase leaves a slot
+    # chip on a page loaded five minutes ago still able to move inventory over
+    # plain HTTP. Checked centrally so a tap added later inherits it.
+    #
+    # 409, NOT 403: the request is well-formed and the caller is entitled to
+    # make it — it is the STATE of the service that has changed under them, and
+    # a stale chip is exactly the conflict this status describes.
+    from app import config as _app_config
+    from app.tools import TEST_DRIVE_TOOLS
+
+    if tool in TEST_DRIVE_TOOLS and not _app_config.TEST_DRIVE_ENABLED:
+        log.info("refusing the %s tap: test drives are off", tool)
+        raise HTTPException(
+            status_code=409,
+            detail="test_drive_unavailable",
+        )
 
     graph = build_graph(new_sqlite_checkpointer(AGENT_CHECKPOINT_PATH))
     config = _thread(session_id)

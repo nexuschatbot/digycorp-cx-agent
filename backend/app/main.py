@@ -382,6 +382,37 @@ def health_root() -> dict[str, str]:
     return _liveness()
 
 
+@app.get("/api/config")
+def client_config() -> dict[str, bool]:
+    """What the browser needs to know about how this server is configured.
+
+    ONE FLAG TODAY, AND IT IS DELIBERATELY NOT A DUMP OF `config`. Everything in
+    that module is a server concern — model ids, timeouts, kill switches for
+    paths the SPA cannot see — and an endpoint that returned all of it would
+    turn every future env var into a public one by default. What belongs here is
+    the narrow set the UI must AGREE with the server about, and there is
+    currently exactly one: whether we are taking test drives.
+
+    WHY THE UI HAS TO KNOW AT ALL. Unbinding the tools stops Aisha offering a
+    drive, but the booking affordances that do not go through her — the starter
+    card, the "Book test drive" button on a vehicle dialog — are static markup
+    that would go on promising one. A customer who taps a promise we cannot keep
+    has been misled by the page rather than by the agent, and the tap intents
+    would answer them with a 409 they never asked for.
+
+    UNAUTHENTICATED, like every other route here (see services/console.py on the
+    demo posture). It leaks nothing: whether we take test-drive bookings is
+    something we tell anyone who asks in the chat window.
+    """
+    # Imported as a MODULE, not as a from-import like the constants at the top
+    # of this file: those are frozen at import, and this one has to be readable
+    # per request so a test can monkeypatch it — the same reason
+    # prompt._resolved_body reads it at call time.
+    from app import config as _config
+
+    return {"test_drive_enabled": _config.TEST_DRIVE_ENABLED}
+
+
 @app.get("/")
 def root() -> dict[str, str]:
     """What is running here, for anything that asks the bare origin.

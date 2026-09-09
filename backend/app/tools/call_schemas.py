@@ -13,7 +13,7 @@ human callback. Chat answered all eight; the call answered none.
 TWO THINGS ARE DECIDED HERE AND NOTHING ELSE:
 
   1. WHICH TOOLS the call is offered (`call_tool_schemas`) and which it may
-     actually execute (`CALL_TOOL_FNS`). Those two must be one decision, which
+     actually execute (`call_tool_fns`). Those two must be one decision, which
      is the lesson `tool_node._dispatch` learned on 2026-08-29 and
      `subagent.run_step` relearned on 2026-08-31: a schema list constrains what
      is OFFERED, never what a model EMITS, so the dispatch table has to be the
@@ -62,8 +62,21 @@ def call_tool_schemas() -> list[dict]:
 
     The SOURCE schemas, untrimmed: `_openai_tools()` still owns the trimming, so
     this function cannot become a second place where descriptions are decided.
+
+    THE CALL IS ITS OWN SURFACE AND HAS TO BE GATED SEPARATELY (2026-09-09).
+    This path never touches aisha_schemas or the orchestrator — it binds the
+    whole of REGISTRY, writes included, against its own persona. So
+    config.TEST_DRIVE_ENABLED has to be read here as well; a caller who gated
+    only the chat binding would leave a phone line that still books drives.
     """
-    return [entry["schema"] for entry in REGISTRY.values()] + [
+    from app import config
+    from app.tools import TEST_DRIVE_TOOLS
+
+    live = REGISTRY if config.TEST_DRIVE_ENABLED else {
+        name: entry for name, entry in REGISTRY.items()
+        if name not in TEST_DRIVE_TOOLS
+    }
+    return [entry["schema"] for entry in live.values()] + [
         SUBAGENT_ONLY[name]["schema"] for name in CALL_EXTRA_TOOLS
     ]
 
@@ -155,16 +168,33 @@ def essentials_for(name: str) -> str:
     return " ".join(CALL_ESSENTIALS.get(name, ()))
 
 
-# WHAT THE CALL MAY EXECUTE — the same names as the schema list, so a tool the
-# model was never offered cannot be dispatched, and a tool it WAS offered can
-# never come back `unknown_tool`. Passed to `tool_node._dispatch(fns=...)` by
-# `call_realtime._run_tool_sync`; without it the eight additions resolve against
-# TOOL_FNS, which does not hold them, and the call would advertise eight tools
-# it could not run.
-CALL_TOOL_FNS: dict = {
-    name: SUBAGENT_REGISTRY[name]["fn"]
-    for name in list(REGISTRY) + list(CALL_EXTRA_TOOLS)
-}
+def call_tool_fns() -> dict:
+    """What the call may EXECUTE — the same names as the schema list, so a tool
+    the model was never offered cannot be dispatched, and a tool it WAS offered
+    can never come back `unknown_tool`. Passed to `tool_node._dispatch(fns=...)`
+    by `call_realtime._run_tool_sync`; without it the eight additions resolve
+    against TOOL_FNS, which does not hold them, and the call would advertise
+    eight tools it could not run.
+
+    A FUNCTION SINCE 2026-09-09, and it had to become one. This was a module
+    constant next to an import-time assert that it named exactly what
+    `call_tool_schemas()` offered — a good invariant, and one that a flag
+    shrinking the schema list turns into a boot crash. Both sides now read
+    config.TEST_DRIVE_ENABLED, so the parity holds in both states rather than
+    only in the state the constant was frozen in.
+
+    THE FILTER IS THE POINT, not a tidy-up. `_openai_tools()` not offering a
+    schema is what stops the model asking; this is what stops the dispatch if it
+    asks anyway, which is the same belt-and-braces `_schemas_for` keeps against a
+    sub-agent write.
+    """
+    from app import config
+    from app.tools import TEST_DRIVE_TOOLS
+
+    names = list(REGISTRY) + list(CALL_EXTRA_TOOLS)
+    if not config.TEST_DRIVE_ENABLED:
+        names = [n for n in names if n not in TEST_DRIVE_TOOLS]
+    return {name: SUBAGENT_REGISTRY[name]["fn"] for name in names}
 
 
 # The invariants, enforced at import exactly as app/tools/__init__.py enforces
@@ -176,14 +206,14 @@ assert set(CALL_ESSENTIALS) <= set(CALL_EXTRA_TOOLS), (
 assert not (set(CALL_EXTRA_TOOLS) & WRITE_TOOLS), (
     "the call's added tools must all be reads"
 )
-assert set(CALL_TOOL_FNS) == {s["name"] for s in call_tool_schemas()}, (
+assert set(call_tool_fns()) == {s["name"] for s in call_tool_schemas()}, (
     "the call's dispatch table and its schema list must name the same tools"
 )
 
 __all__ = [
     "CALL_ESSENTIALS",
     "CALL_EXTRA_TOOLS",
-    "CALL_TOOL_FNS",
+    "call_tool_fns",
     "call_tool_schemas",
     "essentials_for",
 ]

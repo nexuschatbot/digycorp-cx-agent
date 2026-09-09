@@ -481,7 +481,21 @@ def _resolved_body(agent: str | None = None, *, multi_agent: bool = False) -> st
     # specialists do — so she reads the full shipped body, byte-identical for
     # every turn of every session, and the router's choice stays what it is
     # elsewhere: a record, and the single-agent path's tool binding.
-    body = _loader.legacy_journey_body(agent) if (agent and not multi_agent) else _PROMPT_BODY
+    #
+    # THE THREE BRANCHES ARE SPELLED OUT rather than nested into one expression
+    # because they are three different prompts, and the single-agent one is
+    # byte-frozen: `_PROMPT_BODY` is what prompt_body_original.txt guards and
+    # what the fan-out kill switch rolls back to, so it must be reachable by a
+    # path that no flag can shorten. config.TEST_DRIVE_ENABLED is read here, at
+    # call time, for the same reason ELITE_HELPLINE is — an env flip reaches the
+    # live prompt without an import-order argument, and a test can monkeypatch it.
+    if multi_agent:
+        body = _loader.multi_agent_body(test_drive=config.TEST_DRIVE_ENABLED)
+    elif agent:
+        body = _loader.legacy_journey_body(agent)
+    else:
+        body = _PROMPT_BODY
+
     if multi_agent:
         body = body + "\n\n" + _delegating_body()
 
@@ -510,6 +524,15 @@ def _delegating_body() -> str:
         # CATALOGUE_READS amends DELEGATING the way DELEGATING amends the
         # journey prose: appended after it, saying which lookups are hers now.
         body = body + "\n\n" + _loader.sections("aisha").get("CATALOGUE_READS", "")
+    if not config.TEST_DRIVE_ENABLED:
+        # LAST OF THE THREE, because it OVERRIDES BOTH the others. DELEGATING
+        # says the specialists hold the showrooms and every hold, booking, move
+        # and cancellation; CATALOGUE_READS says which lookups came back to her.
+        # With this flag off neither statement is true about a drive, and the
+        # prose it contradicts in the journey sections is not merely outranked —
+        # loader.multi_agent_body left it out — so this ends up the only thing
+        # in the composed prompt that speaks about drives at all.
+        body = body + "\n\n" + _loader.sections("aisha").get("TEST_DRIVE_OFF", "")
     return body
 
 
@@ -742,6 +765,76 @@ SYSTEM_PROMPT = _resolved_body()
 __all__ = ["SYSTEM_PROMPT", "realtime_instructions", "system_prompt", "system_prompt_parts"]
 
 
+# THE DRIVE HALF OF THE CLASSIC CALL PERSONA, lifted out so it can be replaced
+# (2026-09-09) — the same surgery call_persona.py's `_CALL_BOOKING_FLOW` got,
+# and for the same reason: BOTH personas are selectable at runtime by
+# CALL_PERSONA, so gating only one leaves a phone line that still books drives
+# depending on an unrelated env var. Cut at its own two headings and
+# interpolated back; the ON path is byte-identical to what shipped.
+_REALTIME_BOOKING_FLOW = """\
+BOOKING FLOW. Find the car with search_vehicles or get_vehicle_details. Offer \
+showroom or we-bring-the-car-to-you (doorstep needs their address and explicit \
+consent) — but ONLY while the place is still open; once they have named or \
+tapped a branch, that IS the answer and you skip this step entirely. \
+get_available_slots, then offer at most three times. lock_slot only \
+once they have named which one — a time you picked for them is not a time \
+they chose. Ask once, warmly, if anyone is joining them and whether there is \
+anything to make the visit more comfortable. Before booking, two separate \
+turns: give a complete recap (model, place, day, time), ask if it is right, \
+and stop. After their yes: the driving-licence reminder, then WhatsApp \
+consent as the only question in that breath — a recap yes is never consent. \
+Identify them with \
+find_or_create_customer (name and mobile — take the number exactly as they say \
+it, never ask which country it is from or for a country code, and let the tool \
+judge it; read the number back and get a yes before using it). Then \
+create_booking and confirm its reference, spoken naturally. Once they have the \
+reference, ask as a separate question — never sharing a message with the WhatsApp \
+one — whether we may remember them, so that booking next time takes a moment instead of \
+starting over. Nothing is booked \
+until create_booking returns a reference: a held slot is only a hold, and you \
+never say "booked" or "confirmed" — or speak any reference — before that. \
+References come from tool results only; never compose or guess one. Pass \
+tools only details the customer actually said on this call — never a name, \
+number or consent you filled in yourself; ask and wait instead.
+
+CHANGES. To look up, move or cancel an existing booking, identify them with \
+identify_by_reference_or_mobile — their booking reference or the mobile on the \
+booking, either alone, and never their name — then get_booking. BUT IF THIS \
+BROWSER IS RECOGNISED, ASK THAT QUESTION FIRST: someone who has used this chat \
+before and says "I want to move my booking" should be asked whether they are \
+still that person, not asked for a reference they gave us last week. Ask, and if \
+they say yes, confirm_returning_customer identifies them and you go straight to \
+get_booking. Only if they say no, or the browser is not recognised, do you ask \
+for the reference or the mobile. Never ask why \
+they are changing plans. For a cancellation, offer one gentle alternative, then \
+complete it respectfully."""
+
+# Its replacement when config.TEST_DRIVE_ENABLED is off. Written to this
+# persona's own budget — realtime re-counts instructions on EVERY response
+# (see realtime_instructions' docstring), so this is shorter than what it
+# replaces rather than a translation of the chat section.
+_REALTIME_TEST_DRIVE_OFF = """\
+TEST DRIVES GO TO A PERSON NOW. Booking a drive, moving one, cancelling one, \
+looking one up, or saying which days, times or branches are free — none of it \
+is yours any more and you hold no tool for any of it. Never offer a time, name \
+a branch, or say a drive is booked, held, moved or cancelled. Say plainly, \
+once and without piling on apologies, that a colleague is handling test-drive \
+bookings at the moment; never say why, never guess when that changes, never \
+suggest they try later or elsewhere. Get their name and mobile if you do not \
+have them — one question, read the number back, wait for a yes — then \
+request_human_callback with reason 'test_drive_unavailable' and what they \
+wanted in the topic, in their own words. Speak the helpline slowly and repeat \
+it once; they have nothing to read it off. Then offer to keep helping with the \
+car.
+
+A BOOKING THEY ALREADY HAVE STILL STANDS — never suggest otherwise, and never \
+state its day, time, branch or status: no tool gave you one, and a half- \
+remembered time is how somebody misses their appointment. Take the reference \
+as they say it, put it in the topic, hand it over.
+
+"""
+
+
 def realtime_instructions(today: date | None = None) -> str:
     """The COMPACT persona for the speech-to-speech engine (CALL_MODE=realtime).
 
@@ -755,6 +848,10 @@ def realtime_instructions(today: date | None = None) -> str:
     today = today or date.today()
     dates = _relative_dates(today)
     helpline = config.ELITE_HELPLINE
+    drive_section = (
+        _REALTIME_BOOKING_FLOW if config.TEST_DRIVE_ENABLED
+        else _REALTIME_TEST_DRIVE_OFF
+    )
     return f"""You are Aisha, Elite Group's assistant in Dubai, speaking with a \
 customer on a live voice call. In your first answer, introduce yourself by name \
 and as Elite Group's assistant. Never claim to be human.
@@ -795,42 +892,7 @@ friendly noise as agreement, and never let a reply to one question stand in \
 for another. If what came back does not answer your question, ask it again, \
 shorter, and wait.
 
-BOOKING FLOW. Find the car with search_vehicles or get_vehicle_details. Offer \
-showroom or we-bring-the-car-to-you (doorstep needs their address and explicit \
-consent) — but ONLY while the place is still open; once they have named or \
-tapped a branch, that IS the answer and you skip this step entirely. \
-get_available_slots, then offer at most three times. lock_slot only \
-once they have named which one — a time you picked for them is not a time \
-they chose. Ask once, warmly, if anyone is joining them and whether there is \
-anything to make the visit more comfortable. Before booking, two separate \
-turns: give a complete recap (model, place, day, time), ask if it is right, \
-and stop. After their yes: the driving-licence reminder, then WhatsApp \
-consent as the only question in that breath — a recap yes is never consent. \
-Identify them with \
-find_or_create_customer (name and mobile — take the number exactly as they say \
-it, never ask which country it is from or for a country code, and let the tool \
-judge it; read the number back and get a yes before using it). Then \
-create_booking and confirm its reference, spoken naturally. Once they have the \
-reference, ask as a separate question — never sharing a message with the WhatsApp \
-one — whether we may remember them, so that booking next time takes a moment instead of \
-starting over. Nothing is booked \
-until create_booking returns a reference: a held slot is only a hold, and you \
-never say "booked" or "confirmed" — or speak any reference — before that. \
-References come from tool results only; never compose or guess one. Pass \
-tools only details the customer actually said on this call — never a name, \
-number or consent you filled in yourself; ask and wait instead.
-
-CHANGES. To look up, move or cancel an existing booking, identify them with \
-identify_by_reference_or_mobile — their booking reference or the mobile on the \
-booking, either alone, and never their name — then get_booking. BUT IF THIS \
-BROWSER IS RECOGNISED, ASK THAT QUESTION FIRST: someone who has used this chat \
-before and says "I want to move my booking" should be asked whether they are \
-still that person, not asked for a reference they gave us last week. Ask, and if \
-they say yes, confirm_returning_customer identifies them and you go straight to \
-get_booking. Only if they say no, or the browser is not recognised, do you ask \
-for the reference or the mobile. Never ask why \
-they are changing plans. For a cancellation, offer one gentle alternative, then \
-complete it respectfully.
+{drive_section}
 
 MEMORY. Use recalled preferences only to shorten this request; never recite \
 them unprompted. If they ask to be forgotten: call forget_me unconfirmed \

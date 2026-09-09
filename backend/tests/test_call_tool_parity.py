@@ -26,7 +26,7 @@ from app.tools import REGISTRY, SUBAGENT_ONLY, WRITE_TOOLS
 from app.tools.call_schemas import (
     CALL_ESSENTIALS,
     CALL_EXTRA_TOOLS,
-    CALL_TOOL_FNS,
+    call_tool_fns,
     call_tool_schemas,
     essentials_for,
 )
@@ -90,17 +90,18 @@ def test_the_call_gains_no_write():
 def test_offered_and_dispatchable_are_the_same_set():
     """A tool offered but not dispatchable returns `unknown_tool` AFTER the
     model has already told the customer it was checking — the failure mode that
-    made `fns=CALL_TOOL_FNS` necessary at the dispatch site."""
-    assert set(CALL_TOOL_FNS) == _call_offered()
-    assert all(callable(fn) for fn in CALL_TOOL_FNS.values())
+    made `fns=call_tool_fns()` necessary at the dispatch site."""
+    assert set(call_tool_fns()) == _call_offered()
+    assert all(callable(fn) for fn in call_tool_fns().values())
 
 
 def test_dispatch_table_holds_the_registry_implementation():
     """No shadowing: the call runs the SAME function chat runs."""
+    fns = call_tool_fns()
     for name, entry in REGISTRY.items():
-        assert CALL_TOOL_FNS[name] is entry["fn"]
+        assert fns[name] is entry["fn"]
     for name in CALL_EXTRA_TOOLS:
-        assert CALL_TOOL_FNS[name] is SUBAGENT_ONLY[name]["fn"]
+        assert fns[name] is SUBAGENT_ONLY[name]["fn"]
 
 
 # --------------------------------------------------------------------------- #

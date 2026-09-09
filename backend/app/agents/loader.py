@@ -67,7 +67,45 @@ DEFAULT_VERSION = "v1"
 # CATALOGUE_READS (2026-09-03) is the second: it amends DELEGATING when
 # config.AISHA_CATALOGUE_READS hands her search_vehicles, get_vehicle_details
 # and compare_vehicles back, and is appended only then (prompt._delegating_body).
-MULTI_AGENT_ONLY: frozenset[str] = frozenset({"DELEGATING", "CATALOGUE_READS"})
+#
+# TEST_DRIVE_OFF (2026-09-09) is the third, and it is the only one that REPLACES
+# prose rather than amending it: with config.TEST_DRIVE_ENABLED false the twelve
+# sections in TEST_DRIVE_SECTIONS are left out of the composed body entirely and
+# this stands in their place. The single agent still books, so it must never see
+# it — the same reason DELEGATING is named here.
+MULTI_AGENT_ONLY: frozenset[str] = frozenset(
+    {"DELEGATING", "CATALOGUE_READS", "TEST_DRIVE_OFF"}
+)
+
+# THE JOURNEY PROSE THAT ONLY MAKES SENSE IF WE TAKE TEST DRIVES, by name.
+#
+# NAMED HERE RATHER THAN INFERRED, because there is no property of a section
+# that says "this is about test drives" — BROCHURE and COMPARE sit in the same
+# file, come from the same ported journey, and survive. A list a reader can
+# check against the file is the only honest way to express it, and dropping the
+# wrong one silently shortens the prompt exactly the way a renamed heading does.
+#
+# WHAT IS NOT HERE AND WHY. BROCHURE, COMPARE, MODEL_LOOKUP and
+# FINDING_THE_RIGHT_CAR are car-choosing prose that stands on its own: a
+# customer can still be sent a brochure, compare two models and be helped to a
+# shortlist with no drive at the end of it. Those four are the whole of what
+# aisha keeps when this is off.
+TEST_DRIVE_SECTIONS: frozenset[str] = frozenset(
+    {
+        "SHOWROOMS_FIRST",
+        "NEAREST_BRANCH",
+        "ONE_QUESTION_SHOWROOM_CARD",
+        "SLOT_ALTERNATIVES",
+        "BRANCH_STICKINESS",
+        "DOORSTEP",
+        "SECOND_DRIVE_ORDERING",
+        "MAKING_THE_VISIT_THEIRS",
+        "BOOKING_SEQUENCE",
+        "MANAGING_EXISTING",
+        "RESCHEDULING",
+        "CANCELLING",
+    }
+)
 
 # The order the blocks appear in the body that ships. EXTRACTED MECHANICALLY from
 # prompts/compose.py::SINGLE_AGENT_ORDER — tests/test_prompt_split.py asserts
@@ -304,6 +342,51 @@ def single_agent_body() -> str:
                 raise PromptError(f"{agent} {version_for(agent)} is missing {name}")
             blocks.append(block)
         _cache[key] = "".join(blocks)
+        return _cache[key]
+
+
+def multi_agent_body(*, test_drive: bool = True) -> str:
+    """The body the FAN-OUT Aisha reads. Byte-identical to the shipped one when
+    we are still taking test drives.
+
+    THE `test_drive=True` PATH RETURNS `single_agent_body()` ITSELF, not a
+    re-composition of the same blocks. That is the point rather than an
+    optimisation: the assembled string is the prompt cache key, graph.py hangs a
+    1h cache_control breakpoint on it, and a second composer producing "the same
+    bytes" is a second thing that can stop producing them. One function composes
+    the shipped body; this one either returns it or returns the shorter one.
+
+    WITH IT OFF, the twelve TEST_DRIVE_SECTIONS are skipped in place — the
+    surviving blocks keep their relative order, because that order is structure
+    (see SINGLE_AGENT_ORDER) and is no less load-bearing for being shorter. The
+    caller appends TEST_DRIVE_OFF, exactly as it appends DELEGATING.
+
+    Cached per (versions, test_drive) for the same reason everything else here
+    is: a body recomposed per turn could differ by a byte between turns and pay
+    a cache WRITE every time.
+    """
+    if test_drive:
+        return single_agent_body()
+
+    key = ("__multi_no_td__", tuple(sorted(active_versions().items())))
+    if key in _cache:
+        return _cache[key]
+    with _lock:
+        if key in _cache:
+            return _cache[key]
+        blocks = []
+        for agent, name in SINGLE_AGENT_ORDER:
+            if agent == "aisha" and name in TEST_DRIVE_SECTIONS:
+                continue
+            block = sections(agent).get(name)
+            if block is None:
+                raise PromptError(f"{agent} {version_for(agent)} is missing {name}")
+            blocks.append(block)
+        _cache[key] = "".join(blocks)
+        log.info(
+            "composed the test-drive-off body: %d of %d blocks",
+            len(blocks), len(SINGLE_AGENT_ORDER),
+        )
         return _cache[key]
 
 

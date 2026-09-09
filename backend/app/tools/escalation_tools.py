@@ -41,6 +41,11 @@ REQUEST_HUMAN_CALLBACK_SCHEMA = {
         "- they raise a complaint (reason 'complaint');\n"
         "- they ask about a defect, recall, or accident/safety matter (reason "
         "'safety') — never improvise on these;\n"
+        "- they want a test drive — booked, moved, cancelled, or simply looked "
+        "up — and you have no tool for it (reason 'test_drive_unavailable'). "
+        "This one is not a failure and must not be apologised for as though it "
+        "were: bookings are handled by a colleague at the moment, you say so "
+        "plainly, and you carry on helping them with the car itself;\n"
         "- you have misunderstood them twice in a row (reason 'repeated_failure');\n"
         "- anything else clearly outside what you can do (reason 'other').\n\n"
         "BEFORE you call this you must have identified the customer with "
@@ -71,6 +76,7 @@ REQUEST_HUMAN_CALLBACK_SCHEMA = {
                     "repeated_failure",
                     "explicit_request",
                     "safety",
+                    "test_drive_unavailable",
                     "other",
                 ],
                 "description": "Why you are handing this to a human. Pick the closest.",

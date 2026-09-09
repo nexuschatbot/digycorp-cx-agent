@@ -17,7 +17,7 @@ import { CompareCard } from './components/CompareCard'
 import { VehicleCards } from './components/VehicleCards'
 import VehicleDialog from './components/VehicleDialog'
 import type { VehicleCard } from './cards'
-import { fetchHeroImageUrls } from './api'
+import { fetchClientConfig, fetchHeroImageUrls } from './api'
 import { warmHeroCache } from './media'
 import { CALL_LABELS, VOICE_LABELS } from './i18n'
 import { useCall } from './useCall'
@@ -191,6 +191,21 @@ export default function App() {
   // the worst case is the slow first card we had before this.
   useEffect(() => {
     void fetchHeroImageUrls().then(warmHeroCache)
+  }, [])
+
+  // ARE WE TAKING TEST DRIVES? Everything Aisha says about a drive is decided
+  // server-side by unbinding her tools — but the two booking promises on this
+  // page are static markup she never sees: the starter card and the dialog's
+  // "Book test drive" button. They have to be asked separately or they go on
+  // offering an errand the agent will hand straight to a colleague.
+  //
+  // OPTIMISTIC UNTIL TOLD OTHERWISE. Starts true so the normal case paints with
+  // no flicker and a failed fetch degrades to today's behaviour; see
+  // fetchClientConfig on why that is the safe direction. Once, on mount — the
+  // answer is a deploy-time fact, not session state.
+  const [testDriveEnabled, setTestDriveEnabled] = useState(true)
+  useEffect(() => {
+    void fetchClientConfig().then((cfg) => setTestDriveEnabled(cfg.testDriveEnabled))
   }, [])
 
   // Read-aloud (2026-07-21). Owned here rather than per-bubble so there is ONE
@@ -440,22 +455,37 @@ export default function App() {
                 render off the Dubai clock; there is deliberately no ticker,
                 since the empty state disappears the moment anyone speaks. */}
             <h2 className="empty-hello">{greeting()}.<br />I’m Aisha.</h2>
-            <p className="empty-sub">I’m your virtual assistant for sales and test drive bookings. How can I help you today?</p>
+            <p className="empty-sub">
+              {testDriveEnabled
+                ? 'I’m your virtual assistant for sales and test drive bookings. How can I help you today?'
+                : 'I’m your virtual assistant for sales. How can I help you today?'}
+            </p>
             <div className="starter-list">
+              {/* THE BOOKING CARD IS THE FIRST PROMISE THIS APP MAKES, so it is
+                  the first thing to go when we are not taking drives — offering
+                  it and then handing the tap to a colleague is a worse welcome
+                  than one card. The sales card is promoted to primary rather
+                  than left looking like the runner-up to something absent. */}
+              {testDriveEnabled && (
+                <button
+                  type="button"
+                  className="starter-btn starter-btn--primary"
+                  onClick={() => prefill('I’d like to book a test drive, or manage one I already have.')}
+                >
+                  <span className="starter-text">
+                    <span className="starter-title">Book a test drive</span>
+                    <span className="starter-desc">Book a new test drive or manage your old ones.</span>
+                  </span>
+                  <svg className="starter-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                </button>
+              )}
               <button
                 type="button"
-                className="starter-btn starter-btn--primary"
-                onClick={() => prefill('I’d like to book a test drive, or manage one I already have.')}
-              >
-                <span className="starter-text">
-                  <span className="starter-title">Book a test drive</span>
-                  <span className="starter-desc">Book a new test drive or manage your old ones.</span>
-                </span>
-                <svg className="starter-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-              </button>
-              <button
-                type="button"
-                className="starter-btn starter-btn--secondary"
+                className={
+                  testDriveEnabled
+                    ? 'starter-btn starter-btn--secondary'
+                    : 'starter-btn starter-btn--primary'
+                }
                 onClick={() => prefill('I’d like to ask about models, pricing, offers or availability.')}
               >
                 <span className="starter-text">
@@ -979,6 +1009,7 @@ export default function App() {
           index={detailCard.index}
           onIndex={(i) => setDetailCard({ ...detailCard, index: i })}
           onClose={() => setDetailCard(null)}
+          canBook={testDriveEnabled}
           onBook={(vehicle) => {
             setDetailCard(null)
             send(

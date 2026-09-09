@@ -90,7 +90,7 @@ from app.services.realtime_agent import VENDOR_SAMPLE_RATE, make_agent_session
 from app.services.realtime_stt import resample_pcm16
 from app.services.rtc_transport import make_rtc_transport
 from app.services.speech_gate import make_speech_gate
-from app.tools.call_schemas import CALL_TOOL_FNS
+from app.tools.call_schemas import call_tool_fns
 
 log = logging.getLogger("app.api.call_realtime")
 
@@ -1060,12 +1060,12 @@ class RealtimeCallSession:
             # default, which holds the single-agent registry only, so
             # get_finance_estimate and its siblings would come back
             # `unknown_tool` after the model had already said "let me check".
-            # CALL_TOOL_FNS names exactly what _openai_tools() offered, so the
+            # call_tool_fns() names exactly what _openai_tools() offered, so the
             # two cannot disagree — anything else still falls through to
             # unknown_tool, which is the allowlist this path has always had.
             result = _dispatch(
                 db, self.session_id, name, arguments, self.customer_id, call_id or "",
-                fns=CALL_TOOL_FNS,
+                fns=call_tool_fns(),
             )
             db.commit()
             envelope = result if isinstance(result, dict) else {"result": result}

@@ -476,6 +476,30 @@ export async function fetchVehicle(
  *  Returns the tool's own envelope, including the failure case
  *  ({locked: false, reason: "slot_no_longer_available"}) — which is not an error
  *  to swallow: the agent reads it from history and re-offers gracefully. */
+/**
+ * What the server is configured to offer, for the parts of the UI that promise
+ * something before Aisha has said a word.
+ *
+ * DEFAULTS TO TRUE ON ANY FAILURE, and that direction is deliberate. The flag
+ * it carries is off only when someone has turned test drives off; a network
+ * blip must not make a working booking flow vanish from the page, and the
+ * inverse mistake — briefly offering a drive we then hand to a colleague — is
+ * the softer one. The tap intents answer 409 either way, so a stale page can
+ * never actually commit anything.
+ */
+export async function fetchClientConfig(
+  opts: StreamOptions = {},
+): Promise<{ testDriveEnabled: boolean }> {
+  try {
+    const res = await fetch(`${opts.baseUrl ?? ''}/api/config`)
+    if (!res.ok) return { testDriveEnabled: true }
+    const body = (await res.json()) as { test_drive_enabled?: boolean }
+    return { testDriveEnabled: body.test_drive_enabled !== false }
+  } catch {
+    return { testDriveEnabled: true }
+  }
+}
+
 export async function lockSlotIntent(
   sessionId: string,
   slotId: number,

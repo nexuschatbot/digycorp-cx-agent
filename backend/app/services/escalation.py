@@ -45,6 +45,14 @@ REASONS = frozenset(
         "repeated_failure",
         "explicit_request",
         "safety",
+        # WE ARE NOT TAKING TEST DRIVES (config.TEST_DRIVE_ENABLED off,
+        # 2026-09-09). Its own value rather than `other` because it is the one
+        # reason here that is OURS and not the customer's: every other entry
+        # describes something they wanted that Aisha may not do, this one
+        # describes a capability we withdrew. Folded into `other` it would be
+        # invisible on the dashboard exactly when someone needs to see how much
+        # work the handoff queue has been handed.
+        "test_drive_unavailable",
         "other",
     }
 )

@@ -222,6 +222,35 @@ RETRIEVAL_FIRST: bool = _get_bool("RETRIEVAL_FIRST", False)
 # Bookings, finance, stock, colours and documents still go through emit_briefs.
 AISHA_CATALOGUE_READS: bool = _get_bool("AISHA_CATALOGUE_READS", False)
 
+# --------------------------------------------------------------------------- #
+# Test drives (2026-09-09)
+# --------------------------------------------------------------------------- #
+# WHETHER WE TAKE TEST-DRIVE WORK AT ALL. On by default, and that direction is
+# the opposite of every flag above on purpose: the others add a capability that
+# has not earned its default yet, this one REMOVES the capability the product
+# was built around, so the safe state is the one we already ship.
+#
+# OFF MEANS THE AGENT STOPS, NOT THAT THE DATA GOES. Existing bookings still
+# exist, the console still shows them, reminders already scheduled still send,
+# and staff still work the Bookings/Slots/Showrooms tabs. What stops is Aisha:
+# she is unbound from the nine test-drive tools, her twelve journey sections are
+# replaced by TEST_DRIVE_OFF, the TestDrive specialist leaves the roster, and
+# every test-drive request — including "what time is my drive on Thursday" and
+# "cancel it" — becomes a human handoff (reason `test_drive_unavailable`).
+#
+# WHY A FLAG RATHER THAN A DELETION. Test drive is not a module here, it is the
+# spine: 9 of REGISTRY's 22 tools, 12 of Aisha's 16 journey sections, four
+# tables, and 77 of the 98 backend test files touch it. A flag keeps that suite
+# meaningful in its default state and makes the decision reversible with one
+# .env line and a restart, which a deletion would not be.
+#
+# THE SINGLE-AGENT PATH IS DELIBERATELY NOT GATED. With MULTI_AGENT_ENABLED off
+# Aisha holds create_booking directly out of REGISTRY, and that path is frozen
+# as the kill switch for the fan-out (OPEN-ISSUES #5) — gating it too would put
+# two switches on one behaviour and leave the rollback target changed. The test
+# VM runs MULTI_AGENT_ENABLED=true, so the gated surfaces are the live ones.
+TEST_DRIVE_ENABLED: bool = _get_bool("TEST_DRIVE_ENABLED", True)
+
 # START THE SPECIALIST SELECTION ON THE CUSTOMER'S MESSAGE, at the top of the
 # turn, in parallel with Aisha's whole first generation. The brief-level
 # speculation (orchestrator/speculate.offer) can only start once the brief's
