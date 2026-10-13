@@ -2,6 +2,7 @@
 
     python -m app.cli reset-demo                       # <- demo morning, one command
     python -m app.cli generate-slots --days 14 --prebooked 0.18 [--reset] [--force]
+    python -m app.cli top-up-slots [--days 14]
     python -m app.cli create-demo-booking [--mobile ...] [--doorstep]
 
 DEMO MORNING IS ONE COMMAND: `reset-demo`. It does the whole ritual — schema,
@@ -344,6 +345,22 @@ def _cmd_generate_slots(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_top_up_slots(args: argparse.Namespace) -> int:
+    db = SessionLocal()
+    try:
+        result = slots_service.top_up(db, horizon_days=args.days, prebooked=args.prebooked)
+    finally:
+        db.close()
+    if result["added"]:
+        print(
+            f"Added {result['added']} slots "
+            f"({result['window_start']} .. {result['window_end']})"
+        )
+    else:
+        print(f"Window already reaches {result['window_end']}; nothing to add")
+    return 0
+
+
 def _pick_slot(
     db, *, doorstep: bool, vehicle_code: str | None, now: datetime, min_hours: int
 ) -> Slot | None:
@@ -492,6 +509,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gen.add_argument("--start", help="Window start as ISO date (default: today).")
     gen.set_defaults(func=_cmd_generate_slots)
+
+    top = sub.add_parser(
+        "top-up-slots",
+        help="Extend the slot window so it reaches --days ahead. Never duplicates.",
+        description=(
+            "Appends inventory only for days after the last day that already has "
+            "slots. A no-op when the window is already long enough. The API runs "
+            "this daily when SLOT_TOPUP_ENABLED=true."
+        ),
+    )
+    top.add_argument("--days", type=int, default=14, help="Horizon from today (default: 14).")
+    top.add_argument(
+        "--prebooked",
+        type=float,
+        default=0.18,
+        help="Fraction of the NEW slots pre-booked (default: 0.18).",
+    )
+    top.set_defaults(func=_cmd_top_up_slots)
 
     demo = sub.add_parser(
         "create-demo-booking",

@@ -40,6 +40,7 @@ from app.config import (
     PROMPT_CACHE_KEEPALIVE_MINUTES,
     RETRIEVAL_ENABLED,
     RTC_DEBUG,
+    SLOT_TOPUP_ENABLED,
 )
 from app.db import SessionLocal
 
@@ -155,12 +156,13 @@ async def lifespan(app: FastAPI):
         _app_log.warning("salesforce prewarm/refresh not started", exc_info=True)
 
     scheduler = None
-    if NOTIFY_DISPATCH_ENABLED:
+    if NOTIFY_DISPATCH_ENABLED or SLOT_TOPUP_ENABLED:
         from apscheduler.schedulers.background import BackgroundScheduler
 
+        scheduler = BackgroundScheduler(daemon=True)
+    if NOTIFY_DISPATCH_ENABLED:
         from app.services.dispatcher import run_dispatch_tick
 
-        scheduler = BackgroundScheduler(daemon=True)
         scheduler.add_job(
             run_dispatch_tick,
             "interval",
@@ -169,8 +171,26 @@ async def lifespan(app: FastAPI):
             max_instances=1,  # never overlap ticks
             coalesce=True,  # a backlog collapses to one run, not a burst
         )
-        scheduler.start()
         _app_log.info("notification dispatcher started (every %ss)", NOTIFY_POLL_SECONDS)
+    # Slot top-up: once at boot (next_run_time=now, so it never blocks startup)
+    # and daily after that, so the rolling inventory window cannot run out.
+    if SLOT_TOPUP_ENABLED:
+        from datetime import datetime
+
+        from app.services.slots import run_top_up_tick
+
+        scheduler.add_job(
+            run_top_up_tick,
+            "interval",
+            hours=24,
+            next_run_time=datetime.now(),
+            id="slot_top_up",
+            max_instances=1,
+            coalesce=True,
+        )
+        _app_log.info("slot top-up scheduled (at boot, then daily)")
+    if scheduler is not None:
+        scheduler.start()
 
     yield
 
