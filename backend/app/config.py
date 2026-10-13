@@ -697,6 +697,14 @@ WHATSAPP_API_VERSION: str = os.getenv("WHATSAPP_API_VERSION", "v21.0")
 NOTIFY_DISPATCH_ENABLED: bool = _get_bool("NOTIFY_DISPATCH_ENABLED", False)
 NOTIFY_POLL_SECONDS: int = _get_int("NOTIFY_POLL_SECONDS", 15)
 
+# Daily slot top-up: keeps the rolling inventory window SLOT_TOPUP_HORIZON_DAYS
+# ahead (services/slots.top_up). Without it the window generated at deploy time
+# simply runs out, and every availability search comes back empty — that is
+# how the test VM stopped booking between 2026-09-23 and 2026-10-13. OFF by
+# default so tests and plain dev never write inventory on boot.
+SLOT_TOPUP_ENABLED: bool = _get_bool("SLOT_TOPUP_ENABLED", False)
+SLOT_TOPUP_HORIZON_DAYS: int = _get_int("SLOT_TOPUP_HORIZON_DAYS", 14)
+
 # Which notification KINDS the dispatcher actually sends right now. Rows are
 # still SCHEDULED as before (FR-CF: confirmation + t24 + t2); the day-before
 # `t24` reminder is simply not SENT — product decision 2026-07-22 asked for the

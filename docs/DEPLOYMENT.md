@@ -171,6 +171,14 @@ $PY -m app.cli generate-slots
 Expect 5 showrooms, 9 models, 15 variants, 330 stock rows (7,544 units),
 3 finance banks, 5 accessories.
 
+**The slot window has to keep rolling.** `generate-slots` writes a fixed
+14-day window; on its own it runs out, and every availability search then
+comes back empty (the test VM, 2026-09-23 → 2026-10-13). Set
+`SLOT_TOPUP_ENABLED=true` in the VM `.env`: the API then runs
+`slots.top_up` at boot and every 24h, appending only days after the last one
+that has inventory, out to `SLOT_TOPUP_HORIZON_DAYS` (default 14). By hand:
+`$PY -m app.cli top-up-slots`.
+
 ---
 
 ## 4. TLS

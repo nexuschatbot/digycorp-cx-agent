@@ -12,6 +12,7 @@ time is never GENERATED, it cannot be offered — the agent has nothing to filte
 
 from __future__ import annotations
 
+import logging
 import random
 from datetime import date, datetime, time, timedelta
 
@@ -29,6 +30,8 @@ from app.models import (
     VehicleModel,
     VehicleVariant,
 )
+
+log = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Generation configuration
@@ -945,3 +948,62 @@ def generate(
         "per_showroom": per_showroom,
         "doorstep": doorstep,
     }
+
+
+def top_up(
+    db: Session,
+    *,
+    horizon_days: int = 14,
+    prebooked: float = 0.18,
+    today: date | None = None,
+) -> dict:
+    """Extend the rolling window so it always reaches `horizon_days` ahead.
+
+    generate() writes a FIXED window from the day it runs, and nothing re-ran
+    it: on the test VM the window ended 2026-09-23 and every availability
+    search came back empty until a client reported "slots are not being
+    booked" on 2026-10-13. This is the daily job that keeps it rolling.
+
+    APPEND-ONLY, BY DAY. Generation starts the day after the last day that
+    already has inventory (or today, if the window has lapsed or the table is
+    empty), so no existing day is ever regenerated — the duplicate-window bug
+    generate() guards against cannot happen here, and slots that bookings
+    reference are never touched. A window that already reaches the horizon is
+    a no-op, so running this at every boot and once a day is safe.
+    """
+    today = today or date.today()
+    horizon_days = max(1, _coerce_int(horizon_days) or 14)
+    last_start = db.scalar(select(func.max(Slot.start)))
+    start_day = today
+    if last_start is not None:
+        start_day = max(today, last_start.date() + timedelta(days=1))
+    end_day = today + timedelta(days=horizon_days - 1)
+    days = (end_day - start_day).days + 1
+    if days <= 0:
+        return {"added": 0, "window_end": last_start.date().isoformat()}
+
+    result = generate(db, days=days, prebooked=prebooked, force=True, start_day=start_day)
+    return {
+        "added": result["total"],
+        "window_start": result["window_start"],
+        "window_end": result["window_end"],
+    }
+
+
+def run_top_up_tick() -> None:
+    """One APScheduler run of top_up(): own DB session, fully guarded. Never raises."""
+    from app.config import SLOT_TOPUP_HORIZON_DAYS
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        result = top_up(db, horizon_days=SLOT_TOPUP_HORIZON_DAYS)
+        log.info("slot top-up: %s", result)
+    except Exception as exc:  # noqa: BLE001 — a bad run must not stop the scheduler
+        log.warning("slot top-up failed: %s", exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        db.close()
